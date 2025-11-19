@@ -506,8 +506,8 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
         ${tvaSection}
         
         <div class="invoice-legal">
-            <p>Dispensé d'immatriculation RCS/RM - Micro-entrepreneur | TVA non applicable, art. 293 B du CGI</p>
-            <p>Pénalités retard: taux légal + 40€ | Conditions: paiement à 30 jours</p>
+            <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
+            <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
         </div>
     `;
     
@@ -1867,112 +1867,120 @@ function downloadInvoicePDF() {
             <meta charset="UTF-8">
             <style>
                 @page { margin: 15mm; size: A4; }
+                * { box-sizing: border-box; }
                 body { 
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
                     padding: 0;
                     margin: 0;
                     color: #134252; 
-                    font-size: 14px;
+                    font-size: 13px;
                     position: relative;
-                    min-height: 297mm;
+                    height: 267mm;
+                    overflow: hidden;
                 }
                 .page-container {
-                    padding: 15mm;
-                    min-height: 267mm;
-                    position: relative;
-                    page-break-inside: avoid;
-                    page-break-after: avoid;
+                    padding: 0;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    page-break-inside: avoid !important;
+                    page-break-after: avoid !important;
                 }
                 .header { 
                     position: relative; 
-                    min-height: 180px; 
-                    margin-bottom: 20px; 
+                    min-height: 140px;
+                    max-height: 140px;
+                    margin-bottom: 12px; 
                     page-break-inside: avoid; 
+                    flex-shrink: 0;
                 }
                 .header-left { 
                     position: absolute; 
                     top: 0; 
                     left: 0; 
                     max-width: 50%; 
-                    line-height: 1.5;
+                    line-height: 1.4;
                 }
                 .header-right { 
                     position: absolute; 
-                    top: 110px; 
+                    top: 90px; 
                     right: 0; 
                     text-align: right; 
                     max-width: 45%; 
-                    line-height: 1.5;
+                    line-height: 1.4;
                 }
                 .company { 
                     font-weight: bold; 
-                    font-size: 18px; 
+                    font-size: 16px; 
                     color: #21808D; 
-                    margin-bottom: 6px; 
+                    margin-bottom: 4px; 
                 }
                 .separator {
                     border: none;
                     border-top: 1px solid #ddd;
-                    margin: 15px 0;
+                    margin: 10px 0;
                     clear: both;
+                    flex-shrink: 0;
                 }
                 .invoice-details {
-                    position: relative;
-                    margin-top: 185px;
-                    margin-bottom: 20px;
-                    line-height: 1.6;
+                    margin-top: 145px;
+                    margin-bottom: 12px;
+                    line-height: 1.5;
                     clear: both;
+                    flex-shrink: 0;
                 }
                 .invoice-number { 
-                    font-size: 20px; 
+                    font-size: 18px; 
                     font-weight: bold; 
-                    margin-bottom: 8px;
+                    margin-bottom: 6px;
                     white-space: nowrap;
                 }
                 table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin: 15px 0; 
+                    margin: 12px 0; 
                     page-break-inside: avoid; 
+                    flex-shrink: 0;
                 }
                 th, td { 
-                    padding: 8px 12px; 
+                    padding: 6px 10px; 
                     text-align: left; 
                     border-bottom: 1px solid #ddd; 
                 }
                 th { 
                     background-color: #f5f5f5; 
                     font-weight: bold; 
-                    font-size: 12px; 
+                    font-size: 11px; 
                 }
                 td { 
-                    font-size: 12px; 
-                    min-height: 30px;
+                    font-size: 11px; 
+                    height: 25px;
                 }
                 .totals { 
                     text-align: right; 
-                    margin-top: 12px; 
-                    padding-top: 12px; 
+                    margin-top: 10px; 
+                    padding-top: 10px; 
                     border-top: 2px solid #5E5240; 
-                    font-size: 14px; 
+                    font-size: 13px; 
                     page-break-inside: avoid; 
+                    flex-shrink: 0;
                 }
                 .legal { 
                     position: absolute;
-                    bottom: 15mm;
-                    left: 15mm;
-                    right: 15mm;
-                    font-size: 8px; 
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    font-size: 7.5px; 
                     color: #666; 
-                    line-height: 1.2; 
+                    line-height: 1.3; 
                     background: #f9f9f9;
-                    padding: 8px;
-                    border-radius: 4px;
-                    page-break-before: avoid;
-                    page-break-inside: avoid;
+                    padding: 6px;
+                    border-radius: 3px;
+                    page-break-before: avoid !important;
+                    page-break-inside: avoid !important;
                 }
                 .legal p { 
-                    margin: 2px 0; 
+                    margin: 1px 0; 
                 }
             </style>
         </head>
@@ -2034,8 +2042,8 @@ function downloadInvoicePDF() {
             </div>
             
             <div class="legal">
-                <p>Dispensé d'immatriculation RCS/RM - Micro-entrepreneur | TVA non applicable, art. 293 B du CGI</p>
-                <p>Pénalités retard: taux légal + 40€ | Conditions: paiement à 30 jours</p>
+                <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
+                <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
             </div>
         </body>
         </html>
