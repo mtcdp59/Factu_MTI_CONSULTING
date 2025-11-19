@@ -21,7 +21,7 @@ let clients = [
 
 let invoices = [
     {
-        number: '001',
+        number: '202511-001',
         client: 'Entreprise ABC',
         clientSiret: '123 456 789 00012',
         clientAddress: '123 Rue de la République\n75001 Paris',
@@ -36,7 +36,7 @@ let invoices = [
         dateReception: '2025-12-10'
     },
     {
-        number: '002',
+        number: '202512-001',
         client: 'Société XYZ',
         clientSiret: '987 654 321 00034',
         clientAddress: '456 Avenue des Champs\n69002 Lyon',
@@ -51,7 +51,7 @@ let invoices = [
         dateReception: null
     },
     {
-        number: '003',
+        number: '202510-001',
         client: 'Entreprise ABC',
         clientSiret: '123 456 789 00012',
         clientAddress: '123 Rue de la République\n75001 Paris',
@@ -66,7 +66,7 @@ let invoices = [
         dateReception: null
     },
     {
-        number: '004',
+        number: '202512-002',
         client: 'Société XYZ',
         clientSiret: '987 654 321 00034',
         clientAddress: '456 Avenue des Champs\n69002 Lyon',
@@ -311,11 +311,36 @@ const quantityInput = document.getElementById('quantity');
 const unitPriceInput = document.getElementById('unitPrice');
 const totalHTInput = document.getElementById('totalHT');
 
-// Initialize invoice number
-function getNextInvoiceNumber() {
-    if (invoices.length === 0) return '001';
-    const lastNumber = Math.max(...invoices.map(inv => parseInt(inv.number)));
-    return String(lastNumber + 1).padStart(3, '0');
+// Initialize invoice number with new format YYYYMM-NNN
+function getNextInvoiceNumber(date = null) {
+    const invoiceDate = date ? new Date(date) : new Date();
+    const year = invoiceDate.getFullYear();
+    const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
+    const yearMonth = `${year}${month}`;
+    
+    // Find all invoices for this year-month
+    const sameMonthInvoices = invoices.filter(inv => {
+        const invNumber = inv.number;
+        // Extract YYYYMM from invoice number (format: YYYYMM-NNN)
+        if (invNumber.includes('-')) {
+            const [invYearMonth] = invNumber.split('-');
+            return invYearMonth === yearMonth;
+        }
+        return false;
+    });
+    
+    // Find max sequence number for this month
+    let maxSeq = 0;
+    sameMonthInvoices.forEach(inv => {
+        const parts = inv.number.split('-');
+        if (parts.length === 2) {
+            const seq = parseInt(parts[1]);
+            if (seq > maxSeq) maxSeq = seq;
+        }
+    });
+    
+    const nextSeq = String(maxSeq + 1).padStart(3, '0');
+    return `${yearMonth}-${nextSeq}`;
 }
 
 // Set default dates
@@ -328,12 +353,17 @@ function setDefaultDates() {
     dueDateInput.value = defaultDue.toISOString().split('T')[0];
 }
 
-// Auto-update due date when invoice date changes
+// Auto-update due date and invoice number when invoice date changes
 invoiceDateInput.addEventListener('change', () => {
     const invoiceDate = new Date(invoiceDateInput.value);
     const dueDate = new Date(invoiceDate);
     dueDate.setDate(dueDate.getDate() + 30);
     dueDateInput.value = dueDate.toISOString().split('T')[0];
+    
+    // Update invoice number based on new date (only if not in edit mode)
+    if (!isEditMode) {
+        invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
+    }
 });
 
 // Calculate total with optional TVA
@@ -1223,7 +1253,14 @@ function cancelEditMode() {
     document.getElementById('cancelEditBtn').style.display = 'none';
     
     // Reset form
-    resetInvoiceForm();
+    invoiceForm.reset();
+    document.getElementById('clientSelect').value = '';
+    document.getElementById('clientName').readOnly = false;
+    document.getElementById('clientSiret').readOnly = false;
+    document.getElementById('clientAddress').readOnly = false;
+    setDefaultDates();
+    invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
+    calculateTotal();
 }
 
 window.editInvoiceInForm = editInvoiceInForm;
@@ -1327,10 +1364,11 @@ window.deleteInvoice = deleteInvoice;
 // Duplicate invoice
 function duplicateInvoice(index) {
     const invoice = invoices[index];
+    const today = new Date().toISOString().split('T')[0];
     const newInvoice = {
         ...invoice,
-        number: getNextInvoiceNumber(),
-        date: new Date().toISOString().split('T')[0],
+        number: getNextInvoiceNumber(today),
+        date: today,
         dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
         status: 'Brouillon',
         montantRecu: 0,
@@ -1467,8 +1505,32 @@ function calculateTaxes() {
     const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
     const charges = ca * chargesRate;
     
-    // Calculate taxes - always using versement libératoire
-    const impot = ca * (taxSettings.versementLiberatoire / 100);
+    // Calculate taxes based on versement libératoire toggle
+    let impot = 0;
+    let impotLabel = '';
+    
+    if (versementLib) {
+        // Versement libératoire: 2.2% flat rate on CA
+        impot = ca * (taxSettings.versementLiberatoire / 100);
+        impotLabel = `${impot.toFixed(2)} € (Versement libératoire ${taxSettings.versementLiberatoire}%)`;
+    } else {
+        // IRPP barème progressif with 34% abattement
+        const baseImposable = ca * 0.66; // After 34% abattement
+        
+        // Apply progressive tax brackets (monthly amounts)
+        const tranche1 = 11294 / 12; // 941.17€ at 0%
+        const tranche2 = 28797 / 12; // 2399.75€ at 11%
+        
+        if (baseImposable <= tranche1) {
+            impot = 0;
+        } else if (baseImposable <= tranche2) {
+            impot = (baseImposable - tranche1) * 0.11;
+        } else {
+            impot = (tranche2 - tranche1) * 0.11 + (baseImposable - tranche2) * 0.30;
+        }
+        
+        impotLabel = `${impot.toFixed(2)} € (IRPP barème progressif)`;
+    }
     
     // Calculate CFE monthly
     const cfe = taxSettings.cfeAnnuel / 12;
@@ -1477,7 +1539,7 @@ function calculateTaxes() {
     // Display results
     document.getElementById('calcCA').textContent = ca.toFixed(2) + ' €';
     document.getElementById('calcCharges').textContent = charges.toFixed(2) + ' € (' + (chargesRate * 100).toFixed(1) + '%)';
-    document.getElementById('calcImpot').textContent = impot.toFixed(2) + ' € (Versement lib. ' + taxSettings.versementLiberatoire.toFixed(1) + '%)';
+    document.getElementById('calcImpot').textContent = impotLabel;
     document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)';
     document.getElementById('calcNet').textContent = net.toFixed(2) + ' €';
 }
@@ -1695,8 +1757,8 @@ document.getElementById('confirmAction').addEventListener('click', () => {
 
 // Initialize app
 function initApp() {
-    invoiceNumberInput.value = getNextInvoiceNumber();
     setDefaultDates();
+    invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
     calculateTotal();
     renderCalendar();
     renderClientsTable();
