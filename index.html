@@ -738,8 +738,31 @@ tr:hover {
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="previewInvoice">👁️ Aperçu</button>
                         <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                        <button type="button" class="btn btn-primary" id="sendEmailBtn" style="display: none;">📧 Envoyer par email</button>
+                        <button type="button" class="btn btn-secondary" id="newInvoiceBtn" style="display: none;" onclick="resetInvoiceForm()">➕ Nouvelle facture</button>
                     </div>
                 </form>
+            </div>
+            
+            <!-- Invoice List -->
+            <div class="card">
+                <h2 class="card-title">Factures créées</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>N°</th>
+                                <th>Client</th>
+                                <th>Date</th>
+                                <th>Montant</th>
+                                <th>Statut</th>
+                                <th>Actions rapides</th>
+                            </tr>
+                        </thead>
+                        <tbody id="invoiceListBody">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -756,6 +779,8 @@ tr:hover {
                                 <th>Nom</th>
                                 <th>SIRET</th>
                                 <th>Adresse</th>
+                                <th>Email facturation</th>
+                                <th>Contact</th>
                                 <th>Nb factures</th>
                                 <th>Total facturé</th>
                                 <th>Actions</th>
@@ -783,6 +808,14 @@ tr:hover {
                         <label class="form-label">Adresse complète</label>
                         <textarea class="form-control" id="clientFormAddress"></textarea>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Email facturation</label>
+                        <input type="email" class="form-control" id="clientFormEmail" placeholder="facturation@client.fr">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Nom contact facturation</label>
+                        <input type="text" class="form-control" id="clientFormContactName" placeholder="Prénom Nom">
+                    </div>
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="cancelClient">Annuler</button>
                         <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
@@ -794,26 +827,37 @@ tr:hover {
         <!-- PLANNING TAB -->
         <div id="planning" class="tab-content">
             <div class="card">
-                <h2 class="card-title">Planning Hebdomadaire</h2>
-                <div style="margin-bottom: var(--space-16);">
+                <h2 class="card-title">Planning</h2>
+                
+                <!-- View Selector -->
+                <div style="margin-bottom: var(--space-16); display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; gap: var(--space-8);">
+                        <button class="btn btn-secondary" id="viewDay" onclick="changeCalendarView('day')">Jour</button>
+                        <button class="btn btn-secondary active" id="viewWeek" onclick="changeCalendarView('week')">Semaine</button>
+                        <button class="btn btn-secondary" id="viewMonth" onclick="changeCalendarView('month')">Mois</button>
+                    </div>
                     <button class="btn btn-primary" id="addTaskBtn">➕ Ajouter une tâche</button>
                 </div>
+                
+                <!-- Date Navigation -->
+                <div style="margin-bottom: var(--space-16); display: flex; gap: var(--space-12); align-items: center; justify-content: center; padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base);">
+                    <button class="btn btn-sm btn-secondary" onclick="navigateCalendar(-1)">← Précédent</button>
+                    <button class="btn btn-sm btn-secondary" onclick="navigateCalendar(0)">Aujourd'hui</button>
+                    <button class="btn btn-sm btn-secondary" onclick="navigateCalendar(1)">Suivant →</button>
+                </div>
+                
+                <div id="currentDateDisplay" style="margin-bottom: var(--space-16); text-align: center; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold);"></div>
+                
                 <div id="weeklyStats" style="margin-bottom: var(--space-16); padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base);"></div>
-                <div class="calendar" id="calendar"></div>
+                <div id="calendarContainer"></div>
             </div>
             
             <div id="taskFormCard" class="card" style="display: none;">
                 <h2 class="card-title">Nouvelle tâche</h2>
                 <form id="taskForm">
                     <div class="form-group">
-                        <label class="form-label">Jour *</label>
-                        <select class="form-control" id="taskDay" required>
-                            <option value="0">Lundi</option>
-                            <option value="1">Mardi</option>
-                            <option value="2">Mercredi</option>
-                            <option value="3">Jeudi</option>
-                            <option value="4">Vendredi</option>
-                        </select>
+                        <label class="form-label">Date *</label>
+                        <input type="date" class="form-control" id="taskDate" required>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
@@ -828,9 +872,9 @@ tr:hover {
                     <div class="form-group">
                         <label class="form-label">Type *</label>
                         <select class="form-control" id="taskType" required>
-                            <option value="work">Travail</option>
-                            <option value="meeting">Rendez-vous client</option>
-                            <option value="admin">Administratif</option>
+                            <option value="Travail">Travail</option>
+                            <option value="Réunion client">Réunion client</option>
+                            <option value="Administratif">Administratif</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -921,6 +965,7 @@ tr:hover {
                                 <th>Date réception</th>
                                 <th>Reste à payer</th>
                                 <th>Statut</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="invoiceTableBody">
@@ -1050,6 +1095,159 @@ tr:hover {
         <div class="modal-content">
             <button class="modal-close" id="closeModal">&times;</button>
             <div id="invoicePreviewContent" class="invoice-preview"></div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2 class="card-title" id="confirmTitle">Confirmation</h2>
+            <p id="confirmMessage" style="margin: var(--space-24) 0; font-size: var(--font-size-base);"></p>
+            <div class="action-buttons" style="margin-top: var(--space-24);">
+                <button type="button" class="btn btn-secondary" id="cancelConfirm">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirmAction">Confirmer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Invoice Modal -->
+    <div id="editInvoiceModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="closeEditInvoiceModal">&times;</button>
+            <h2 class="card-title">Modifier la facture</h2>
+            <form id="editInvoiceForm">
+                <input type="hidden" id="editInvoiceIndex">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Numéro de facture</label>
+                        <input type="text" class="form-control" id="editInvoiceNumber" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Statut</label>
+                        <select class="form-control" id="editInvoiceStatus">
+                            <option value="Brouillon">Brouillon</option>
+                            <option value="Envoyée">Envoyée</option>
+                            <option value="Payée">Payée</option>
+                            <option value="Retard">Retard</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Nom du client *</label>
+                        <input type="text" class="form-control" id="editClientName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">SIRET</label>
+                        <input type="text" class="form-control" id="editClientSiret">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Adresse du client *</label>
+                    <textarea class="form-control" id="editClientAddress" required></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Date de facture *</label>
+                        <input type="date" class="form-control" id="editInvoiceDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Date d'échéance *</label>
+                        <input type="date" class="form-control" id="editDueDate" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description de la prestation *</label>
+                    <textarea class="form-control" id="editServiceDescription" required></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Quantité *</label>
+                        <input type="number" class="form-control" id="editQuantity" value="1" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Prix unitaire HT (€) *</label>
+                        <input type="number" class="form-control" id="editUnitPrice" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="action-buttons" style="margin-top: var(--space-24);">
+                    <button type="button" class="btn btn-secondary" id="cancelEditInvoice">Annuler</button>
+                    <button type="submit" class="btn btn-primary">💾 Mettre à jour</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Task Modal -->
+    <div id="editTaskModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <button class="modal-close" id="closeEditTaskModal">&times;</button>
+            <h2 class="card-title">Modifier la tâche</h2>
+            <form id="editTaskForm">
+                <input type="hidden" id="editTaskIndex">
+                <div class="form-group">
+                    <label class="form-label">Date *</label>
+                    <input type="date" class="form-control" id="editTaskDate" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Heure de début *</label>
+                        <input type="time" class="form-control" id="editTaskTime" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Durée (heures) *</label>
+                        <input type="number" class="form-control" id="editTaskDuration" step="0.5" min="0.5" value="1" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type *</label>
+                    <select class="form-control" id="editTaskType" required>
+                        <option value="Travail">Travail</option>
+                        <option value="Réunion client">Réunion client</option>
+                        <option value="Administratif">Administratif</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description *</label>
+                    <textarea class="form-control" id="editTaskDescription" required></textarea>
+                </div>
+                <div class="action-buttons" style="margin-top: var(--space-24);">
+                    <button type="button" class="btn btn-secondary" onclick="deleteTaskFromEdit()" style="margin-right: auto;">🗑️ Supprimer</button>
+                    <button type="button" class="btn btn-secondary" id="cancelEditTask">Annuler</button>
+                    <button type="submit" class="btn btn-primary">💾 Mettre à jour</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Email Preview Modal -->
+    <div id="emailModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="closeEmailModal">&times;</button>
+            <h2 class="card-title">Aperçu de l'email</h2>
+            <div id="emailPreviewContent" style="margin-top: var(--space-24);">
+                <div class="form-group">
+                    <label class="form-label"><strong>De:</strong></label>
+                    <div style="padding: var(--space-8); background-color: var(--color-bg-1); border-radius: var(--radius-base);">mticonsulting59@gmail.com</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><strong>À:</strong></label>
+                    <div id="emailTo" style="padding: var(--space-8); background-color: var(--color-bg-1); border-radius: var(--radius-base);"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><strong>Objet:</strong></label>
+                    <div id="emailSubject" style="padding: var(--space-8); background-color: var(--color-bg-1); border-radius: var(--radius-base);"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><strong>Message:</strong></label>
+                    <div id="emailBody" style="padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base); white-space: pre-line; font-size: var(--font-size-sm); line-height: 1.6;"></div>
+                </div>
+                <div id="emailWarning" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-orange-500-rgb), 0.15); color: var(--color-warning); border-radius: var(--radius-base); margin-top: var(--space-16); border: 1px solid rgba(var(--color-orange-500-rgb), 0.25);"></div>
+            </div>
+            <div class="action-buttons" style="margin-top: var(--space-24);">
+                <button type="button" class="btn btn-secondary" id="cancelEmail">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirmEmail">📧 Confirmer et ouvrir</button>
+            </div>
         </div>
     </div>
 

@@ -3,12 +3,16 @@ let clients = [
     {
         name: 'Entreprise ABC',
         siret: '123 456 789 00012',
-        address: '123 Rue de la République\n75001 Paris'
+        address: '123 Rue de la République\n75001 Paris',
+        email_facturation: 'facturation@entreprise-abc.fr',
+        contact_name: 'Marie Dupont'
     },
     {
         name: 'Société XYZ',
         siret: '987 654 321 00034',
-        address: '456 Avenue des Champs\n69002 Lyon'
+        address: '456 Avenue des Champs\n69002 Lyon',
+        email_facturation: '',
+        contact_name: ''
     }
 ];
 
@@ -76,12 +80,16 @@ let invoices = [
 ];
 
 let tasks = [
-    { day: 0, time: '09:00', duration: 4, type: 'work', description: 'Développement client ABC' },
-    { day: 0, time: '14:00', duration: 2, type: 'meeting', description: 'Rendez-vous client XYZ' },
-    { day: 2, time: '09:00', duration: 5, type: 'work', description: 'Développement application' },
-    { day: 3, time: '10:00', duration: 3, type: 'work', description: 'Réunion et suivi projet' },
-    { day: 4, time: '14:00', duration: 2, type: 'admin', description: 'Comptabilité et factures' }
+    { date: '2025-12-16', startTime: '09:00', duration: 3, description: 'Développement module facturation', type: 'Travail' },
+    { date: '2025-12-16', startTime: '14:00', duration: 2, description: 'Réunion client Entreprise ABC', type: 'Réunion client' },
+    { date: '2025-12-17', startTime: '10:00', duration: 1.5, description: 'Déclaration URSSAF', type: 'Administratif' },
+    { date: '2025-12-18', startTime: '09:30', duration: 4, description: 'Consulting SI Finance', type: 'Travail' },
+    { date: '2025-12-19', startTime: '15:00', duration: 1, description: 'Suivi projet Société XYZ', type: 'Réunion client' }
 ];
+
+// Calendar state
+let currentView = 'week';
+let currentDate = new Date();
 
 // Company info
 const company = {
@@ -135,6 +143,8 @@ navTabs.forEach(tab => {
             renderCalendar();
         } else if (targetTab === 'tiers') {
             renderClientsTable();
+        } else if (targetTab === 'factures') {
+            renderInvoiceList();
         }
     });
 });
@@ -147,12 +157,16 @@ function renderClientsTable() {
     clients.forEach((client, index) => {
         const clientInvoices = invoices.filter(inv => inv.client === client.name);
         const totalBilled = clientInvoices.reduce((sum, inv) => sum + inv.total, 0);
+        const hasEmail = client.email_facturation && client.email_facturation.trim() !== '';
+        const emailIcon = hasEmail ? ' ✉️' : '';
         
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><strong>${client.name}</strong></td>
+            <td><strong>${client.name}${emailIcon}</strong></td>
             <td>${client.siret || '-'}</td>
             <td style="white-space: pre-line; max-width: 200px;">${client.address || '-'}</td>
+            <td>${client.email_facturation || '-'}</td>
+            <td>${client.contact_name || '-'}</td>
             <td>${clientInvoices.length}</td>
             <td><strong>${totalBilled.toFixed(2)} €</strong></td>
             <td>
@@ -199,6 +213,8 @@ document.getElementById('clientSelect').addEventListener('change', (e) => {
         document.getElementById('clientName').readOnly = false;
         document.getElementById('clientSiret').readOnly = false;
         document.getElementById('clientAddress').readOnly = false;
+        // Hide email button for manual entry
+        document.getElementById('sendEmailBtn').style.display = 'none';
     } else {
         // Auto-fill from client
         const client = clients[parseInt(index)];
@@ -230,7 +246,9 @@ document.getElementById('clientForm').addEventListener('submit', (e) => {
     const client = {
         name: document.getElementById('clientFormName').value,
         siret: document.getElementById('clientFormSiret').value,
-        address: document.getElementById('clientFormAddress').value
+        address: document.getElementById('clientFormAddress').value,
+        email_facturation: document.getElementById('clientFormEmail').value,
+        contact_name: document.getElementById('clientFormContactName').value
     };
     
     if (index === -1) {
@@ -252,15 +270,30 @@ function editClient(index) {
     document.getElementById('clientFormName').value = client.name;
     document.getElementById('clientFormSiret').value = client.siret || '';
     document.getElementById('clientFormAddress').value = client.address || '';
+    document.getElementById('clientFormEmail').value = client.email_facturation || '';
+    document.getElementById('clientFormContactName').value = client.contact_name || '';
     document.getElementById('clientFormCard').style.display = 'block';
 }
 
 function deleteClient(index) {
-    if (confirm('Voulez-vous vraiment supprimer ce client ?')) {
-        clients.splice(index, 1);
-        renderClientsTable();
-        populateClientSelects();
+    const client = clients[index];
+    const clientInvoices = invoices.filter(inv => inv.client === client.name);
+    
+    let message = `Voulez-vous vraiment supprimer le client "${client.name}" ?`;
+    if (clientInvoices.length > 0) {
+        message = `Attention : Ce client a ${clientInvoices.length} facture(s) associée(s).\n\nSupprimer quand même ?`;
     }
+    
+    showConfirmation(
+        'Supprimer le client',
+        message,
+        () => {
+            clients.splice(index, 1);
+            renderClientsTable();
+            populateClientSelects();
+            showToast('Client supprimé');
+        }
+    );
 }
 
 window.editClient = editClient;
@@ -445,6 +478,134 @@ document.getElementById('closeModal').addEventListener('click', () => {
     document.getElementById('invoiceModal').classList.remove('show');
 });
 
+// Email sending functionality
+let currentInvoiceData = null;
+
+document.getElementById('sendEmailBtn').addEventListener('click', () => {
+    const clientName = document.getElementById('clientName').value;
+    const invoiceNumber = invoiceNumberInput.value;
+    const invoiceDate = invoiceDateInput.value;
+    const dueDate = dueDateInput.value;
+    const total = calculateTotal();
+    
+    if (!clientName || !invoiceDate || !dueDate) {
+        alert('Veuillez remplir tous les champs obligatoires avant d\'envoyer l\'email');
+        return;
+    }
+    
+    // Find client data
+    const client = clients.find(c => c.name === clientName);
+    
+    currentInvoiceData = {
+        clientName,
+        invoiceNumber,
+        invoiceDate,
+        dueDate,
+        total,
+        client
+    };
+    
+    showEmailPreview();
+});
+
+function showEmailPreview() {
+    const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
+    
+    // Check if email is configured
+    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
+    const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
+    const emailTo = hasEmail ? client.email_facturation : '';
+    
+    // Build email content
+    const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
+    const body = `Bonjour ${contactName},
+
+Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
+
+Date d'émission : ${formatDateFR(invoiceDate)}
+Date d'échéance : ${formatDateFR(dueDate)}
+Conditions de paiement : 30 jours nets
+
+⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
+
+Pour toute question, n'hésitez pas à me contacter.
+
+Cordialement,
+MTI CONSULTING
+Email : mticonsulting59@gmail.com`;
+    
+    // Display preview
+    document.getElementById('emailTo').textContent = emailTo || '(À compléter manuellement)';
+    document.getElementById('emailSubject').textContent = subject;
+    document.getElementById('emailBody').textContent = body;
+    
+    // Show warning if no email
+    const warningDiv = document.getElementById('emailWarning');
+    if (!hasEmail) {
+        warningDiv.style.display = 'block';
+        warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>L\'email s\'ouvrira en brouillon sans destinataire. Veuillez ajouter l\'email dans la gestion des tiers ou compléter manuellement.';
+    } else {
+        warningDiv.style.display = 'none';
+    }
+    
+    document.getElementById('emailModal').classList.add('show');
+}
+
+document.getElementById('closeEmailModal').addEventListener('click', () => {
+    document.getElementById('emailModal').classList.remove('show');
+});
+
+document.getElementById('cancelEmail').addEventListener('click', () => {
+    document.getElementById('emailModal').classList.remove('show');
+});
+
+document.getElementById('confirmEmail').addEventListener('click', () => {
+    const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
+    
+    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
+    const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
+    const emailTo = hasEmail ? client.email_facturation : '';
+    
+    // Build mailto link
+    const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
+    const body = `Bonjour ${contactName},
+
+Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
+
+Date d'émission : ${formatDateFR(invoiceDate)}
+Date d'échéance : ${formatDateFR(dueDate)}
+Conditions de paiement : 30 jours nets
+
+⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
+
+Pour toute question, n'hésitez pas à me contacter.
+
+Cordialement,
+MTI CONSULTING
+Email : mticonsulting59@gmail.com`;
+    
+    // URL encode
+    const encodedSubject = encodeURIComponent(subject);
+    const encodedBody = encodeURIComponent(body);
+    
+    // Create mailto link
+    const mailtoLink = `mailto:${emailTo}?subject=${encodedSubject}&body=${encodedBody}`;
+    
+    // Open in default email client
+    window.location.href = mailtoLink;
+    
+    // Close modal
+    document.getElementById('emailModal').classList.remove('show');
+    
+    // Show confirmation and prompt to reset
+    setTimeout(() => {
+        alert('Email préparé et ouvert dans votre client de messagerie. N\'oubliez pas de joindre le PDF de la facture avant l\'envoi !');
+        if (confirm('Voulez-vous créer une nouvelle facture ?')) {
+            resetInvoiceForm();
+        }
+    }, 500);
+});
+
 // Save invoice
 invoiceForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -466,66 +627,288 @@ invoiceForm.addEventListener('submit', (e) => {
     };
     
     invoices.push(invoice);
-    alert('Facture enregistrée avec succès!');
+    showToast('Facture enregistrée avec succès!');
+    renderInvoiceList();
     
-    // Reset form
+    // Show send email button and new invoice button
+    document.getElementById('sendEmailBtn').style.display = 'inline-flex';
+    document.getElementById('newInvoiceBtn').style.display = 'inline-flex';
+    
+    // Add prompt after save
+    setTimeout(() => {
+        if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
+            document.getElementById('sendEmailBtn').click();
+        }
+    }, 100);
+});
+
+// Add a reset button handler
+function resetInvoiceForm() {
     invoiceForm.reset();
     document.getElementById('clientSelect').value = '';
     document.getElementById('clientName').readOnly = false;
     document.getElementById('clientSiret').readOnly = false;
     document.getElementById('clientAddress').readOnly = false;
+    document.getElementById('sendEmailBtn').style.display = 'none';
+    document.getElementById('newInvoiceBtn').style.display = 'none';
     invoiceNumberInput.value = getNextInvoiceNumber();
     setDefaultDates();
     calculateTotal();
-});
+}
 
-// PLANNING - Calendar (Monday to Friday only)
-const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+window.resetInvoiceForm = resetInvoiceForm;
+
+// PLANNING - Calendar with Day/Week/Month views
+function changeCalendarView(view) {
+    currentView = view;
+    document.getElementById('viewDay').classList.remove('active');
+    document.getElementById('viewWeek').classList.remove('active');
+    document.getElementById('viewMonth').classList.remove('active');
+    document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1)).classList.add('active');
+    renderCalendar();
+}
+
+function navigateCalendar(direction) {
+    if (direction === 0) {
+        currentDate = new Date();
+    } else if (currentView === 'day') {
+        currentDate.setDate(currentDate.getDate() + direction);
+    } else if (currentView === 'week') {
+        currentDate.setDate(currentDate.getDate() + (direction * 7));
+    } else if (currentView === 'month') {
+        currentDate.setMonth(currentDate.getMonth() + direction);
+    }
+    renderCalendar();
+}
+
+function getWeekDates(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setDate(diff));
+    
+    const dates = [];
+    for (let i = 0; i < 5; i++) {
+        const weekDay = new Date(monday);
+        weekDay.setDate(monday.getDate() + i);
+        dates.push(weekDay);
+    }
+    return dates;
+}
+
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 function renderCalendar() {
-    const calendar = document.getElementById('calendar');
-    calendar.innerHTML = '';
+    updateCurrentDateDisplay();
     
-    daysOfWeek.forEach((day, index) => {
-        const dayDiv = document.createElement('div');
-        dayDiv.className = 'calendar-day';
-        
-        const dayHeader = document.createElement('div');
-        dayHeader.className = 'calendar-day-header';
-        dayHeader.textContent = day;
-        dayDiv.appendChild(dayHeader);
-        
-        const dayTasks = tasks.filter(task => task.day === index);
-        dayTasks.forEach(task => {
-            const taskDiv = document.createElement('div');
-            taskDiv.className = `calendar-task type-${task.type}`;
-            taskDiv.innerHTML = `
-                <div class="task-time">${task.time} (${task.duration}h)</div>
-                <div class="task-description">${task.description}</div>
-            `;
-            dayDiv.appendChild(taskDiv);
-        });
-        
-        calendar.appendChild(dayDiv);
-    });
+    if (currentView === 'day') {
+        renderDayView();
+    } else if (currentView === 'week') {
+        renderWeekView();
+    } else if (currentView === 'month') {
+        renderMonthView();
+    }
     
     updateWeeklyStats();
 }
 
+function updateCurrentDateDisplay() {
+    const display = document.getElementById('currentDateDisplay');
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    
+    if (currentView === 'day') {
+        display.textContent = currentDate.toLocaleDateString('fr-FR', options);
+    } else if (currentView === 'week') {
+        const weekDates = getWeekDates(currentDate);
+        const start = weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+        const end = weekDates[4].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+        display.textContent = `Semaine du ${start} au ${end}`;
+    } else if (currentView === 'month') {
+        display.textContent = currentDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' });
+    }
+}
+
+function renderDayView() {
+    const container = document.getElementById('calendarContainer');
+    const dateStr = formatDate(currentDate);
+    const dayTasks = tasks.filter(task => task.date === dateStr);
+    
+    const timeSlots = [];
+    for (let h = 8; h <= 18; h++) {
+        for (let m = 0; m < 60; m += 30) {
+            if (h === 18 && m > 0) break;
+            timeSlots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+        }
+    }
+    
+    let html = '<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); overflow: hidden;">';
+    
+    timeSlots.forEach(slot => {
+        const tasksAtTime = dayTasks.filter(task => task.startTime === slot);
+        html += `<div style="display: flex; border-bottom: 1px solid var(--color-card-border);">`;
+        html += `<div style="width: 80px; padding: var(--space-8); background-color: var(--color-bg-1); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm);">${slot}</div>`;
+        html += `<div style="flex: 1; padding: var(--space-8); min-height: 40px;">`;
+        
+        tasksAtTime.forEach(task => {
+            const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
+            html += `<div style="background-color: rgba(var(--color-teal-500-rgb), 0.1); border-left: 3px solid ${color}; padding: var(--space-6); border-radius: var(--radius-sm); margin-bottom: var(--space-4); cursor: pointer;" onclick="editTask(${tasks.indexOf(task)})">`;
+            html += `<strong>${task.description}</strong> (${task.duration}h)`;
+            html += `</div>`;
+        });
+        
+        html += `</div></div>`;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function renderWeekView() {
+    const container = document.getElementById('calendarContainer');
+    const weekDates = getWeekDates(currentDate);
+    const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+    
+    let html = '<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-8);">';
+    
+    weekDates.forEach((date, index) => {
+        const dateStr = formatDate(date);
+        const dayTasks = tasks.filter(task => task.date === dateStr);
+        const isToday = formatDate(new Date()) === dateStr;
+        
+        html += `<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); padding: var(--space-12); min-height: 200px; background-color: var(--color-surface); ${isToday ? 'box-shadow: 0 0 0 2px var(--color-primary);' : ''}">`;
+        html += `<div style="font-weight: var(--font-weight-semibold); margin-bottom: var(--space-8); padding-bottom: var(--space-8); border-bottom: 1px solid var(--color-card-border); font-size: var(--font-size-sm);">${daysOfWeek[index]}<br><span style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">${date.getDate()}/${date.getMonth()+1}</span></div>`;
+        
+        dayTasks.forEach(task => {
+            const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
+            html += `<div style="background-color: rgba(var(--color-teal-500-rgb), 0.1); border-left: 3px solid ${color}; padding: var(--space-6); border-radius: var(--radius-sm); margin-bottom: var(--space-6); font-size: var(--font-size-xs); cursor: pointer;" onclick="editTask(${tasks.indexOf(task)})">`;
+            html += `<div style="font-weight: var(--font-weight-semibold); color: var(--color-text);">${task.startTime} (${task.duration}h)</div>`;
+            html += `<div style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">${task.description}</div>`;
+            html += `</div>`;
+        });
+        
+        html += `</div>`;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function renderMonthView() {
+    const container = document.getElementById('calendarContainer');
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+    const daysInMonth = lastDay.getDate();
+    
+    let html = '<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); overflow: hidden;">';
+    
+    // Header
+    html += '<div style="display: grid; grid-template-columns: repeat(7, 1fr); background-color: var(--color-bg-1);">';
+    ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].forEach(day => {
+        html += `<div style="padding: var(--space-8); text-align: center; font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">${day}</div>`;
+    });
+    html += '</div>';
+    
+    // Days
+    html += '<div style="display: grid; grid-template-columns: repeat(7, 1fr);">';
+    
+    for (let i = 0; i < firstDayOfWeek; i++) {
+        html += '<div style="padding: var(--space-8); min-height: 80px; border: 1px solid var(--color-card-border); background-color: var(--color-secondary);"></div>';
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        const dateStr = formatDate(date);
+        const dayTasks = tasks.filter(task => task.date === dateStr);
+        const isToday = formatDate(new Date()) === dateStr;
+        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+        
+        html += `<div style="padding: var(--space-8); min-height: 80px; border: 1px solid var(--color-card-border); cursor: pointer; ${isToday ? 'background-color: rgba(var(--color-teal-500-rgb), 0.1); font-weight: var(--font-weight-bold);' : ''} ${isWeekend ? 'background-color: var(--color-secondary);' : ''}" onclick="showDayTasks('${dateStr}')">`;
+        html += `<div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4);">${day}</div>`;
+        
+        if (dayTasks.length > 0) {
+            dayTasks.slice(0, 2).forEach(task => {
+                const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
+                html += `<div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${color}; display: inline-block; margin-right: var(--space-4);"></div>`;
+            });
+            if (dayTasks.length > 2) {
+                html += `<span style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">+${dayTasks.length - 2}</span>`;
+            }
+        }
+        
+        html += '</div>';
+    }
+    
+    html += '</div></div>';
+    container.innerHTML = html;
+}
+
+function showDayTasks(dateStr) {
+    const dayTasks = tasks.filter(task => task.date === dateStr);
+    const date = new Date(dateStr);
+    const dateFormatted = date.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    
+    if (dayTasks.length === 0) {
+        alert(`Aucune tâche pour ${dateFormatted}`);
+        return;
+    }
+    
+    let message = `Tâches pour ${dateFormatted}:\n\n`;
+    dayTasks.forEach((task, index) => {
+        message += `${index + 1}. ${task.startTime} - ${task.description} (${task.duration}h)\n`;
+    });
+    message += `\nCliquez sur une tâche dans le calendrier pour la modifier.`;
+    
+    alert(message);
+}
+
+window.changeCalendarView = changeCalendarView;
+window.navigateCalendar = navigateCalendar;
+window.showDayTasks = showDayTasks;
+
 function updateWeeklyStats() {
-    const totalHours = tasks.reduce((sum, task) => sum + task.duration, 0);
-    const workHours = tasks.filter(t => t.type === 'work').reduce((sum, task) => sum + task.duration, 0);
-    const meetingHours = tasks.filter(t => t.type === 'meeting').reduce((sum, task) => sum + task.duration, 0);
-    const adminHours = tasks.filter(t => t.type === 'admin').reduce((sum, task) => sum + task.duration, 0);
+    let filteredTasks = tasks;
+    
+    if (currentView === 'week') {
+        const weekDates = getWeekDates(currentDate);
+        const weekDateStrs = weekDates.map(d => formatDate(d));
+        filteredTasks = tasks.filter(task => weekDateStrs.includes(task.date));
+    } else if (currentView === 'day') {
+        const dateStr = formatDate(currentDate);
+        filteredTasks = tasks.filter(task => task.date === dateStr);
+    } else if (currentView === 'month') {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        filteredTasks = tasks.filter(task => {
+            const taskDate = new Date(task.date);
+            return taskDate.getFullYear() === year && taskDate.getMonth() === month;
+        });
+    }
+    
+    const totalHours = filteredTasks.reduce((sum, task) => sum + task.duration, 0);
+    const workHours = filteredTasks.filter(t => t.type === 'Travail').reduce((sum, task) => sum + task.duration, 0);
+    const meetingHours = filteredTasks.filter(t => t.type === 'Réunion client').reduce((sum, task) => sum + task.duration, 0);
+    const adminHours = filteredTasks.filter(t => t.type === 'Administratif').reduce((sum, task) => sum + task.duration, 0);
+    
+    const viewLabel = currentView === 'day' ? 'journalier' : currentView === 'week' ? 'hebdomadaire' : 'mensuel';
     
     document.getElementById('weeklyStats').innerHTML = `
-        <strong>Total hebdomadaire: ${totalHours}h</strong> 
-        (Travail: ${workHours}h | Rendez-vous: ${meetingHours}h | Admin: ${adminHours}h)
+        <strong>Total ${viewLabel}: ${totalHours}h</strong> 
+        (Travail: ${workHours}h | Réunions: ${meetingHours}h | Admin: ${adminHours}h)
     `;
 }
 
 // Task form
 document.getElementById('addTaskBtn').addEventListener('click', () => {
+    document.getElementById('taskDate').value = formatDate(currentDate);
     document.getElementById('taskFormCard').style.display = 'block';
 });
 
@@ -538,8 +921,8 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
     e.preventDefault();
     
     const task = {
-        day: parseInt(document.getElementById('taskDay').value),
-        time: document.getElementById('taskTime').value,
+        date: document.getElementById('taskDate').value,
+        startTime: document.getElementById('taskTime').value,
         duration: parseFloat(document.getElementById('taskDuration').value),
         type: document.getElementById('taskType').value,
         description: document.getElementById('taskDescription').value
@@ -549,7 +932,63 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
     renderCalendar();
     document.getElementById('taskFormCard').style.display = 'none';
     document.getElementById('taskForm').reset();
+    showToast('Tâche ajoutée avec succès');
 });
+
+// Edit task
+function editTask(index) {
+    const task = tasks[index];
+    document.getElementById('editTaskIndex').value = index;
+    document.getElementById('editTaskDate').value = task.date;
+    document.getElementById('editTaskTime').value = task.startTime;
+    document.getElementById('editTaskDuration').value = task.duration;
+    document.getElementById('editTaskType').value = task.type;
+    document.getElementById('editTaskDescription').value = task.description;
+    document.getElementById('editTaskModal').classList.add('show');
+}
+
+window.editTask = editTask;
+
+document.getElementById('closeEditTaskModal').addEventListener('click', () => {
+    document.getElementById('editTaskModal').classList.remove('show');
+});
+
+document.getElementById('cancelEditTask').addEventListener('click', () => {
+    document.getElementById('editTaskModal').classList.remove('show');
+});
+
+document.getElementById('editTaskForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    
+    const index = parseInt(document.getElementById('editTaskIndex').value);
+    tasks[index] = {
+        date: document.getElementById('editTaskDate').value,
+        startTime: document.getElementById('editTaskTime').value,
+        duration: parseFloat(document.getElementById('editTaskDuration').value),
+        type: document.getElementById('editTaskType').value,
+        description: document.getElementById('editTaskDescription').value
+    };
+    
+    renderCalendar();
+    document.getElementById('editTaskModal').classList.remove('show');
+    showToast('Tâche mise à jour');
+});
+
+function deleteTaskFromEdit() {
+    const index = parseInt(document.getElementById('editTaskIndex').value);
+    showConfirmation(
+        'Supprimer la tâche',
+        'Êtes-vous sûr de vouloir supprimer cette tâche ?',
+        () => {
+            tasks.splice(index, 1);
+            renderCalendar();
+            document.getElementById('editTaskModal').classList.remove('show');
+            showToast('Tâche supprimée');
+        }
+    );
+}
+
+window.deleteTaskFromEdit = deleteTaskFromEdit;
 
 // SUIVI - Invoice Tracking
 function checkOverdueInvoices() {
@@ -603,13 +1042,13 @@ function getFilteredInvoices() {
     if (startDate) {
         const start = new Date(startDate);
         start.setHours(0, 0, 0, 0);
-        filtered = filtered.filter(inv => new Date(inv.date) >= start);
+            filtered = filtered.filter(inv => new Date(inv.date) >= start);
     }
     
     if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        filtered = filtered.filter(inv => new Date(inv.date) <= end);
+            filtered = filtered.filter(inv => new Date(inv.date) <= end);
     }
     
     // Client filter
@@ -653,10 +1092,131 @@ function renderInvoiceTable(filteredInvoices) {
             <td><input type="date" class="form-control" style="width: 140px; font-size: var(--font-size-xs);" value="${invoice.dateReception || ''}" onchange="updateDateReception(${index}, this.value)"></td>
             <td><strong>${reste.toFixed(2)} €</strong></td>
             <td><span class="status-badge status-${invoice.status.toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status}</span></td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editInvoice(${index})" title="Modifier">✏️</button>
+                <button class="btn btn-sm btn-secondary" onclick="duplicateInvoice(${index})" title="Dupliquer" style="margin-left: var(--space-4);">📋</button>
+                <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧</button>
+                <button class="btn btn-sm btn-secondary" onclick="deleteInvoice(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️</button>
+            </td>
         `;
         tbody.appendChild(row);
     });
 }
+
+// Render invoice list in FACTURES tab
+function renderInvoiceList() {
+    const tbody = document.getElementById('invoiceListBody');
+    tbody.innerHTML = '';
+    
+    invoices.forEach((invoice, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong>${invoice.number}</strong></td>
+            <td>${invoice.client}</td>
+            <td>${formatDateFR(invoice.date)}</td>
+            <td><strong>${invoice.total.toFixed(2)} €</strong></td>
+            <td><span class="status-badge status-${invoice.status.toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status}</span></td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editInvoice(${index})">✏️ Modifier</button>
+                <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" style="margin-left: var(--space-4);">📧 Email</button>
+                <button class="btn btn-sm btn-secondary" onclick="deleteInvoice(${index})" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Edit invoice
+function editInvoice(index) {
+    const invoice = invoices[index];
+    document.getElementById('editInvoiceIndex').value = index;
+    document.getElementById('editInvoiceNumber').value = invoice.number;
+    document.getElementById('editInvoiceStatus').value = invoice.status;
+    document.getElementById('editClientName').value = invoice.client;
+    document.getElementById('editClientSiret').value = invoice.clientSiret || '';
+    document.getElementById('editClientAddress').value = invoice.clientAddress || '';
+    document.getElementById('editInvoiceDate').value = invoice.date;
+    document.getElementById('editDueDate').value = invoice.dueDate;
+    document.getElementById('editServiceDescription').value = invoice.description;
+    document.getElementById('editQuantity').value = invoice.quantity;
+    document.getElementById('editUnitPrice').value = invoice.unitPrice;
+    document.getElementById('editInvoiceModal').classList.add('show');
+}
+
+window.editInvoice = editInvoice;
+
+document.getElementById('closeEditInvoiceModal').addEventListener('click', () => {
+    document.getElementById('editInvoiceModal').classList.remove('show');
+});
+
+document.getElementById('cancelEditInvoice').addEventListener('click', () => {
+    document.getElementById('editInvoiceModal').classList.remove('show');
+});
+
+document.getElementById('editInvoiceForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    
+    const index = parseInt(document.getElementById('editInvoiceIndex').value);
+    const quantity = parseFloat(document.getElementById('editQuantity').value);
+    const unitPrice = parseFloat(document.getElementById('editUnitPrice').value);
+    
+    invoices[index] = {
+        ...invoices[index],
+        status: document.getElementById('editInvoiceStatus').value,
+        client: document.getElementById('editClientName').value,
+        clientSiret: document.getElementById('editClientSiret').value,
+        clientAddress: document.getElementById('editClientAddress').value,
+        date: document.getElementById('editInvoiceDate').value,
+        dueDate: document.getElementById('editDueDate').value,
+        description: document.getElementById('editServiceDescription').value,
+        quantity: quantity,
+        unitPrice: unitPrice,
+        total: quantity * unitPrice
+    };
+    
+    document.getElementById('editInvoiceModal').classList.remove('show');
+    renderInvoiceList();
+    applyFilters();
+    showToast('Facture mise à jour');
+});
+
+// Delete invoice
+function deleteInvoice(index) {
+    const invoice = invoices[index];
+    showConfirmation(
+        'Supprimer la facture',
+        `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} ?`,
+        () => {
+            invoices.splice(index, 1);
+            renderInvoiceList();
+            applyFilters();
+            renderCharts();
+            showToast('Facture supprimée');
+        }
+    );
+}
+
+window.deleteInvoice = deleteInvoice;
+
+// Duplicate invoice
+function duplicateInvoice(index) {
+    const invoice = invoices[index];
+    const newInvoice = {
+        ...invoice,
+        number: getNextInvoiceNumber(),
+        date: new Date().toISOString().split('T')[0],
+        dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        status: 'Brouillon',
+        montantRecu: 0,
+        dateReception: null
+    };
+    invoices.push(newInvoice);
+    renderInvoiceList();
+    applyFilters();
+    showToast('Facture dupliquée');
+}
+
+window.duplicateInvoice = duplicateInvoice;
 
 function updateMontantRecu(index, value) {
     invoices[index].montantRecu = parseFloat(value) || 0;
@@ -688,6 +1248,31 @@ function updateSummary(filteredInvoices = invoices) {
 
 window.updateMontantRecu = updateMontantRecu;
 window.updateDateReception = updateDateReception;
+
+// Send email for existing invoice from tracking table
+function sendInvoiceEmail(index) {
+    const invoice = invoices[index];
+    const client = clients.find(c => c.name === invoice.client);
+    
+    currentInvoiceData = {
+        clientName: invoice.client,
+        invoiceNumber: invoice.number,
+        invoiceDate: invoice.date,
+        dueDate: invoice.dueDate,
+        total: invoice.total,
+        client: client
+    };
+    
+    showEmailPreview();
+    
+    // Auto-update status to Envoyée if currently Brouillon
+    if (invoice.status === 'Brouillon') {
+        invoice.status = 'Envoyée';
+        applyFilters();
+    }
+}
+
+window.sendInvoiceEmail = sendInvoiceEmail;
 
 // Filter event listeners
 if (document.getElementById('periodFilter')) {
@@ -909,6 +1494,56 @@ function renderStatusChart() {
     });
 }
 
+// Toast notification
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-left: 4px solid var(--color-success);
+        padding: var(--space-16);
+        border-radius: var(--radius-base);
+        box-shadow: var(--shadow-lg);
+        z-index: 10000;
+        max-width: 300px;
+        font-size: var(--font-size-base);
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.transition = 'opacity 0.3s';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Confirmation modal
+let confirmCallback = null;
+
+function showConfirmation(title, message, callback) {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    confirmCallback = callback;
+    document.getElementById('confirmModal').classList.add('show');
+}
+
+document.getElementById('cancelConfirm').addEventListener('click', () => {
+    document.getElementById('confirmModal').classList.remove('show');
+    confirmCallback = null;
+});
+
+document.getElementById('confirmAction').addEventListener('click', () => {
+    if (confirmCallback) {
+        confirmCallback();
+    }
+    document.getElementById('confirmModal').classList.remove('show');
+    confirmCallback = null;
+});
+
 // Initialize app
 function initApp() {
     invoiceNumberInput.value = getNextInvoiceNumber();
@@ -916,6 +1551,7 @@ function initApp() {
     calculateTotal();
     renderCalendar();
     renderClientsTable();
+    renderInvoiceList();
     populateClientSelects();
     checkOverdueInvoices();
     applyFilters();
