@@ -465,22 +465,24 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
             <div class="invoice-header-left">
                 ${logoHTML}
                 <div class="invoice-company">${companyInfo.name}</div>
-                <div style="white-space: pre-line; font-size: var(--font-size-sm); line-height: 1.4;">${companyAddressLine}</div>
-                <div style="font-size: var(--font-size-sm);">SIRET: ${companyInfo.siret}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.6; margin-top: 5px;">${companyAddressLine}</div>
+                <div style="font-size: 12px; margin-top: 5px;">SIRET: ${companyInfo.siret}</div>
             </div>
             <div class="invoice-header-right">
-                <div><strong>${clientName}</strong></div>
-                <div style="white-space: pre-line; font-size: var(--font-size-sm); line-height: 1.4;">${clientAddress}</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">${clientName}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.6;">${clientAddress}</div>
             </div>
         </div>
         
-        <div style="margin-bottom: var(--space-12);">
-            <h2 class="invoice-number" style="margin: 0 0 var(--space-8) 0;">FACTURE N° ${invoiceNumber}</h2>
-            <div style="font-size: var(--font-size-sm);">
+        <div class="invoice-details">
+            <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
+            <div style="font-size: 13px;">
                 <div>Date: ${formatDateFR(invoiceDate)}</div>
                 <div>Échéance: ${formatDateFR(dueDate)}</div>
             </div>
         </div>
+        
+        <hr class="separator">
         
         <table class="invoice-table">
             <thead>
@@ -1868,70 +1870,167 @@ function downloadInvoicePDF() {
             <meta charset="UTF-8">
             <style>
                 @page { margin: 20mm; size: A4; }
-                body { font-family: Arial, sans-serif; padding: 15px; color: #134252; font-size: 12px; }
-                .header { position: relative; min-height: 100px; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #5E5240; page-break-inside: avoid; }
-                .header-left { position: absolute; top: 0; left: 0; max-width: 50%; }
-                .header-right { position: absolute; top: 60px; right: 0; text-align: right; max-width: 45%; }
-                .company { font-weight: bold; font-size: 16px; color: #21808D; margin-bottom: 5px; }
-                .invoice-number { white-space: nowrap; font-size: 18px; font-weight: bold; margin: 10px 0 8px 0; }
-                table { width: 100%; border-collapse: collapse; margin: 15px 0; page-break-inside: avoid; }
-                th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background-color: #f5f5f5; font-weight: bold; font-size: 11px; }
-                td { font-size: 11px; }
-                .totals { text-align: right; margin-top: 10px; padding-top: 10px; border-top: 2px solid #5E5240; font-size: 12px; page-break-inside: avoid; }
-                .legal { margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 9px; color: #666; line-height: 1.3; page-break-inside: avoid; }
-                .legal p { margin: 2px 0; }
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+                    padding: 0;
+                    margin: 0;
+                    color: #134252; 
+                    font-size: 14px;
+                    position: relative;
+                    min-height: 297mm;
+                }
+                .page-container {
+                    padding: 20mm;
+                    min-height: 257mm;
+                    position: relative;
+                }
+                .header { 
+                    position: relative; 
+                    min-height: 200px; 
+                    margin-bottom: 30px; 
+                    page-break-inside: avoid; 
+                }
+                .header-left { 
+                    position: absolute; 
+                    top: 0; 
+                    left: 0; 
+                    max-width: 50%; 
+                    line-height: 1.6;
+                }
+                .header-right { 
+                    position: absolute; 
+                    top: 115px; 
+                    right: 0; 
+                    text-align: right; 
+                    max-width: 45%; 
+                    line-height: 1.6;
+                }
+                .company { 
+                    font-weight: bold; 
+                    font-size: 18px; 
+                    color: #21808D; 
+                    margin-bottom: 8px; 
+                }
+                .separator {
+                    border: none;
+                    border-top: 1px solid #ddd;
+                    margin: 20px 0;
+                    clear: both;
+                }
+                .invoice-details {
+                    position: relative;
+                    margin-top: 205px;
+                    margin-bottom: 25px;
+                    line-height: 1.8;
+                    clear: both;
+                }
+                .invoice-number { 
+                    font-size: 20px; 
+                    font-weight: bold; 
+                    margin-bottom: 10px;
+                    white-space: nowrap;
+                }
+                table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin: 20px 0; 
+                    page-break-inside: avoid; 
+                }
+                th, td { 
+                    padding: 10px 12px; 
+                    text-align: left; 
+                    border-bottom: 1px solid #ddd; 
+                }
+                th { 
+                    background-color: #f5f5f5; 
+                    font-weight: bold; 
+                    font-size: 12px; 
+                }
+                td { 
+                    font-size: 12px; 
+                    min-height: 35px;
+                }
+                .totals { 
+                    text-align: right; 
+                    margin-top: 15px; 
+                    padding-top: 15px; 
+                    border-top: 2px solid #5E5240; 
+                    font-size: 14px; 
+                    page-break-inside: avoid; 
+                }
+                .legal { 
+                    position: absolute;
+                    bottom: 20mm;
+                    left: 20mm;
+                    right: 20mm;
+                    font-size: 9px; 
+                    color: #666; 
+                    line-height: 1.4; 
+                    background: #f9f9f9;
+                    padding: 10px;
+                    border-radius: 4px;
+                    page-break-inside: avoid;
+                }
+                .legal p { 
+                    margin: 3px 0; 
+                }
             </style>
         </head>
         <body>
-            <div class="header">
-                <div class="header-left">
-                    ${logoHTML}
-                    <div class="company">${companyInfo.name}</div>
-                    <div style="font-size: 11px; line-height: 1.4;">${companyAddressLine}</div>
-                    <div style="font-size: 11px;">SIRET: ${companyInfo.siret}</div>
+            <div class="page-container">
+                <div class="header">
+                    <div class="header-left">
+                        ${logoHTML}
+                        <div class="company">${companyInfo.name}</div>
+                        <div style="font-size: 12px; line-height: 1.6; margin-top: 5px;">${companyAddressLine}</div>
+                        <div style="font-size: 12px; margin-top: 5px;">SIRET: ${companyInfo.siret}</div>
+                    </div>
+                    <div class="header-right">
+                        <div style="font-weight: bold; margin-bottom: 5px;">${clientName}</div>
+                        <div style="white-space: pre-line; font-size: 12px; line-height: 1.6;">${clientAddress}</div>
+                    </div>
                 </div>
-                <div class="header-right">
-                    <div><strong>${clientName}</strong></div>
-                    <div style="white-space: pre-line; font-size: 11px; line-height: 1.4;">${clientAddress}</div>
+                
+                <div class="invoice-details">
+                    <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
+                    <div style="font-size: 13px;">
+                        <div>Date: ${formatDateFR(invoiceDate)}</div>
+                        <div>Échéance: ${formatDateFR(dueDate)}</div>
+                    </div>
                 </div>
-            </div>
-            
-            <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
-            <div style="margin-bottom: 15px; font-size: 11px;">
-                <div>Date: ${formatDateFR(invoiceDate)}</div>
-                <div>Échéance: ${formatDateFR(dueDate)}</div>
-            </div>
-            
-            <table>
-                <thead>
-                    <tr>
-                        <th>Description</th>
-                        <th style="text-align: center;">Quantité</th>
-                        <th style="text-align: right;">Prix unitaire</th>
-                        <th style="text-align: right;">Total HT</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>${description}</td>
-                        <td style="text-align: center;">${quantity}</td>
-                        <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
-                        <td style="text-align: right;">${total.toFixed(2)} €</td>
-                    </tr>
-                </tbody>
-            </table>
-            
-            <div class="totals">
-                ${tvaEnabled ? `
-                    <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                    <div>TVA (20%): ${tva.toFixed(2)} €</div>
-                    <div style="font-weight: bold; font-size: 14px; margin-top: 5px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
-                ` : `
-                    <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                    <div style="font-size: 10px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
-                    <div style="font-weight: bold; font-size: 14px; margin-top: 5px;">Total TTC: ${totalHT.toFixed(2)} €</div>
-                `}
+                
+                <hr class="separator">
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th style="text-align: center;">Quantité</th>
+                            <th style="text-align: right;">Prix unitaire</th>
+                            <th style="text-align: right;">Total HT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>${description}</td>
+                            <td style="text-align: center;">${quantity}</td>
+                            <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
+                            <td style="text-align: right;">${total.toFixed(2)} €</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <div class="totals">
+                    ${tvaEnabled ? `
+                        <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                        <div>TVA (20%): ${tva.toFixed(2)} €</div>
+                        <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
+                    ` : `
+                        <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                        <div style="font-size: 11px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
+                        <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalHT.toFixed(2)} €</div>
+                    `}
+                </div>
             </div>
             
             <div class="legal">
