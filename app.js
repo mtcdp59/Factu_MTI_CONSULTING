@@ -462,22 +462,23 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
     
     const previewHTML = `
         <div class="invoice-header">
-            <div>
+            <div class="invoice-header-left">
                 ${logoHTML}
                 <div class="invoice-company">${companyInfo.name}</div>
-                <div style="white-space: pre-line;">${companyAddressLine}</div>
-                <div>SIRET: ${companyInfo.siret}</div>
+                <div style="white-space: pre-line; font-size: var(--font-size-sm); line-height: 1.4;">${companyAddressLine}</div>
+                <div style="font-size: var(--font-size-sm);">SIRET: ${companyInfo.siret}</div>
             </div>
-            <div style="text-align: right;">
-                <h2 style="margin: 0 0 10px 0;">FACTURE N° ${invoiceNumber}</h2>
-                <div style="margin-bottom: 20px;">
-                    <div>Date: ${formatDateFR(invoiceDate)}</div>
-                    <div>Échéance: ${formatDateFR(dueDate)}</div>
-                </div>
-                <div style="border-top: 1px solid var(--color-border); padding-top: 10px; margin-top: 10px;">
-                    <div><strong>${clientName}</strong></div>
-                    <div style="white-space: pre-line;">${clientAddress}</div>
-                </div>
+            <div class="invoice-header-right">
+                <div><strong>${clientName}</strong></div>
+                <div style="white-space: pre-line; font-size: var(--font-size-sm); line-height: 1.4;">${clientAddress}</div>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: var(--space-12);">
+            <h2 class="invoice-number" style="margin: 0 0 var(--space-8) 0;">FACTURE N° ${invoiceNumber}</h2>
+            <div style="font-size: var(--font-size-sm);">
+                <div>Date: ${formatDateFR(invoiceDate)}</div>
+                <div>Échéance: ${formatDateFR(dueDate)}</div>
             </div>
         </div>
         
@@ -503,11 +504,11 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
         ${tvaSection}
         
         <div class="invoice-legal">
-            <p style="font-size: 10px; color: #666; line-height: 1.6;"><strong>Mentions légales obligatoires:</strong></p>
-            <p style="font-size: 10px; color: #666; line-height: 1.6;">Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</p>
-            ${!tvaEnabled ? '<p style="font-size: 10px; color: #666; line-height: 1.6;">TVA non applicable, art. 293 B du CGI</p>' : ''}
-            <p style="font-size: 10px; color: #666; line-height: 1.6;">En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
-            <p style="font-size: 10px; color: #666; line-height: 1.6;">Conditions de règlement: paiement à 30 jours</p>
+            <p><strong>Mentions légales obligatoires:</strong></p>
+            <p>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</p>
+            ${!tvaEnabled ? '<p>TVA non applicable, art. 293 B du CGI</p>' : ''}
+            <p>En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
+            <p>Conditions de règlement: paiement à 30 jours</p>
         </div>
     `;
     
@@ -1866,38 +1867,40 @@ function downloadInvoicePDF() {
         <head>
             <meta charset="UTF-8">
             <style>
-                @page { margin: 20mm; }
-                body { font-family: Arial, sans-serif; padding: 20px; color: #134252; min-height: 297mm; position: relative; }
-                .header { display: flex; justify-content: space-between; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #5E5240; }
-                .company { font-weight: bold; font-size: 18px; color: #21808D; }
-                .header-right { text-align: right; }
-                .client-box { border-top: 1px solid #ddd; padding-top: 10px; margin-top: 10px; }
-                h2 { margin: 0 0 10px 0; font-size: 20px; }
-                table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background-color: #f5f5f5; font-weight: bold; }
-                .legal { position: absolute; bottom: 20px; left: 20px; right: 20px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 10px; color: #666; line-height: 1.6; }
+                @page { margin: 20mm; size: A4; }
+                body { font-family: Arial, sans-serif; padding: 15px; color: #134252; font-size: 12px; }
+                .header { position: relative; min-height: 100px; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #5E5240; page-break-inside: avoid; }
+                .header-left { position: absolute; top: 0; left: 0; max-width: 50%; }
+                .header-right { position: absolute; top: 60px; right: 0; text-align: right; max-width: 45%; }
+                .company { font-weight: bold; font-size: 16px; color: #21808D; margin-bottom: 5px; }
+                .invoice-number { white-space: nowrap; font-size: 18px; font-weight: bold; margin: 10px 0 8px 0; }
+                table { width: 100%; border-collapse: collapse; margin: 15px 0; page-break-inside: avoid; }
+                th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #f5f5f5; font-weight: bold; font-size: 11px; }
+                td { font-size: 11px; }
+                .totals { text-align: right; margin-top: 10px; padding-top: 10px; border-top: 2px solid #5E5240; font-size: 12px; page-break-inside: avoid; }
+                .legal { margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 9px; color: #666; line-height: 1.3; page-break-inside: avoid; }
+                .legal p { margin: 2px 0; }
             </style>
         </head>
         <body>
             <div class="header">
-                <div>
+                <div class="header-left">
                     ${logoHTML}
                     <div class="company">${companyInfo.name}</div>
-                    <div>${companyAddressLine}</div>
-                    <div>SIRET: ${companyInfo.siret}</div>
+                    <div style="font-size: 11px; line-height: 1.4;">${companyAddressLine}</div>
+                    <div style="font-size: 11px;">SIRET: ${companyInfo.siret}</div>
                 </div>
                 <div class="header-right">
-                    <h2>FACTURE N° ${invoiceNumber}</h2>
-                    <div style="margin-bottom: 20px;">
-                        <div>Date: ${formatDateFR(invoiceDate)}</div>
-                        <div>Échéance: ${formatDateFR(dueDate)}</div>
-                    </div>
-                    <div class="client-box">
-                        <div><strong>${clientName}</strong></div>
-                        <div style="white-space: pre-line;">${clientAddress}</div>
-                    </div>
+                    <div><strong>${clientName}</strong></div>
+                    <div style="white-space: pre-line; font-size: 11px; line-height: 1.4;">${clientAddress}</div>
                 </div>
+            </div>
+            
+            <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
+            <div style="margin-bottom: 15px; font-size: 11px;">
+                <div>Date: ${formatDateFR(invoiceDate)}</div>
+                <div>Échéance: ${formatDateFR(dueDate)}</div>
             </div>
             
             <table>
@@ -1919,7 +1922,17 @@ function downloadInvoicePDF() {
                 </tbody>
             </table>
             
-            ${tvaSection}
+            <div class="totals">
+                ${tvaEnabled ? `
+                    <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                    <div>TVA (20%): ${tva.toFixed(2)} €</div>
+                    <div style="font-weight: bold; font-size: 14px; margin-top: 5px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
+                ` : `
+                    <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                    <div style="font-size: 10px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
+                    <div style="font-weight: bold; font-size: 14px; margin-top: 5px;">Total TTC: ${totalHT.toFixed(2)} €</div>
+                `}
+            </div>
             
             <div class="legal">
                 <p><strong>Mentions légales obligatoires:</strong></p>
