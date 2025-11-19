@@ -468,17 +468,17 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
                 <div style="white-space: pre-line;">${companyAddressLine}</div>
                 <div>SIRET: ${companyInfo.siret}</div>
             </div>
-            <div>
-                <h2>FACTURE N° ${invoiceNumber}</h2>
-                <div>Date: ${formatDateFR(invoiceDate)}</div>
-                <div>Échéance: ${formatDateFR(dueDate)}</div>
+            <div style="text-align: right;">
+                <h2 style="margin: 0 0 10px 0;">FACTURE N° ${invoiceNumber}</h2>
+                <div style="margin-bottom: 20px;">
+                    <div>Date: ${formatDateFR(invoiceDate)}</div>
+                    <div>Échéance: ${formatDateFR(dueDate)}</div>
+                </div>
+                <div style="border-top: 1px solid var(--color-border); padding-top: 10px; margin-top: 10px;">
+                    <div><strong>${clientName}</strong></div>
+                    <div style="white-space: pre-line;">${clientAddress}</div>
+                </div>
             </div>
-        </div>
-        
-        <div class="invoice-details">
-            <h3>Client</h3>
-            <div><strong>${clientName}</strong></div>
-            <div style="white-space: pre-line;">${clientAddress}</div>
         </div>
         
         <table class="invoice-table">
@@ -503,15 +503,11 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
         ${tvaSection}
         
         <div class="invoice-legal">
-            <p><strong>Mentions légales obligatoires - Micro-entreprise:</strong></p>
-            <p><strong>${companyInfo.name}</strong><br>
-            ${companyAddressLine}<br>
-            SIRET: ${companyInfo.siret}</p>
-            <p>• <strong>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</strong></p>
-            ${!tvaEnabled ? '<p>• <strong>TVA non applicable, art. 293 B du CGI</strong></p>' : ''}
-            <p>• En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
-            <p>• <strong>Conditions de règlement: paiement à 30 jours - Date d'échéance: ${formatDateFR(dueDate)}</strong></p>
-            <p>• Bénéficiaire de l'ACRE - Taux réduit de cotisations sociales</p>
+            <p style="font-size: 10px; color: #666; line-height: 1.6;"><strong>Mentions légales obligatoires:</strong></p>
+            <p style="font-size: 10px; color: #666; line-height: 1.6;">Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</p>
+            ${!tvaEnabled ? '<p style="font-size: 10px; color: #666; line-height: 1.6;">TVA non applicable, art. 293 B du CGI</p>' : ''}
+            <p style="font-size: 10px; color: #666; line-height: 1.6;">En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
+            <p style="font-size: 10px; color: #666; line-height: 1.6;">Conditions de règlement: paiement à 30 jours</p>
         </div>
     `;
     
@@ -1870,15 +1866,17 @@ function downloadInvoicePDF() {
         <head>
             <meta charset="UTF-8">
             <style>
-                body { font-family: Arial, sans-serif; padding: 20px; color: #134252; }
+                @page { margin: 20mm; }
+                body { font-family: Arial, sans-serif; padding: 20px; color: #134252; min-height: 297mm; position: relative; }
                 .header { display: flex; justify-content: space-between; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #5E5240; }
                 .company { font-weight: bold; font-size: 18px; color: #21808D; }
+                .header-right { text-align: right; }
+                .client-box { border-top: 1px solid #ddd; padding-top: 10px; margin-top: 10px; }
                 h2 { margin: 0 0 10px 0; font-size: 20px; }
-                .details { margin: 20px 0; }
                 table { width: 100%; border-collapse: collapse; margin: 20px 0; }
                 th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
                 th { background-color: #f5f5f5; font-weight: bold; }
-                .legal { margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 11px; color: #666; line-height: 1.6; }
+                .legal { position: absolute; bottom: 20px; left: 20px; right: 20px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 10px; color: #666; line-height: 1.6; }
             </style>
         </head>
         <body>
@@ -1889,17 +1887,17 @@ function downloadInvoicePDF() {
                     <div>${companyAddressLine}</div>
                     <div>SIRET: ${companyInfo.siret}</div>
                 </div>
-                <div>
+                <div class="header-right">
                     <h2>FACTURE N° ${invoiceNumber}</h2>
-                    <div>Date: ${formatDateFR(invoiceDate)}</div>
-                    <div>Échéance: ${formatDateFR(dueDate)}</div>
+                    <div style="margin-bottom: 20px;">
+                        <div>Date: ${formatDateFR(invoiceDate)}</div>
+                        <div>Échéance: ${formatDateFR(dueDate)}</div>
+                    </div>
+                    <div class="client-box">
+                        <div><strong>${clientName}</strong></div>
+                        <div style="white-space: pre-line;">${clientAddress}</div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="details">
-                <h3>Client</h3>
-                <div><strong>${clientName}</strong></div>
-                <div style="white-space: pre-line;">${clientAddress}</div>
             </div>
             
             <table>
@@ -1924,15 +1922,11 @@ function downloadInvoicePDF() {
             ${tvaSection}
             
             <div class="legal">
-                <p><strong>Mentions légales obligatoires - Micro-entreprise:</strong></p>
-                <p><strong>${companyInfo.name}</strong><br>
-                ${companyAddressLine}<br>
-                SIRET: ${companyInfo.siret}</p>
-                <p>• <strong>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</strong></p>
-                ${!tvaEnabled ? '<p>• <strong>TVA non applicable, art. 293 B du CGI</strong></p>' : ''}
-                <p>• En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
-                <p>• <strong>Conditions de règlement: paiement à 30 jours - Date d'échéance: ${formatDateFR(dueDate)}</strong></p>
-                <p>• Bénéficiaire de l'ACRE - Taux réduit de cotisations sociales</p>
+                <p><strong>Mentions légales obligatoires:</strong></p>
+                <p>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</p>
+                ${!tvaEnabled ? '<p>TVA non applicable, art. 293 B du CGI</p>' : ''}
+                <p>En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
+                <p>Conditions de règlement: paiement à 30 jours</p>
             </div>
         </body>
         </html>
