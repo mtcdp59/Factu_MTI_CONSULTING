@@ -465,12 +465,12 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
             <div class="invoice-header-left">
                 ${logoHTML}
                 <div class="invoice-company">${companyInfo.name}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.6; margin-top: 5px;">${companyAddressLine}</div>
-                <div style="font-size: 12px; margin-top: 5px;">SIRET: ${companyInfo.siret}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret}</div>
             </div>
             <div class="invoice-header-right">
-                <div style="font-weight: bold; margin-bottom: 5px;">${clientName}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.6;">${clientAddress}</div>
+                <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
             </div>
         </div>
         
@@ -506,11 +506,8 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
         ${tvaSection}
         
         <div class="invoice-legal">
-            <p><strong>Mentions légales obligatoires:</strong></p>
-            <p>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</p>
-            ${!tvaEnabled ? '<p>TVA non applicable, art. 293 B du CGI</p>' : ''}
-            <p>En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
-            <p>Conditions de règlement: paiement à 30 jours</p>
+            <p>Dispensé d'immatriculation RCS/RM - Micro-entrepreneur | TVA non applicable, art. 293 B du CGI</p>
+            <p>Pénalités retard: taux légal + 40€ | Conditions: paiement à 30 jours</p>
         </div>
     `;
     
@@ -1869,7 +1866,7 @@ function downloadInvoicePDF() {
         <head>
             <meta charset="UTF-8">
             <style>
-                @page { margin: 20mm; size: A4; }
+                @page { margin: 15mm; size: A4; }
                 body { 
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
                     padding: 0;
@@ -1880,14 +1877,16 @@ function downloadInvoicePDF() {
                     min-height: 297mm;
                 }
                 .page-container {
-                    padding: 20mm;
-                    min-height: 257mm;
+                    padding: 15mm;
+                    min-height: 267mm;
                     position: relative;
+                    page-break-inside: avoid;
+                    page-break-after: avoid;
                 }
                 .header { 
                     position: relative; 
-                    min-height: 200px; 
-                    margin-bottom: 30px; 
+                    min-height: 180px; 
+                    margin-bottom: 20px; 
                     page-break-inside: avoid; 
                 }
                 .header-left { 
@@ -1895,49 +1894,49 @@ function downloadInvoicePDF() {
                     top: 0; 
                     left: 0; 
                     max-width: 50%; 
-                    line-height: 1.6;
+                    line-height: 1.5;
                 }
                 .header-right { 
                     position: absolute; 
-                    top: 115px; 
+                    top: 110px; 
                     right: 0; 
                     text-align: right; 
                     max-width: 45%; 
-                    line-height: 1.6;
+                    line-height: 1.5;
                 }
                 .company { 
                     font-weight: bold; 
                     font-size: 18px; 
                     color: #21808D; 
-                    margin-bottom: 8px; 
+                    margin-bottom: 6px; 
                 }
                 .separator {
                     border: none;
                     border-top: 1px solid #ddd;
-                    margin: 20px 0;
+                    margin: 15px 0;
                     clear: both;
                 }
                 .invoice-details {
                     position: relative;
-                    margin-top: 205px;
-                    margin-bottom: 25px;
-                    line-height: 1.8;
+                    margin-top: 185px;
+                    margin-bottom: 20px;
+                    line-height: 1.6;
                     clear: both;
                 }
                 .invoice-number { 
                     font-size: 20px; 
                     font-weight: bold; 
-                    margin-bottom: 10px;
+                    margin-bottom: 8px;
                     white-space: nowrap;
                 }
                 table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin: 20px 0; 
+                    margin: 15px 0; 
                     page-break-inside: avoid; 
                 }
                 th, td { 
-                    padding: 10px 12px; 
+                    padding: 8px 12px; 
                     text-align: left; 
                     border-bottom: 1px solid #ddd; 
                 }
@@ -1948,31 +1947,32 @@ function downloadInvoicePDF() {
                 }
                 td { 
                     font-size: 12px; 
-                    min-height: 35px;
+                    min-height: 30px;
                 }
                 .totals { 
                     text-align: right; 
-                    margin-top: 15px; 
-                    padding-top: 15px; 
+                    margin-top: 12px; 
+                    padding-top: 12px; 
                     border-top: 2px solid #5E5240; 
                     font-size: 14px; 
                     page-break-inside: avoid; 
                 }
                 .legal { 
                     position: absolute;
-                    bottom: 20mm;
-                    left: 20mm;
-                    right: 20mm;
-                    font-size: 9px; 
+                    bottom: 15mm;
+                    left: 15mm;
+                    right: 15mm;
+                    font-size: 8px; 
                     color: #666; 
-                    line-height: 1.4; 
+                    line-height: 1.2; 
                     background: #f9f9f9;
-                    padding: 10px;
+                    padding: 8px;
                     border-radius: 4px;
+                    page-break-before: avoid;
                     page-break-inside: avoid;
                 }
                 .legal p { 
-                    margin: 3px 0; 
+                    margin: 2px 0; 
                 }
             </style>
         </head>
@@ -1982,12 +1982,12 @@ function downloadInvoicePDF() {
                     <div class="header-left">
                         ${logoHTML}
                         <div class="company">${companyInfo.name}</div>
-                        <div style="font-size: 12px; line-height: 1.6; margin-top: 5px;">${companyAddressLine}</div>
-                        <div style="font-size: 12px; margin-top: 5px;">SIRET: ${companyInfo.siret}</div>
+                        <div style="font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                        <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret}</div>
                     </div>
                     <div class="header-right">
-                        <div style="font-weight: bold; margin-bottom: 5px;">${clientName}</div>
-                        <div style="white-space: pre-line; font-size: 12px; line-height: 1.6;">${clientAddress}</div>
+                        <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
+                        <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
                     </div>
                 </div>
                 
@@ -2034,11 +2034,8 @@ function downloadInvoicePDF() {
             </div>
             
             <div class="legal">
-                <p><strong>Mentions légales obligatoires:</strong></p>
-                <p>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</p>
-                ${!tvaEnabled ? '<p>TVA non applicable, art. 293 B du CGI</p>' : ''}
-                <p>En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
-                <p>Conditions de règlement: paiement à 30 jours</p>
+                <p>Dispensé d'immatriculation RCS/RM - Micro-entrepreneur | TVA non applicable, art. 293 B du CGI</p>
+                <p>Pénalités retard: taux légal + 40€ | Conditions: paiement à 30 jours</p>
             </div>
         </body>
         </html>
