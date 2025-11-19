@@ -94,13 +94,16 @@ let tasks = [
 let currentView = 'week';
 let currentDate = new Date();
 
-// Company info
-const company = {
+// Company info - now editable via settings
+let companyInfo = {
     name: 'MTI CONSULTING',
-    address: '[Votre adresse]\n[Code postal] [Ville]',
-    siret: '[Votre SIRET]',
-    email: '[Votre email]',
-    phone: '[Votre téléphone]'
+    logoUrl: '',
+    siret: '[SIRET à venir]',
+    address: '[Adresse]',
+    postalCode: '[Code postal]',
+    city: '[Ville]',
+    email: 'mticonsulting59@gmail.com',
+    phone: '07 77 37 17 39'
 };
 
 // Tax rates - now stored in memory, editable via settings
@@ -448,12 +451,22 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
         `;
     }
     
+    // Build company address
+    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city 
+        ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
+        : '[À compléter dans Paramètres]';
+    
+    const logoHTML = companyInfo.logoUrl 
+        ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);">`
+        : '';
+    
     const previewHTML = `
         <div class="invoice-header">
             <div>
-                <div class="invoice-company">${company.name}</div>
-                <div>${company.address}</div>
-                <div>SIRET: ${company.siret}</div>
+                ${logoHTML}
+                <div class="invoice-company">${companyInfo.name}</div>
+                <div style="white-space: pre-line;">${companyAddressLine}</div>
+                <div>SIRET: ${companyInfo.siret}</div>
             </div>
             <div>
                 <h2>FACTURE N° ${invoiceNumber}</h2>
@@ -491,9 +504,9 @@ document.getElementById('previewInvoice').addEventListener('click', () => {
         
         <div class="invoice-legal">
             <p><strong>Mentions légales obligatoires - Micro-entreprise:</strong></p>
-            <p><strong>${company.name}</strong><br>
-            ${company.address}<br>
-            SIRET: ${company.siret}</p>
+            <p><strong>${companyInfo.name}</strong><br>
+            ${companyAddressLine}<br>
+            SIRET: ${companyInfo.siret}</p>
             <p>• <strong>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</strong></p>
             ${!tvaEnabled ? '<p>• <strong>TVA non applicable, art. 293 B du CGI</strong></p>' : ''}
             <p>• En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
@@ -564,8 +577,10 @@ Conditions de paiement : 30 jours nets
 Pour toute question, n'hésitez pas à me contacter.
 
 Cordialement,
+Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
-Email : mticonsulting59@gmail.com`;
+Email : mticonsulting59@gmail.com
+Téléphone : 07 77 37 17 39`;
     
     // Display preview
     document.getElementById('emailTo').textContent = emailTo || '(À compléter manuellement)';
@@ -614,8 +629,10 @@ Conditions de paiement : 30 jours nets
 Pour toute question, n'hésitez pas à me contacter.
 
 Cordialement,
+Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
-Email : mticonsulting59@gmail.com`;
+Email : mticonsulting59@gmail.com
+Téléphone : 07 77 37 17 39`;
     
     // URL encode
     const encodedSubject = encodeURIComponent(subject);
@@ -1448,7 +1465,25 @@ if (document.getElementById('periodFilter')) {
 }
 
 // PARAMÈTRES - Settings Management
+function loadCompanySettings() {
+    if (document.getElementById('logoUrl')) {
+        document.getElementById('logoUrl').value = companyInfo.logoUrl || '';
+        document.getElementById('companyLegalSiret').value = companyInfo.siret || '[SIRET à venir]';
+        document.getElementById('companyAddress').value = companyInfo.address || '[Adresse]';
+        document.getElementById('companyPostal').value = companyInfo.postalCode || '[Code postal]';
+        document.getElementById('companyCity').value = companyInfo.city || '[Ville]';
+    }
+}
+
 function saveSettings() {
+    // Save company info
+    if (document.getElementById('logoUrl')) {
+        companyInfo.logoUrl = document.getElementById('logoUrl').value || '';
+        companyInfo.siret = document.getElementById('companyLegalSiret').value || '[SIRET à venir]';
+        companyInfo.address = document.getElementById('companyAddress').value || '[Adresse]';
+        companyInfo.postalCode = document.getElementById('companyPostal').value || '[Code postal]';
+        companyInfo.city = document.getElementById('companyCity').value || '[Ville]';
+    }
     taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS').value) || 0;
     taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib').value) || 2.2;
     taxSettings.prorationMensuelle = parseFloat(document.getElementById('prorationMensuelle').value) || 8.33;
@@ -1489,6 +1524,25 @@ if (document.getElementById('saveSettings')) {
     document.getElementById('saveSettings').addEventListener('click', saveSettings);
     document.getElementById('resetSettings').addEventListener('click', resetSettings);
     document.getElementById('cfeAnnuel').addEventListener('input', updateCFEMensuel);
+}
+
+// Company settings event listeners
+if (document.getElementById('logoUrl')) {
+    document.getElementById('logoUrl').addEventListener('input', () => {
+        companyInfo.logoUrl = document.getElementById('logoUrl').value || '';
+    });
+    document.getElementById('companyLegalSiret').addEventListener('input', () => {
+        companyInfo.siret = document.getElementById('companyLegalSiret').value || '[SIRET à venir]';
+    });
+    document.getElementById('companyAddress').addEventListener('input', () => {
+        companyInfo.address = document.getElementById('companyAddress').value || '[Adresse]';
+    });
+    document.getElementById('companyPostal').addEventListener('input', () => {
+        companyInfo.postalCode = document.getElementById('companyPostal').value || '[Code postal]';
+    });
+    document.getElementById('companyCity').addEventListener('input', () => {
+        companyInfo.city = document.getElementById('companyCity').value || '[Ville]';
+    });
 }
 
 // CALCULS - Tax Calculator
@@ -1544,9 +1598,15 @@ function calculateTaxes() {
     document.getElementById('calcNet').textContent = net.toFixed(2) + ' €';
 }
 
-if (caInput) caInput.addEventListener('input', calculateTaxes);
-if (acreToggle) acreToggle.addEventListener('change', calculateTaxes);
-if (versementToggle) versementToggle.addEventListener('change', calculateTaxes);
+if (caInput) {
+    caInput.addEventListener('input', calculateTaxes);
+}
+if (acreToggle) {
+    acreToggle.addEventListener('change', calculateTaxes);
+}
+if (versementToggle) {
+    versementToggle.addEventListener('change', calculateTaxes);
+}
 
 // Charts
 function renderCharts() {
@@ -1755,6 +1815,153 @@ document.getElementById('confirmAction').addEventListener('click', () => {
     confirmBtn.style.color = '';
 });
 
+// PDF Download functionality using html2pdf
+function downloadInvoicePDF() {
+    const clientName = document.getElementById('clientName').value;
+    const clientAddress = document.getElementById('clientAddress').value;
+    const invoiceNumber = invoiceNumberInput.value;
+    const invoiceDate = invoiceDateInput.value;
+    const dueDate = dueDateInput.value;
+    const description = document.getElementById('serviceDescription').value;
+    const quantity = quantityInput.value;
+    const unitPrice = unitPriceInput.value;
+    const total = calculateTotal();
+    
+    if (!clientName || !clientAddress || !invoiceDate || !dueDate || !description || !quantity || !unitPrice) {
+        alert('Veuillez remplir tous les champs obligatoires avant de télécharger le PDF');
+        return;
+    }
+    
+    const tvaEnabled = document.getElementById('tvaToggle').checked;
+    const totalHT = total;
+    const tva = tvaEnabled ? totalHT * 0.20 : 0;
+    const totalTTC = totalHT + tva;
+    
+    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city 
+        ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
+        : '[À compléter dans Paramètres]';
+    
+    const logoHTML = companyInfo.logoUrl 
+        ? `<img src="${companyInfo.logoUrl}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;">`
+        : '';
+    
+    let tvaSection = '';
+    if (tvaEnabled) {
+        tvaSection = `
+            <div style="text-align: right; margin-top: 20px; font-size: 14px;">
+                <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                <div>TVA (20%): ${tva.toFixed(2)} €</div>
+                <div style="font-weight: bold; font-size: 16px; margin-top: 5px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
+            </div>
+        `;
+    } else {
+        tvaSection = `
+            <div style="text-align: right; margin-top: 20px; font-size: 14px;">
+                <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                <div style="font-size: 12px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
+                <div style="font-weight: bold; font-size: 16px; margin-top: 5px;">Total TTC: ${totalHT.toFixed(2)} €</div>
+            </div>
+        `;
+    }
+    
+    const pdfContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; color: #134252; }
+                .header { display: flex; justify-content: space-between; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #5E5240; }
+                .company { font-weight: bold; font-size: 18px; color: #21808D; }
+                h2 { margin: 0 0 10px 0; font-size: 20px; }
+                .details { margin: 20px 0; }
+                table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #f5f5f5; font-weight: bold; }
+                .legal { margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 11px; color: #666; line-height: 1.6; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div>
+                    ${logoHTML}
+                    <div class="company">${companyInfo.name}</div>
+                    <div>${companyAddressLine}</div>
+                    <div>SIRET: ${companyInfo.siret}</div>
+                </div>
+                <div>
+                    <h2>FACTURE N° ${invoiceNumber}</h2>
+                    <div>Date: ${formatDateFR(invoiceDate)}</div>
+                    <div>Échéance: ${formatDateFR(dueDate)}</div>
+                </div>
+            </div>
+            
+            <div class="details">
+                <h3>Client</h3>
+                <div><strong>${clientName}</strong></div>
+                <div style="white-space: pre-line;">${clientAddress}</div>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th style="text-align: center;">Quantité</th>
+                        <th style="text-align: right;">Prix unitaire</th>
+                        <th style="text-align: right;">Total HT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>${description}</td>
+                        <td style="text-align: center;">${quantity}</td>
+                        <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
+                        <td style="text-align: right;">${total.toFixed(2)} €</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            ${tvaSection}
+            
+            <div class="legal">
+                <p><strong>Mentions légales obligatoires - Micro-entreprise:</strong></p>
+                <p><strong>${companyInfo.name}</strong><br>
+                ${companyAddressLine}<br>
+                SIRET: ${companyInfo.siret}</p>
+                <p>• <strong>Dispensé d'immatriculation au RCS/RM - Micro-entrepreneur</strong></p>
+                ${!tvaEnabled ? '<p>• <strong>TVA non applicable, art. 293 B du CGI</strong></p>' : ''}
+                <p>• En cas de retard de paiement: intérêts de retard au taux légal + indemnité forfaitaire de 40€</p>
+                <p>• <strong>Conditions de règlement: paiement à 30 jours - Date d'échéance: ${formatDateFR(dueDate)}</strong></p>
+                <p>• Bénéficiaire de l'ACRE - Taux réduit de cotisations sociales</p>
+            </div>
+        </body>
+        </html>
+    `;
+    
+    // Create a temporary iframe to render the PDF
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    const iframeDoc = iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(pdfContent);
+    iframeDoc.close();
+    
+    // Wait for content to load, then print
+    setTimeout(() => {
+        iframe.contentWindow.print();
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 1000);
+    }, 500);
+}
+
+// Download PDF button listener
+if (document.getElementById('downloadPDF')) {
+    document.getElementById('downloadPDF').addEventListener('click', downloadInvoicePDF);
+}
+
 // Initialize app
 function initApp() {
     setDefaultDates();
@@ -1769,6 +1976,7 @@ function initApp() {
     renderCharts();
     calculateTaxes();
     updateCFEMensuel();
+    loadCompanySettings();
 }
 
 // Start the app

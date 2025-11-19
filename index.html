@@ -741,6 +741,7 @@ tr:hover {
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEditMode()">Annuler</button>
                         <button type="button" class="btn btn-secondary" id="previewInvoice">👁️ Aperçu</button>
+                        <button type="button" class="btn btn-secondary" id="downloadPDF">📥 Télécharger PDF</button>
                         <button type="submit" class="btn btn-primary" id="submitInvoiceBtn">💾 Créer facture</button>
                         <button type="button" class="btn btn-primary" id="sendEmailBtn" style="display: none;">📧 Envoyer par email</button>
                         <button type="button" class="btn btn-secondary" id="newInvoiceBtn" style="display: none;" onclick="resetInvoiceForm()">➕ Nouvelle facture</button>
@@ -997,6 +998,31 @@ tr:hover {
                 <h2 class="card-title">Paramètres de Calcul</h2>
                 <p style="color: var(--color-text-secondary); margin-bottom: var(--space-24);">Configurez les taux utilisés pour les calculs de charges et d'impôts.</p>
                 
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-border);">Informations entreprise</h3>
+                <div class="form-group">
+                    <label class="form-label">Logo URL (optionnel)</label>
+                    <input type="text" class="form-control" id="logoUrl" placeholder="https://exemple.com/logo.png">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">URL de l'image du logo à afficher sur les factures</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SIRET</label>
+                    <input type="text" class="form-control" id="companyLegalSiret" placeholder="123 456 789 00012">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Adresse</label>
+                    <input type="text" class="form-control" id="companyAddress" placeholder="123 Rue de la République">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Code postal</label>
+                        <input type="text" class="form-control" id="companyPostal" placeholder="75001">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ville</label>
+                        <input type="text" class="form-control" id="companyCity" placeholder="Paris">
+                    </div>
+                </div>
+
                 <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-border);">IS / IRPP</h3>
                 <div class="form-group">
                     <label class="form-label">Taux IS (IRPP/Impôt) (%)</label>
