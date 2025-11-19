@@ -1,4 +1,7 @@
 // In-memory data storage
+let isEditMode = false;
+let editingInvoiceIndex = -1;
+
 let clients = [
     {
         name: 'Entreprise ABC',
@@ -610,7 +613,7 @@ Email : mticonsulting59@gmail.com`;
 invoiceForm.addEventListener('submit', (e) => {
     e.preventDefault();
     
-    const invoice = {
+    const invoiceData = {
         number: invoiceNumberInput.value,
         client: document.getElementById('clientName').value,
         clientSiret: document.getElementById('clientSiret').value,
@@ -620,30 +623,60 @@ invoiceForm.addEventListener('submit', (e) => {
         description: document.getElementById('serviceDescription').value,
         quantity: parseFloat(quantityInput.value),
         unitPrice: parseFloat(unitPriceInput.value),
-        total: calculateTotal(),
-        status: 'Brouillon',
-        montantRecu: 0,
-        dateReception: null
+        total: calculateTotal()
     };
     
-    invoices.push(invoice);
-    showToast('Facture enregistrée avec succès!');
+    if (isEditMode) {
+        // Update existing invoice
+        invoices[editingInvoiceIndex] = {
+            ...invoices[editingInvoiceIndex],
+            ...invoiceData
+        };
+        showToast('✅ Facture mise à jour');
+        
+        // Exit edit mode
+        cancelEditMode();
+    } else {
+        // Create new invoice
+        const invoice = {
+            ...invoiceData,
+            status: 'Brouillon',
+            montantRecu: 0,
+            dateReception: null
+        };
+        
+        invoices.push(invoice);
+        showToast('✅ Facture créée avec succès');
+        
+        // Show send email button and new invoice button
+        document.getElementById('sendEmailBtn').style.display = 'inline-flex';
+        document.getElementById('newInvoiceBtn').style.display = 'inline-flex';
+        
+        // Add prompt after save
+        setTimeout(() => {
+            if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
+                document.getElementById('sendEmailBtn').click();
+            }
+        }, 100);
+    }
+    
+    // Refresh invoice list and tracking
     renderInvoiceList();
-    
-    // Show send email button and new invoice button
-    document.getElementById('sendEmailBtn').style.display = 'inline-flex';
-    document.getElementById('newInvoiceBtn').style.display = 'inline-flex';
-    
-    // Add prompt after save
-    setTimeout(() => {
-        if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
-            document.getElementById('sendEmailBtn').click();
-        }
-    }, 100);
+    applyFilters();
+    renderCharts();
 });
 
 // Add a reset button handler
 function resetInvoiceForm() {
+    // Exit edit mode if active
+    if (isEditMode) {
+        isEditMode = false;
+        editingInvoiceIndex = -1;
+        document.getElementById('editModeIndicator').style.display = 'none';
+        document.getElementById('submitInvoiceBtn').textContent = '💾 Créer facture';
+        document.getElementById('cancelEditBtn').style.display = 'none';
+    }
+    
     invoiceForm.reset();
     document.getElementById('clientSelect').value = '';
     document.getElementById('clientName').readOnly = false;
@@ -1108,6 +1141,13 @@ function renderInvoiceList() {
     const tbody = document.getElementById('invoiceListBody');
     tbody.innerHTML = '';
     
+    if (invoices.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="6" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucune facture créée</td>';
+        tbody.appendChild(row);
+        return;
+    }
+    
     invoices.forEach((invoice, index) => {
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -1117,16 +1157,79 @@ function renderInvoiceList() {
             <td><strong>${invoice.total.toFixed(2)} €</strong></td>
             <td><span class="status-badge status-${invoice.status.toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status}</span></td>
             <td>
-                <button class="btn btn-sm btn-secondary" onclick="editInvoice(${index})">✏️ Modifier</button>
-                <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" style="margin-left: var(--space-4);">📧 Email</button>
-                <button class="btn btn-sm btn-secondary" onclick="deleteInvoice(${index})" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+                <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
+                <button class="btn btn-sm btn-secondary" onclick="deleteInvoiceFromList(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+                <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
             </td>
         `;
         tbody.appendChild(row);
     });
 }
 
-// Edit invoice
+// Edit invoice in main form (FACTURES tab)
+function editInvoiceInForm(index) {
+    const invoice = invoices[index];
+    
+    // Set edit mode
+    isEditMode = true;
+    editingInvoiceIndex = index;
+    
+    // Show edit mode indicator
+    document.getElementById('editModeIndicator').style.display = 'block';
+    document.getElementById('editingInvoiceNumber').textContent = invoice.number;
+    
+    // Update submit button text
+    document.getElementById('submitInvoiceBtn').textContent = '💾 Mettre à jour facture';
+    
+    // Show cancel button
+    document.getElementById('cancelEditBtn').style.display = 'inline-flex';
+    
+    // Pre-fill form fields
+    document.getElementById('invoiceNumber').value = invoice.number;
+    document.getElementById('clientName').value = invoice.client;
+    document.getElementById('clientSiret').value = invoice.clientSiret || '';
+    document.getElementById('clientAddress').value = invoice.clientAddress || '';
+    document.getElementById('invoiceDate').value = invoice.date;
+    document.getElementById('dueDate').value = invoice.dueDate;
+    document.getElementById('serviceDescription').value = invoice.description;
+    document.getElementById('quantity').value = invoice.quantity;
+    document.getElementById('unitPrice').value = invoice.unitPrice;
+    
+    // Reset client select to manual mode
+    document.getElementById('clientSelect').value = '';
+    document.getElementById('clientName').readOnly = false;
+    document.getElementById('clientSiret').readOnly = false;
+    document.getElementById('clientAddress').readOnly = false;
+    
+    // Recalculate totals
+    calculateTotal();
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Cancel edit mode
+function cancelEditMode() {
+    isEditMode = false;
+    editingInvoiceIndex = -1;
+    
+    // Hide edit mode indicator
+    document.getElementById('editModeIndicator').style.display = 'none';
+    
+    // Reset submit button text
+    document.getElementById('submitInvoiceBtn').textContent = '💾 Créer facture';
+    
+    // Hide cancel button
+    document.getElementById('cancelEditBtn').style.display = 'none';
+    
+    // Reset form
+    resetInvoiceForm();
+}
+
+window.editInvoiceInForm = editInvoiceInForm;
+window.cancelEditMode = cancelEditMode;
+
+// Edit invoice (for tracking table modal)
 function editInvoice(index) {
     const invoice = invoices[index];
     document.getElementById('editInvoiceIndex').value = index;
@@ -1180,18 +1283,41 @@ document.getElementById('editInvoiceForm').addEventListener('submit', (e) => {
     showToast('Facture mise à jour');
 });
 
-// Delete invoice
-function deleteInvoice(index) {
+// Delete invoice from list (FACTURES tab)
+function deleteInvoiceFromList(index) {
     const invoice = invoices[index];
     showConfirmation(
-        'Supprimer la facture',
-        `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} ?`,
+        'Confirmation de suppression',
+        `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
             renderInvoiceList();
             applyFilters();
             renderCharts();
-            showToast('Facture supprimée');
+            showToast('✅ Facture supprimée');
+            
+            // If we were editing this invoice, cancel edit mode
+            if (isEditMode && editingInvoiceIndex === index) {
+                cancelEditMode();
+            }
+        }
+    );
+}
+
+window.deleteInvoiceFromList = deleteInvoiceFromList;
+
+// Delete invoice (for tracking table)
+function deleteInvoice(index) {
+    const invoice = invoices[index];
+    showConfirmation(
+        'Confirmation de suppression',
+        `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
+        () => {
+            invoices.splice(index, 1);
+            renderInvoiceList();
+            applyFilters();
+            renderCharts();
+            showToast('✅ Facture supprimée');
         }
     );
 }
@@ -1528,12 +1654,30 @@ function showConfirmation(title, message, callback) {
     document.getElementById('confirmTitle').textContent = title;
     document.getElementById('confirmMessage').textContent = message;
     confirmCallback = callback;
+    
+    // Update button styling for delete confirmations
+    const confirmBtn = document.getElementById('confirmAction');
+    if (title.toLowerCase().includes('supprimer')) {
+        confirmBtn.textContent = 'Supprimer';
+        confirmBtn.style.backgroundColor = 'var(--color-error)';
+        confirmBtn.style.color = 'white';
+    } else {
+        confirmBtn.textContent = 'Confirmer';
+        confirmBtn.style.backgroundColor = '';
+        confirmBtn.style.color = '';
+    }
+    
     document.getElementById('confirmModal').classList.add('show');
 }
 
 document.getElementById('cancelConfirm').addEventListener('click', () => {
     document.getElementById('confirmModal').classList.remove('show');
     confirmCallback = null;
+    
+    // Reset button styling
+    const confirmBtn = document.getElementById('confirmAction');
+    confirmBtn.style.backgroundColor = '';
+    confirmBtn.style.color = '';
 });
 
 document.getElementById('confirmAction').addEventListener('click', () => {
@@ -1542,6 +1686,11 @@ document.getElementById('confirmAction').addEventListener('click', () => {
     }
     document.getElementById('confirmModal').classList.remove('show');
     confirmCallback = null;
+    
+    // Reset button styling
+    const confirmBtn = document.getElementById('confirmAction');
+    confirmBtn.style.backgroundColor = '';
+    confirmBtn.style.color = '';
 });
 
 // Initialize app

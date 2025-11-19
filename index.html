@@ -651,6 +651,9 @@ tr:hover {
         <div id="factures" class="tab-content active">
             <div class="card">
                 <h2 class="card-title">Générateur de Factures</h2>
+                <div id="editModeIndicator" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-orange-500-rgb), 0.15); color: var(--color-warning); border-radius: var(--radius-base); margin-bottom: var(--space-16); border: 1px solid rgba(var(--color-orange-500-rgb), 0.25); font-weight: var(--font-weight-semibold);">
+                    ✏️ Modification de la facture #<span id="editingInvoiceNumber"></span>
+                </div>
                 <form id="invoiceForm">
                     <div class="form-row">
                         <div class="form-group">
@@ -736,8 +739,9 @@ tr:hover {
                     </div>
 
                     <div class="action-buttons">
+                        <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEditMode()">Annuler</button>
                         <button type="button" class="btn btn-secondary" id="previewInvoice">👁️ Aperçu</button>
-                        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                        <button type="submit" class="btn btn-primary" id="submitInvoiceBtn">💾 Créer facture</button>
                         <button type="button" class="btn btn-primary" id="sendEmailBtn" style="display: none;">📧 Envoyer par email</button>
                         <button type="button" class="btn btn-secondary" id="newInvoiceBtn" style="display: none;" onclick="resetInvoiceForm()">➕ Nouvelle facture</button>
                     </div>
@@ -746,7 +750,7 @@ tr:hover {
             
             <!-- Invoice List -->
             <div class="card">
-                <h2 class="card-title">Factures créées</h2>
+                <h2 class="card-title">Liste des factures</h2>
                 <div class="table-wrapper">
                     <table>
                         <thead>
@@ -760,6 +764,7 @@ tr:hover {
                             </tr>
                         </thead>
                         <tbody id="invoiceListBody">
+                            <!-- Invoices will be populated here -->
                         </tbody>
                     </table>
                 </div>
