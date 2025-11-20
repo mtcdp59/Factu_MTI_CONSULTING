@@ -2,99 +2,19 @@
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
+
+
 // Google Apps Script configuration
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
 const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
 
-let clients = [
-    {
-        name: 'Entreprise ABC',
-        siret: '123 456 789 00012',
-        address: '123 Rue de la République\n75001 Paris',
-        email_facturation: 'facturation@entreprise-abc.fr',
-        contact_name: 'Marie Dupont'
-    },
-    {
-        name: 'Société XYZ',
-        siret: '987 654 321 00034',
-        address: '456 Avenue des Champs\n69002 Lyon',
-        email_facturation: '',
-        contact_name: ''
-    }
-];
+let clients = [];
 
-let invoices = [
-    {
-        number: '202511-001',
-        client: 'Entreprise ABC',
-        clientSiret: '123 456 789 00012',
-        clientAddress: '123 Rue de la République\n75001 Paris',
-        date: '2025-11-15',
-        dueDate: '2025-12-15',
-        description: 'Prestation de conseil en développement',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Payée',
-        montantRecu: 7200,
-        dateReception: '2025-12-10'
-    },
-    {
-        number: '202512-001',
-        client: 'Société XYZ',
-        clientSiret: '987 654 321 00034',
-        clientAddress: '456 Avenue des Champs\n69002 Lyon',
-        date: '2025-12-01',
-        dueDate: '2025-12-31',
-        description: 'Développement application web',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Envoyée',
-        montantRecu: 0,
-        dateReception: null
-    },
-    {
-        number: '202510-001',
-        client: 'Entreprise ABC',
-        clientSiret: '123 456 789 00012',
-        clientAddress: '123 Rue de la République\n75001 Paris',
-        date: '2025-10-15',
-        dueDate: '2025-11-14',
-        description: 'Conseil stratégique',
-        quantity: 10,
-        unitPrice: 600,
-        total: 6000,
-        status: 'Retard',
-        montantRecu: 0,
-        dateReception: null
-    },
-    {
-        number: '202512-002',
-        client: 'Société XYZ',
-        clientSiret: '987 654 321 00034',
-        clientAddress: '456 Avenue des Champs\n69002 Lyon',
-        date: '2025-12-15',
-        dueDate: '2026-01-14',
-        description: 'Audit technique',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Brouillon',
-        montantRecu: 0,
-        dateReception: null
-    }
-];
+let invoices = [];
 
-let tasks = [
-    { date: '2025-12-16', startTime: '09:00', duration: 3, description: 'Développement module facturation', type: 'Travail' },
-    { date: '2025-12-16', startTime: '14:00', duration: 2, description: 'Réunion client Entreprise ABC', type: 'Réunion client' },
-    { date: '2025-12-17', startTime: '10:00', duration: 1.5, description: 'Déclaration URSSAF', type: 'Administratif' },
-    { date: '2025-12-18', startTime: '09:30', duration: 4, description: 'Consulting SI Finance', type: 'Travail' },
-    { date: '2025-12-19', startTime: '15:00', duration: 1, description: 'Suivi projet Société XYZ', type: 'Réunion client' }
-];
+let tasks = [];
 
 // Calendar state
 let currentView = 'week';
@@ -102,14 +22,12 @@ let currentDate = new Date();
 
 // Company info - now editable via settings
 let companyInfo = {
-    name: 'MTI CONSULTING',
-    logoUrl: '',
-    siret: '[SIRET à venir]',
-    address: '[Adresse]',
-    postalCode: '[Code postal]',
-    city: '[Ville]',
-    email: 'mticonsulting59@gmail.com',
-    phone: '07 77 37 17 39'
+  name: 'MTI CONSULTING',
+  logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+  siret: '994 149 904 00017',
+  adresse: '13A rue du Général de Gaulle',
+  codePostal: '59110',
+  ville: 'La Madeleine'
 };
 
 // Tax rates - now stored in memory, editable via settings
@@ -553,28 +471,27 @@ document.getElementById('sendEmailBtn').addEventListener('click', () => {
         client
     };
     
-    showEmailPreview();
+    showEmailPreview(invoice, clientEmail);
 });
 
-function showEmailPreview() {
-    const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
-    
-    // Check if email is configured
-    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
-    const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
-    const emailTo = hasEmail ? client.email_facturation : '';
-    
-    // Build email content
-    const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
-    const body = `Bonjour ${contactName},
+function showEmailPreview(invoice, clientEmail) {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width: 600px;">
+      <h2>Aperçu de l'email</h2>
+      <div style="margin: 20px 0;">
+        <p><strong>À :</strong> ${clientEmail}</p>
+        <p><strong>Objet :</strong> Facture #${invoice.number} - MTI CONSULTING</p>
+        <hr>
+        <div style="white-space: pre-line; font-family: monospace; background: #f5f5f5; padding: 15px; border-radius: 4px;">
+Bonjour ${invoice.contactName || invoice.client},
 
-Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
+Veuillez trouver ci-joint la facture #${invoice.number} d'un montant de ${invoice.total}€ HT.
 
-Date d'émission : ${formatDateFR(invoiceDate)}
-Date d'échéance : ${formatDateFR(dueDate)}
+Date d'émission : ${invoice.date}
+Date d'échéance : ${invoice.dueDate}
 Conditions de paiement : 30 jours nets
-
-⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
 
 Pour toute question, n'hésitez pas à me contacter.
 
@@ -582,24 +499,25 @@ Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
 Email : mticonsulting59@gmail.com
-Téléphone : 07 77 37 17 39`;
-    
-    // Display preview
-    document.getElementById('emailTo').textContent = emailTo || '(À compléter manuellement)';
-    document.getElementById('emailSubject').textContent = subject;
-    document.getElementById('emailBody').textContent = body;
-    
-    // Show warning if no email
-    const warningDiv = document.getElementById('emailWarning');
-    if (!hasEmail) {
-        warningDiv.style.display = 'block';
-        warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>L\'email s\'ouvrira en brouillon sans destinataire. Veuillez ajouter l\'email dans la gestion des tiers ou compléter manuellement.';
-    } else {
-        warningDiv.style.display = 'none';
-    }
-    
-    document.getElementById('emailModal').classList.add('show');
+Téléphone : 07 77 37 17 39
+        </div>
+        <p style="margin-top: 15px;"><strong>Pièce jointe :</strong> Facture-${invoice.number}-${invoice.client}.pdf</p>
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn btn--secondary" onclick="this.closest('.modal').remove()">Annuler</button>
+        <button class="btn btn--primary" onclick="confirmSendEmail('${invoice.number}', '${clientEmail}')">Envoyer</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
+
+function confirmSendEmail(invoiceNumber, clientEmail) {
+  const invoice = invoices.find(inv => inv.number === invoiceNumber);
+  document.querySelector('.modal').remove();
+  sendInvoiceWithPDF(invoice, clientEmail);
+}
+
 
 document.getElementById('closeEmailModal').addEventListener('click', () => {
     document.getElementById('emailModal').classList.remove('show');
@@ -1585,62 +1503,57 @@ const acreToggle = document.getElementById('acreToggle');
 const versementToggle = document.getElementById('versementToggle');
 
 function calculateTaxes() {
-    const ca = parseFloat(caInput.value) || 0;
-    const acreActive = acreToggle.checked;
-    const versementLib = versementToggle.checked;
+  const ca = parseFloat(document.getElementById('ca-input').value) || 0;
+  const versementLibActif = document.getElementById('versement-lib-toggle').checked;
+  const acreActif = document.getElementById('acre-toggle').checked;
+  
+  // Charges sociales
+  const tauxCharges = acreActif ? settings.acreActif : settings.acreInactif;
+  const chargesSociales = ca * (tauxCharges / 100);
+  
+  // Impôt
+  let impot = 0;
+  if (versementLibActif) {
+    // Versement libératoire
+    impot = ca * (settings.versementLiberatoire / 100);
+  } else {
+    // IRPP barème progressif
+    const baseImposable = ca * 0.66; // Abattement 34%
+    const baseImposableMensuelle = baseImposable;
     
-    // Calculate charges using settings
-    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
-    const charges = ca * chargesRate;
+    // Barème mensuel (annuel / 12)
+    const tranche1 = 11294 / 12; // 941.17€
+    const tranche2 = 28797 / 12; // 2399.75€
     
-    // Calculate taxes based on versement libératoire toggle
-    let impot = 0;
-    let impotLabel = '';
-    
-    if (versementLib) {
-        // Versement libératoire: 2.2% flat rate on CA
-        impot = ca * (taxSettings.versementLiberatoire / 100);
-        impotLabel = `${impot.toFixed(2)} € (Versement libératoire ${taxSettings.versementLiberatoire}%)`;
+    if (baseImposableMensuelle <= tranche1) {
+      impot = 0;
+    } else if (baseImposableMensuelle <= tranche2) {
+      impot = (baseImposableMensuelle - tranche1) * 0.11;
     } else {
-        // IRPP barème progressif with 34% abattement
-        const baseImposable = ca * 0.66; // After 34% abattement
-        
-        // Apply progressive tax brackets (monthly amounts)
-        const tranche1 = 11294 / 12; // 941.17€ at 0%
-        const tranche2 = 28797 / 12; // 2399.75€ at 11%
-        
-        if (baseImposable <= tranche1) {
-            impot = 0;
-        } else if (baseImposable <= tranche2) {
-            impot = (baseImposable - tranche1) * 0.11;
-        } else {
-            impot = (tranche2 - tranche1) * 0.11 + (baseImposable - tranche2) * 0.30;
-        }
-        
-        impotLabel = `${impot.toFixed(2)} € (IRPP barème progressif)`;
+      impot = ((tranche2 - tranche1) * 0.11) + ((baseImposableMensuelle - tranche2) * 0.30);
     }
-    
-    // Calculate CFE monthly
-    const cfe = taxSettings.cfeAnnuel / 12;
-    const net = ca - charges - impot - cfe;
-    
-    // Display results
-    document.getElementById('calcCA').textContent = ca.toFixed(2) + ' €';
-    document.getElementById('calcCharges').textContent = charges.toFixed(2) + ' € (' + (chargesRate * 100).toFixed(1) + '%)';
-    document.getElementById('calcImpot').textContent = impotLabel;
-    document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)';
-    document.getElementById('calcNet').textContent = net.toFixed(2) + ' €';
+  }
+  
+  // CFE mensuelle
+  const cfeMensuelle = (settings.cfeAnnuel * (settings.prorationMensuelle / 100));
+  
+  // Net mensuel
+  const netMensuel = ca - chargesSociales - impot - cfeMensuelle;
+  
+  // Affichage
+  document.getElementById('charges-result').textContent = chargesSociales.toFixed(2) + ' €';
+  document.getElementById('impot-result').textContent = impot.toFixed(2) + ' €';
+  document.getElementById('impot-label').textContent = versementLibActif ? 
+    'Versement libératoire (' + settings.versementLiberatoire + '%)' : 
+    'IRPP barème progressif';
+  document.getElementById('cfe-result').textContent = cfeMensuelle.toFixed(2) + ' €';
+  document.getElementById('net-result').textContent = netMensuel.toFixed(2) + ' €';
 }
 
-if (caInput) {
-    caInput.addEventListener('input', calculateTaxes);
-}
-if (acreToggle) {
-    acreToggle.addEventListener('change', calculateTaxes);
-}
-if (versementToggle) {
-    versementToggle.addEventListener('change', calculateTaxes);
-}
+// Ajouter les event listeners
+document.getElementById('ca-input').addEventListener('input', calculateTaxes);
+document.getElementById('versement-lib-toggle').addEventListener('change', calculateTaxes);
+document.getElementById('acre-toggle').addEventListener('change', calculateTaxes);
 
 // Charts
 function renderCharts() {
@@ -1940,53 +1853,98 @@ async function syncToGoogleCalendar() {
 }
 
 // Send invoice via Gmail with PDF
-async function sendInvoiceWithPDF(invoice) {
-    try {
-        showToast('📧 Préparation de l\'email...', 'info');
-        
-        // Find client data
-        const client = clients.find(c => c.name === invoice.client);
-        const clientEmail = (client && client.email_facturation) ? client.email_facturation : '';
-        const contactName = (client && client.contact_name) ? client.contact_name : invoice.client;
-        
-        // Prepare invoice data for email
-        const invoiceData = {
-            number: invoice.number,
-            client: invoice.client,
-            contactName: contactName,
-            date: invoice.date,
-            dueDate: invoice.dueDate,
-            total: invoice.total,
-            description: invoice.description,
-            quantity: invoice.quantity,
-            unitPrice: invoice.unitPrice
-        };
-        
-        // Use no-cors mode for Apps Script
-        await fetch(BACKEND_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                action: 'send_invoice',
-                invoice: invoiceData,
-                clientEmail: clientEmail
-            })
-        });
-        
-        // no-cors doesn't give response, assume success if no error
-        showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
-        
-        // Update invoice status to "Envoyée"
-        invoice.status = 'Envoyée';
-        renderInvoiceList();
-        applyFilters();
-    } catch (error) {
-        console.error('Email send error:', error);
-        showToast('❌ Erreur d\'envoi', 'error');
+async function sendInvoiceWithPDF(invoice, clientEmail) {
+  const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
+  
+  try {
+    showNotification('📧 Génération du PDF...', 'info');
+    
+    // Générer le PDF en base64
+    const pdfBase64 = await generateInvoicePDFBase64(invoice);
+    
+    if (!pdfBase64) {
+      throw new Error('Impossible de générer le PDF');
     }
+    
+    showNotification('📧 Envoi de l\'email...', 'info');
+    
+    // Envoyer via Apps Script
+    const response = await fetch(BACKEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'send_invoice',
+        invoice: {
+          number: invoice.number,
+          client: invoice.client,
+          contactName: invoice.contactName || invoice.client,
+          date: invoice.date,
+          dueDate: invoice.dueDate,
+          total: invoice.total
+        },
+        pdfBase64: pdfBase64,
+        clientEmail: clientEmail
+      })
+    });
+    
+    showNotification('✅ Email envoyé avec facture PDF', 'success');
+    
+    // Mettre à jour le statut
+    invoice.status = 'Envoyée';
+    saveInvoices();
+    refreshInvoiceList();
+    
+  } catch (error) {
+    console.error('Erreur envoi:', error);
+    showNotification('❌ Erreur d\'envoi: ' + error.message, 'error');
+  }
+}
+
+// Fonction pour générer le PDF en base64
+async function generateInvoicePDFBase64(invoice) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Créer un élément temporaire avec le HTML de la facture
+      const tempDiv = document.createElement('div');
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.innerHTML = generateInvoiceHTML(invoice);
+      document.body.appendChild(tempDiv);
+      
+      // Générer le PDF
+      const opt = {
+        margin: [15, 15, 15, 15],
+        filename: 'facture.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          logging: false
+        },
+        jsPDF: { 
+          unit: 'mm', 
+          format: 'a4', 
+          orientation: 'portrait' 
+        }
+      };
+      
+      html2pdf().set(opt).from(tempDiv).outputPdf('datauristring').then(pdfDataUri => {
+        // Extraire la partie base64
+        const base64 = pdfDataUri.split(',')[1];
+        
+        // Nettoyer
+        document.body.removeChild(tempDiv);
+        
+        resolve(base64);
+      }).catch(error => {
+        document.body.removeChild(tempDiv);
+        reject(error);
+      });
+      
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 // Make sync function global
