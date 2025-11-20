@@ -22,12 +22,14 @@ let currentDate = new Date();
 
 // Company info - now editable via settings
 let companyInfo = {
-  name: 'MTI CONSULTING',
-  logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
-  siret: '994 149 904 00017',
-  adresse: '13A rue du Général de Gaulle',
-  codePostal: '59110',
-  ville: 'La Madeleine'
+    name: 'MTI CONSULTING',
+    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+    siret: '994 149 904 00017',
+    address: '13 Rue du Général de Gaulle',
+    postalCode: '59110',
+    city: 'La Madeleine',
+    email: 'mticonsulting59@gmail.com',
+    phone: '07 77 37 17 39'
 };
 
 // Tax rates - now stored in memory, editable via settings
