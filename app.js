@@ -2,6 +2,11 @@
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
+// Sync configuration
+const BACKEND_URL = 'https://mti-backend-production-815b.up.railway.app';
+const SYNC_TIMEOUT = 10000;
+let isSyncing = false;
+
 let clients = [
     {
         name: 'Entreprise ABC',
@@ -677,6 +682,9 @@ invoiceForm.addEventListener('submit', (e) => {
         };
         showToast('✅ Facture mise à jour');
         
+        // Auto-sync after update
+        autoSync('update');
+        
         // Exit edit mode
         cancelEditMode();
     } else {
@@ -690,6 +698,9 @@ invoiceForm.addEventListener('submit', (e) => {
         
         invoices.push(invoice);
         showToast('✅ Facture créée avec succès');
+        
+        // Auto-sync after creation
+        autoSync('create');
         
         // Show send email button and new invoice button
         document.getElementById('sendEmailBtn').style.display = 'inline-flex';
@@ -1331,6 +1342,9 @@ document.getElementById('editInvoiceForm').addEventListener('submit', (e) => {
     renderInvoiceList();
     applyFilters();
     showToast('Facture mise à jour');
+    
+    // Auto-sync after edit
+    autoSync('update');
 });
 
 // Delete invoice from list (FACTURES tab)
@@ -1345,6 +1359,9 @@ function deleteInvoiceFromList(index) {
             applyFilters();
             renderCharts();
             showToast('✅ Facture supprimée');
+            
+            // Auto-sync after deletion
+            autoSync('delete');
             
             // If we were editing this invoice, cancel edit mode
             if (isEditMode && editingInvoiceIndex === index) {
@@ -1368,6 +1385,9 @@ function deleteInvoice(index) {
             applyFilters();
             renderCharts();
             showToast('✅ Facture supprimée');
+            
+            // Auto-sync after deletion
+            autoSync('delete');
         }
     );
 }
@@ -1404,11 +1424,17 @@ function updateMontantRecu(index, value) {
     }
     
     applyFilters();
+    
+    // Auto-sync after payment update
+    autoSync('payment');
 }
 
 function updateDateReception(index, value) {
     invoices[index].dateReception = value;
     applyFilters();
+    
+    // Auto-sync after date update
+    autoSync('payment');
 }
 
 function updateSummary(filteredInvoices = invoices) {
@@ -1738,32 +1764,211 @@ function renderStatusChart() {
     });
 }
 
-// Toast notification
-function showToast(message) {
+// Toast notification with types
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');
+    
+    let borderColor = 'var(--color-success)';
+    let bgColor = 'var(--color-surface)';
+    
+    if (type === 'error') {
+        borderColor = 'var(--color-error)';
+    } else if (type === 'info') {
+        borderColor = '#3B82F6';
+    }
+    
     toast.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background-color: var(--color-surface);
+        background-color: ${bgColor};
         border: 1px solid var(--color-border);
-        border-left: 4px solid var(--color-success);
+        border-left: 4px solid ${borderColor};
         padding: var(--space-16);
         border-radius: var(--radius-base);
         box-shadow: var(--shadow-lg);
-        z-index: 10000;
-        max-width: 300px;
+        max-width: 350px;
         font-size: var(--font-size-base);
+        animation: slideIn 0.3s ease-out;
     `;
     toast.textContent = message;
-    document.body.appendChild(toast);
+    container.appendChild(toast);
     
     setTimeout(() => {
-        toast.style.transition = 'opacity 0.3s';
+        toast.style.transition = 'opacity 0.3s, transform 0.3s';
         toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
+
+// Google Sheets Sync Functions
+async function syncToGoogleSheets() {
+    if (isSyncing) {
+        showToast('Synchronisation déjà en cours...', 'info');
+        return;
+    }
+    
+    const button = document.getElementById('syncButton');
+    const originalContent = button.innerHTML;
+    
+    try {
+        isSyncing = true;
+        button.disabled = true;
+        button.innerHTML = '⏳ Synchronisation...';
+        button.style.opacity = '0.6';
+        
+        // Prepare invoice data for sync
+        const invoiceData = invoices.map(inv => ({
+            number: inv.number,
+            client: inv.client,
+            date: formatDateFR(inv.date),
+            dueDate: formatDateFR(inv.dueDate),
+            total: inv.total,
+            status: inv.status,
+            montantRecu: inv.montantRecu || 0,
+            dateReception: inv.dateReception ? formatDateFR(inv.dateReception) : ''
+        }));
+        
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SYNC_TIMEOUT);
+        
+        const response = await fetch(`${BACKEND_URL}/api/sync-invoices`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                invoices: invoiceData
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            const count = invoiceData.length;
+            showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''}`, 'success');
+            button.innerHTML = '✅ Synchronisé';
+            updateLastSyncTime();
+            
+            setTimeout(() => {
+                button.innerHTML = originalContent;
+            }, 3000);
+        } else {
+            throw new Error(result.error || 'Erreur de synchronisation');
+        }
+    } catch (error) {
+        console.error('Sync error:', error);
+        
+        let errorMessage = '❌ Erreur de synchronisation';
+        if (error.name === 'AbortError') {
+            errorMessage = '❌ Délai d\'attente dépassé';
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMessage = '❌ Impossible de contacter le serveur';
+        } else {
+            errorMessage = `❌ Erreur: ${error.message}`;
+        }
+        
+        showToast(errorMessage, 'error');
+        button.innerHTML = '❌ Erreur - Réessayer';
+        
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+        }, 3000);
+    } finally {
+        isSyncing = false;
+        button.disabled = false;
+        button.style.opacity = '1';
+    }
+}
+
+// Auto-sync with subtle notification
+async function autoSync(action = 'modification') {
+    if (isSyncing) return;
+    
+    // Show subtle notification
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
+        padding: var(--space-12) var(--space-16);
+        border-radius: var(--radius-base);
+        box-shadow: var(--shadow-md);
+        z-index: 9999;
+        font-size: var(--font-size-sm);
+        color: var(--color-text-secondary);
+    `;
+    notification.textContent = '⏳ Synchronisation en cours...';
+    document.body.appendChild(notification);
+    
+    try {
+        isSyncing = true;
+        
+        const invoiceData = invoices.map(inv => ({
+            number: inv.number,
+            client: inv.client,
+            date: formatDateFR(inv.date),
+            dueDate: formatDateFR(inv.dueDate),
+            total: inv.total,
+            status: inv.status,
+            montantRecu: inv.montantRecu || 0,
+            dateReception: inv.dateReception ? formatDateFR(inv.dateReception) : ''
+        }));
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SYNC_TIMEOUT);
+        
+        const response = await fetch(`${BACKEND_URL}/api/sync-invoices`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                invoices: invoiceData
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            notification.textContent = '✅ Synchronisé';
+            notification.style.borderLeft = '4px solid var(--color-success)';
+            updateLastSyncTime();
+        } else {
+            notification.textContent = '❌ Erreur de sync';
+            notification.style.borderLeft = '4px solid var(--color-error)';
+        }
+    } catch (error) {
+        notification.textContent = '❌ Erreur de sync';
+        notification.style.borderLeft = '4px solid var(--color-error)';
+    } finally {
+        isSyncing = false;
+        setTimeout(() => {
+            notification.style.transition = 'opacity 0.3s';
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }, 2000);
+    }
+}
+
+// Update last sync time
+function updateLastSyncTime() {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const lastSyncElement = document.getElementById('lastSyncTime');
+    if (lastSyncElement) {
+        lastSyncElement.textContent = `Dernière sync: ${timeString}`;
+    }
+}
+
+// Make sync function global
+window.syncToGoogleSheets = syncToGoogleSheets;
 
 // Confirmation modal
 let confirmCallback = null;
