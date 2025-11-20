@@ -10,30 +10,25 @@ const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
 
-let clients = [];
+// Chargement depuis localStorage
+let clients = JSON.parse(localStorage.getItem('mti_clients')) || [];
+let invoices = JSON.parse(localStorage.getItem('mti_invoices')) || [];
+let tasks = JSON.parse(localStorage.getItem('mti_tasks')) || [];
 
-let invoices = [];
-
-let tasks = [];
-
-// Calendar state
-let currentView = 'week';
-let currentDate = new Date();
-
-// Company info - now editable via settings
-let companyInfo = {
+// Company info avec valeurs MTI CONSULTING en dur
+let companyInfo = JSON.parse(localStorage.getItem('mti_companyInfo')) || {
     name: 'MTI CONSULTING',
     logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
     siret: '994 149 904 00017',
-    address: '13 Rue du Général de Gaulle',
+    address: '13A rue du Général de Gaulle',  // Correction : 13A au lieu de 13
     postalCode: '59110',
     city: 'La Madeleine',
     email: 'mticonsulting59@gmail.com',
     phone: '07 77 37 17 39'
 };
 
-// Tax rates - now stored in memory, editable via settings
-let taxSettings = {
+// Tax settings avec valeurs par défaut
+let taxSettings = JSON.parse(localStorage.getItem('mti_taxSettings')) || {
     tauxIS: 0,
     versementLiberatoire: 2.2,
     prorationMensuelle: 8.33,
@@ -42,14 +37,31 @@ let taxSettings = {
     acreInactif: 24.6
 };
 
-const defaultSettings = {
-    tauxIS: 0,
-    versementLiberatoire: 2.2,
-    prorationMensuelle: 8.33,
-    cfeAnnuel: 600,
-    acreActif: 11.6,
-    acreInactif: 24.6
-};
+// Fonctions de sauvegarde (NOUVEAU - AJOUTER APRÈS)
+function saveClients() {
+  localStorage.setItem('mti_clients', JSON.stringify(clients));
+}
+
+function saveInvoices() {
+  localStorage.setItem('mti_invoices', JSON.stringify(invoices));
+}
+
+function saveTasks() {
+  localStorage.setItem('mti_tasks', JSON.stringify(tasks));
+}
+
+function saveCompanyInfo() {
+  localStorage.setItem('mti_companyInfo', JSON.stringify(companyInfo));
+}
+
+function saveTaxSettings() {
+  localStorage.setItem('mti_taxSettings', JSON.stringify(taxSettings));
+}
+
+
+// Calendar state
+let currentView = 'week';
+let currentDate = new Date();
 
 // DOM Elements
 const navTabs = document.querySelectorAll('.nav-tab');
@@ -188,6 +200,8 @@ document.getElementById('clientForm').addEventListener('submit', (e) => {
     } else {
         clients[index] = client;
     }
+
+    saveClients();
     
     document.getElementById('clientFormCard').style.display = 'none';
     document.getElementById('clientForm').reset();
@@ -221,6 +235,7 @@ function deleteClient(index) {
         message,
         () => {
             clients.splice(index, 1);
+            saveClients();
             renderClientsTable();
             populateClientSelects();
             showToast('Client supprimé');
@@ -601,6 +616,7 @@ invoiceForm.addEventListener('submit', (e) => {
             ...invoices[editingInvoiceIndex],
             ...invoiceData
         };
+        saveInvoices();
         showToast('✅ Facture mise à jour');
         
         // Auto-sync after update
@@ -618,6 +634,7 @@ invoiceForm.addEventListener('submit', (e) => {
         };
         
         invoices.push(invoice);
+        saveInvoices();
         showToast('✅ Facture créée avec succès');
         
         // Auto-sync after creation
@@ -937,6 +954,7 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
     };
     
     tasks.push(task);
+    saveTasks(); // ← AJOUTER CETTE LIGNE
     renderCalendar();
     document.getElementById('taskFormCard').style.display = 'none';
     document.getElementById('taskForm').reset();
@@ -976,7 +994,7 @@ document.getElementById('editTaskForm').addEventListener('submit', (e) => {
         type: document.getElementById('editTaskType').value,
         description: document.getElementById('editTaskDescription').value
     };
-    
+    saveTasks(); // ← AJOUTER CETTE LIGNE
     renderCalendar();
     document.getElementById('editTaskModal').classList.remove('show');
     showToast('Tâche mise à jour');
@@ -989,6 +1007,7 @@ function deleteTaskFromEdit() {
         'Êtes-vous sûr de vouloir supprimer cette tâche ?',
         () => {
             tasks.splice(index, 1);
+            saveTasks(); // ← AJOUTER CETTE LIGNE
             renderCalendar();
             document.getElementById('editTaskModal').classList.remove('show');
             showToast('Tâche supprimée');
@@ -1276,6 +1295,7 @@ function deleteInvoiceFromList(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
+            saveInvoices();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1302,6 +1322,7 @@ function deleteInvoice(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
+            saveInvoices();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1329,6 +1350,7 @@ function duplicateInvoice(index) {
         dateReception: null
     };
     invoices.push(newInvoice);
+    saveInvoices();
     renderInvoiceList();
     applyFilters();
     showToast('Facture dupliquée');
@@ -1343,7 +1365,7 @@ function updateMontantRecu(index, value) {
     if (invoices[index].montantRecu >= invoices[index].total) {
         invoices[index].status = 'Payée';
     }
-    
+    saveInvoices();
     applyFilters();
     
     // Auto-sync after payment update
@@ -1352,6 +1374,7 @@ function updateMontantRecu(index, value) {
 
 function updateDateReception(index, value) {
     invoices[index].dateReception = value;
+    saveInvoices(); // ← AJOUTER CETTE LIGNE
     applyFilters();
     
     // Auto-sync after date update
@@ -1437,6 +1460,7 @@ function saveSettings() {
         companyInfo.address = document.getElementById('companyAddress').value || '[Adresse]';
         companyInfo.postalCode = document.getElementById('companyPostal').value || '[Code postal]';
         companyInfo.city = document.getElementById('companyCity').value || '[Ville]';
+        saveCompanyInfo(); // ← AJOUTER CETTE LIGNE
     }
     taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS').value) || 0;
     taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib').value) || 2.2;
@@ -1444,14 +1468,15 @@ function saveSettings() {
     taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel').value) || 600;
     taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif').value) || 11.6;
     taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif').value) || 24.6;
-    
+    saveTaxSettings(); // ← AJOUTER CETTE LIGNE
+
     // Show confirmation
     const confirmation = document.getElementById('saveConfirmation');
     confirmation.style.display = 'block';
     setTimeout(() => {
         confirmation.style.display = 'none';
     }, 3000);
-    
+
     // Recalculate taxes if on calculs tab
     calculateTaxes();
 }
@@ -1505,51 +1530,64 @@ const acreToggle = document.getElementById('acreToggle');
 const versementToggle = document.getElementById('versementToggle');
 
 function calculateTaxes() {
-  const ca = parseFloat(document.getElementById('ca-input').value) || 0;
-  const versementLibActif = document.getElementById('versement-lib-toggle').checked;
-  const acreActif = document.getElementById('acre-toggle').checked;
-  
+  const ca = parseFloat(document.getElementById('caInput')?.value) || 0;
+  const versementLibActif = document.getElementById('versementToggle')?.checked || false;
+  const acreActif = document.getElementById('acreToggle')?.checked || false;
+
   // Charges sociales
-  const tauxCharges = acreActif ? settings.acreActif : settings.acreInactif;
+  const tauxCharges = acreActif ? taxSettings.acreActif : taxSettings.acreInactif;
   const chargesSociales = ca * (tauxCharges / 100);
-  
+
   // Impôt
   let impot = 0;
   if (versementLibActif) {
     // Versement libératoire
-    impot = ca * (settings.versementLiberatoire / 100);
+    impot = ca * (taxSettings.versementLiberatoire / 100);
   } else {
     // IRPP barème progressif
     const baseImposable = ca * 0.66; // Abattement 34%
-    const baseImposableMensuelle = baseImposable;
-    
-    // Barème mensuel (annuel / 12)
-    const tranche1 = 11294 / 12; // 941.17€
-    const tranche2 = 28797 / 12; // 2399.75€
-    
-    if (baseImposableMensuelle <= tranche1) {
-      impot = 0;
-    } else if (baseImposableMensuelle <= tranche2) {
-      impot = (baseImposableMensuelle - tranche1) * 0.11;
+    const baseAnnuelle = baseImposable * 12;
+
+    // Barème 2025
+    if (baseAnnuelle <= 11294) {
+      impot = 0; // Tranche 0%
+    } else if (baseAnnuelle <= 28797) {
+      impot = (baseAnnuelle - 11294) * 0.11; // Tranche 11%
+    } else if (baseAnnuelle <= 82341) {
+      impot = (28797 - 11294) * 0.11 + (baseAnnuelle - 28797) * 0.30; // Tranche 30%
+    } else if (baseAnnuelle <= 177106) {
+      impot = (28797 - 11294) * 0.11 + (82341 - 28797) * 0.30 + (baseAnnuelle - 82341) * 0.41;
     } else {
-      impot = ((tranche2 - tranche1) * 0.11) + ((baseImposableMensuelle - tranche2) * 0.30);
+      impot = (28797 - 11294) * 0.11 + (82341 - 28797) * 0.30 + (177106 - 82341) * 0.41 + (baseAnnuelle - 177106) * 0.45;
     }
+
+    impot = impot / 12; // Mensualiser
   }
-  
+
   // CFE mensuelle
-  const cfeMensuelle = (settings.cfeAnnuel * (settings.prorationMensuelle / 100));
-  
+  const cfeMensuelle = (taxSettings.cfeAnnuel * (taxSettings.prorationMensuelle / 100));
+
   // Net mensuel
   const netMensuel = ca - chargesSociales - impot - cfeMensuelle;
-  
+
   // Affichage
-  document.getElementById('charges-result').textContent = chargesSociales.toFixed(2) + ' €';
-  document.getElementById('impot-result').textContent = impot.toFixed(2) + ' €';
-  document.getElementById('impot-label').textContent = versementLibActif ? 
-    'Versement libératoire (' + settings.versementLiberatoire + '%)' : 
-    'IRPP barème progressif';
-  document.getElementById('cfe-result').textContent = cfeMensuelle.toFixed(2) + ' €';
-  document.getElementById('net-result').textContent = netMensuel.toFixed(2) + ' €';
+  if (document.getElementById('chargesResult')) {
+    document.getElementById('chargesResult').textContent = chargesSociales.toFixed(2) + ' €';
+  }
+  if (document.getElementById('impotResult')) {
+    document.getElementById('impotResult').textContent = impot.toFixed(2) + ' €';
+  }
+  if (document.getElementById('impotLabel')) {
+    document.getElementById('impotLabel').textContent = versementLibActif ? 
+      'Versement libératoire (' + taxSettings.versementLiberatoire + '%)' : 
+      'IRPP barème progressif';
+  }
+  if (document.getElementById('cfeResult')) {
+    document.getElementById('cfeResult').textContent = cfeMensuelle.toFixed(2) + ' €';
+  }
+  if (document.getElementById('netResult')) {
+    document.getElementById('netResult').textContent = netMensuel.toFixed(2) + ' €';
+  }
 }
 
 // Ajouter les event listeners
