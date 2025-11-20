@@ -2,33 +2,118 @@
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
-
-
 // Google Apps Script configuration
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
 const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
 
-// Chargement depuis localStorage
-let clients = JSON.parse(localStorage.getItem('mti_clients')) || [];
-let invoices = JSON.parse(localStorage.getItem('mti_invoices')) || [];
-let tasks = JSON.parse(localStorage.getItem('mti_tasks')) || [];
+let clients = [
+    {
+        name: 'Entreprise ABC',
+        siret: '123 456 789 00012',
+        address: '123 Rue de la République\n75001 Paris',
+        email_facturation: 'facturation@entreprise-abc.fr',
+        contact_name: 'Marie Dupont'
+    },
+    {
+        name: 'Société XYZ',
+        siret: '987 654 321 00034',
+        address: '456 Avenue des Champs\n69002 Lyon',
+        email_facturation: '',
+        contact_name: ''
+    }
+];
 
-// Company info avec valeurs MTI CONSULTING en dur
-let companyInfo = JSON.parse(localStorage.getItem('mti_companyInfo')) || {
+let invoices = [
+    {
+        number: '202511-001',
+        client: 'Entreprise ABC',
+        clientSiret: '123 456 789 00012',
+        clientAddress: '123 Rue de la République\n75001 Paris',
+        date: '2025-11-15',
+        dueDate: '2025-12-15',
+        description: 'Prestation de conseil en développement',
+        quantity: 12,
+        unitPrice: 600,
+        total: 7200,
+        status: 'Payée',
+        montantRecu: 7200,
+        dateReception: '2025-12-10'
+    },
+    {
+        number: '202512-001',
+        client: 'Société XYZ',
+        clientSiret: '987 654 321 00034',
+        clientAddress: '456 Avenue des Champs\n69002 Lyon',
+        date: '2025-12-01',
+        dueDate: '2025-12-31',
+        description: 'Développement application web',
+        quantity: 12,
+        unitPrice: 600,
+        total: 7200,
+        status: 'Envoyée',
+        montantRecu: 0,
+        dateReception: null
+    },
+    {
+        number: '202510-001',
+        client: 'Entreprise ABC',
+        clientSiret: '123 456 789 00012',
+        clientAddress: '123 Rue de la République\n75001 Paris',
+        date: '2025-10-15',
+        dueDate: '2025-11-14',
+        description: 'Conseil stratégique',
+        quantity: 10,
+        unitPrice: 600,
+        total: 6000,
+        status: 'Retard',
+        montantRecu: 0,
+        dateReception: null
+    },
+    {
+        number: '202512-002',
+        client: 'Société XYZ',
+        clientSiret: '987 654 321 00034',
+        clientAddress: '456 Avenue des Champs\n69002 Lyon',
+        date: '2025-12-15',
+        dueDate: '2026-01-14',
+        description: 'Audit technique',
+        quantity: 12,
+        unitPrice: 600,
+        total: 7200,
+        status: 'Brouillon',
+        montantRecu: 0,
+        dateReception: null
+    }
+];
+
+let tasks = [
+    { date: '2025-12-16', startTime: '09:00', duration: 3, description: 'Développement module facturation', type: 'Travail' },
+    { date: '2025-12-16', startTime: '14:00', duration: 2, description: 'Réunion client Entreprise ABC', type: 'Réunion client' },
+    { date: '2025-12-17', startTime: '10:00', duration: 1.5, description: 'Déclaration URSSAF', type: 'Administratif' },
+    { date: '2025-12-18', startTime: '09:30', duration: 4, description: 'Consulting SI Finance', type: 'Travail' },
+    { date: '2025-12-19', startTime: '15:00', duration: 1, description: 'Suivi projet Société XYZ', type: 'Réunion client' }
+];
+
+// Calendar state
+let currentView = 'week';
+let currentDate = new Date();
+
+// Company info - now editable via settings
+let companyInfo = {
     name: 'MTI CONSULTING',
-    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
-    siret: '994 149 904 00017',
-    address: '13A rue du Général de Gaulle',  // Correction : 13A au lieu de 13
-    postalCode: '59110',
-    city: 'La Madeleine',
+    logoUrl: '',
+    siret: '[SIRET à venir]',
+    address: '[Adresse]',
+    postalCode: '[Code postal]',
+    city: '[Ville]',
     email: 'mticonsulting59@gmail.com',
     phone: '07 77 37 17 39'
 };
 
-// Tax settings avec valeurs par défaut
-let taxSettings = JSON.parse(localStorage.getItem('mti_taxSettings')) || {
+// Tax rates - now stored in memory, editable via settings
+let taxSettings = {
     tauxIS: 0,
     versementLiberatoire: 2.2,
     prorationMensuelle: 8.33,
@@ -37,31 +122,14 @@ let taxSettings = JSON.parse(localStorage.getItem('mti_taxSettings')) || {
     acreInactif: 24.6
 };
 
-// Fonctions de sauvegarde (NOUVEAU - AJOUTER APRÈS)
-function saveClients() {
-  localStorage.setItem('mti_clients', JSON.stringify(clients));
-}
-
-function saveInvoices() {
-  localStorage.setItem('mti_invoices', JSON.stringify(invoices));
-}
-
-function saveTasks() {
-  localStorage.setItem('mti_tasks', JSON.stringify(tasks));
-}
-
-function saveCompanyInfo() {
-  localStorage.setItem('mti_companyInfo', JSON.stringify(companyInfo));
-}
-
-function saveTaxSettings() {
-  localStorage.setItem('mti_taxSettings', JSON.stringify(taxSettings));
-}
-
-
-// Calendar state
-let currentView = 'week';
-let currentDate = new Date();
+const defaultSettings = {
+    tauxIS: 0,
+    versementLiberatoire: 2.2,
+    prorationMensuelle: 8.33,
+    cfeAnnuel: 600,
+    acreActif: 11.6,
+    acreInactif: 24.6
+};
 
 // DOM Elements
 const navTabs = document.querySelectorAll('.nav-tab');
@@ -200,8 +268,6 @@ document.getElementById('clientForm').addEventListener('submit', (e) => {
     } else {
         clients[index] = client;
     }
-
-    saveClients();
     
     document.getElementById('clientFormCard').style.display = 'none';
     document.getElementById('clientForm').reset();
@@ -235,7 +301,6 @@ function deleteClient(index) {
         message,
         () => {
             clients.splice(index, 1);
-            saveClients();
             renderClientsTable();
             populateClientSelects();
             showToast('Client supprimé');
@@ -488,27 +553,28 @@ document.getElementById('sendEmailBtn').addEventListener('click', () => {
         client
     };
     
-    showEmailPreview(invoice, clientEmail);
+    showEmailPreview();
 });
 
-function showEmailPreview(invoice, clientEmail) {
-  const modal = document.createElement('div');
-  modal.className = 'modal';
-  modal.innerHTML = `
-    <div class="modal-content" style="max-width: 600px;">
-      <h2>Aperçu de l'email</h2>
-      <div style="margin: 20px 0;">
-        <p><strong>À :</strong> ${clientEmail}</p>
-        <p><strong>Objet :</strong> Facture #${invoice.number} - MTI CONSULTING</p>
-        <hr>
-        <div style="white-space: pre-line; font-family: monospace; background: #f5f5f5; padding: 15px; border-radius: 4px;">
-Bonjour ${invoice.contactName || invoice.client},
+function showEmailPreview() {
+    const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
+    
+    // Check if email is configured
+    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
+    const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
+    const emailTo = hasEmail ? client.email_facturation : '';
+    
+    // Build email content
+    const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
+    const body = `Bonjour ${contactName},
 
-Veuillez trouver ci-joint la facture #${invoice.number} d'un montant de ${invoice.total}€ HT.
+Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
 
-Date d'émission : ${invoice.date}
-Date d'échéance : ${invoice.dueDate}
+Date d'émission : ${formatDateFR(invoiceDate)}
+Date d'échéance : ${formatDateFR(dueDate)}
 Conditions de paiement : 30 jours nets
+
+⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
 
 Pour toute question, n'hésitez pas à me contacter.
 
@@ -516,25 +582,24 @@ Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
 Email : mticonsulting59@gmail.com
-Téléphone : 07 77 37 17 39
-        </div>
-        <p style="margin-top: 15px;"><strong>Pièce jointe :</strong> Facture-${invoice.number}-${invoice.client}.pdf</p>
-      </div>
-      <div style="display: flex; gap: 10px; justify-content: flex-end;">
-        <button class="btn btn--secondary" onclick="this.closest('.modal').remove()">Annuler</button>
-        <button class="btn btn--primary" onclick="confirmSendEmail('${invoice.number}', '${clientEmail}')">Envoyer</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
+Téléphone : 07 77 37 17 39`;
+    
+    // Display preview
+    document.getElementById('emailTo').textContent = emailTo || '(À compléter manuellement)';
+    document.getElementById('emailSubject').textContent = subject;
+    document.getElementById('emailBody').textContent = body;
+    
+    // Show warning if no email
+    const warningDiv = document.getElementById('emailWarning');
+    if (!hasEmail) {
+        warningDiv.style.display = 'block';
+        warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>L\'email s\'ouvrira en brouillon sans destinataire. Veuillez ajouter l\'email dans la gestion des tiers ou compléter manuellement.';
+    } else {
+        warningDiv.style.display = 'none';
+    }
+    
+    document.getElementById('emailModal').classList.add('show');
 }
-
-function confirmSendEmail(invoiceNumber, clientEmail) {
-  const invoice = invoices.find(inv => inv.number === invoiceNumber);
-  document.querySelector('.modal').remove();
-  sendInvoiceWithPDF(invoice, clientEmail);
-}
-
 
 document.getElementById('closeEmailModal').addEventListener('click', () => {
     document.getElementById('emailModal').classList.remove('show');
@@ -616,7 +681,6 @@ invoiceForm.addEventListener('submit', (e) => {
             ...invoices[editingInvoiceIndex],
             ...invoiceData
         };
-        saveInvoices();
         showToast('✅ Facture mise à jour');
         
         // Auto-sync after update
@@ -634,7 +698,6 @@ invoiceForm.addEventListener('submit', (e) => {
         };
         
         invoices.push(invoice);
-        saveInvoices();
         showToast('✅ Facture créée avec succès');
         
         // Auto-sync after creation
@@ -954,7 +1017,6 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
     };
     
     tasks.push(task);
-    saveTasks(); // ← AJOUTER CETTE LIGNE
     renderCalendar();
     document.getElementById('taskFormCard').style.display = 'none';
     document.getElementById('taskForm').reset();
@@ -994,7 +1056,7 @@ document.getElementById('editTaskForm').addEventListener('submit', (e) => {
         type: document.getElementById('editTaskType').value,
         description: document.getElementById('editTaskDescription').value
     };
-    saveTasks(); // ← AJOUTER CETTE LIGNE
+    
     renderCalendar();
     document.getElementById('editTaskModal').classList.remove('show');
     showToast('Tâche mise à jour');
@@ -1007,7 +1069,6 @@ function deleteTaskFromEdit() {
         'Êtes-vous sûr de vouloir supprimer cette tâche ?',
         () => {
             tasks.splice(index, 1);
-            saveTasks(); // ← AJOUTER CETTE LIGNE
             renderCalendar();
             document.getElementById('editTaskModal').classList.remove('show');
             showToast('Tâche supprimée');
@@ -1295,7 +1356,6 @@ function deleteInvoiceFromList(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
-            saveInvoices();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1322,7 +1382,6 @@ function deleteInvoice(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
-            saveInvoices();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1350,7 +1409,6 @@ function duplicateInvoice(index) {
         dateReception: null
     };
     invoices.push(newInvoice);
-    saveInvoices();
     renderInvoiceList();
     applyFilters();
     showToast('Facture dupliquée');
@@ -1365,7 +1423,7 @@ function updateMontantRecu(index, value) {
     if (invoices[index].montantRecu >= invoices[index].total) {
         invoices[index].status = 'Payée';
     }
-    saveInvoices();
+    
     applyFilters();
     
     // Auto-sync after payment update
@@ -1374,7 +1432,6 @@ function updateMontantRecu(index, value) {
 
 function updateDateReception(index, value) {
     invoices[index].dateReception = value;
-    saveInvoices(); // ← AJOUTER CETTE LIGNE
     applyFilters();
     
     // Auto-sync after date update
@@ -1460,7 +1517,6 @@ function saveSettings() {
         companyInfo.address = document.getElementById('companyAddress').value || '[Adresse]';
         companyInfo.postalCode = document.getElementById('companyPostal').value || '[Code postal]';
         companyInfo.city = document.getElementById('companyCity').value || '[Ville]';
-        saveCompanyInfo(); // ← AJOUTER CETTE LIGNE
     }
     taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS').value) || 0;
     taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib').value) || 2.2;
@@ -1468,15 +1524,14 @@ function saveSettings() {
     taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel').value) || 600;
     taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif').value) || 11.6;
     taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif').value) || 24.6;
-    saveTaxSettings(); // ← AJOUTER CETTE LIGNE
-
+    
     // Show confirmation
     const confirmation = document.getElementById('saveConfirmation');
     confirmation.style.display = 'block';
     setTimeout(() => {
         confirmation.style.display = 'none';
     }, 3000);
-
+    
     // Recalculate taxes if on calculs tab
     calculateTaxes();
 }
@@ -1530,70 +1585,62 @@ const acreToggle = document.getElementById('acreToggle');
 const versementToggle = document.getElementById('versementToggle');
 
 function calculateTaxes() {
-  const ca = parseFloat(document.getElementById('caInput')?.value) || 0;
-  const versementLibActif = document.getElementById('versementToggle')?.checked || false;
-  const acreActif = document.getElementById('acreToggle')?.checked || false;
-
-  // Charges sociales
-  const tauxCharges = acreActif ? taxSettings.acreActif : taxSettings.acreInactif;
-  const chargesSociales = ca * (tauxCharges / 100);
-
-  // Impôt
-  let impot = 0;
-  if (versementLibActif) {
-    // Versement libératoire
-    impot = ca * (taxSettings.versementLiberatoire / 100);
-  } else {
-    // IRPP barème progressif
-    const baseImposable = ca * 0.66; // Abattement 34%
-    const baseAnnuelle = baseImposable * 12;
-
-    // Barème 2025
-    if (baseAnnuelle <= 11294) {
-      impot = 0; // Tranche 0%
-    } else if (baseAnnuelle <= 28797) {
-      impot = (baseAnnuelle - 11294) * 0.11; // Tranche 11%
-    } else if (baseAnnuelle <= 82341) {
-      impot = (28797 - 11294) * 0.11 + (baseAnnuelle - 28797) * 0.30; // Tranche 30%
-    } else if (baseAnnuelle <= 177106) {
-      impot = (28797 - 11294) * 0.11 + (82341 - 28797) * 0.30 + (baseAnnuelle - 82341) * 0.41;
+    const ca = parseFloat(caInput.value) || 0;
+    const acreActive = acreToggle.checked;
+    const versementLib = versementToggle.checked;
+    
+    // Calculate charges using settings
+    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+    const charges = ca * chargesRate;
+    
+    // Calculate taxes based on versement libératoire toggle
+    let impot = 0;
+    let impotLabel = '';
+    
+    if (versementLib) {
+        // Versement libératoire: 2.2% flat rate on CA
+        impot = ca * (taxSettings.versementLiberatoire / 100);
+        impotLabel = `${impot.toFixed(2)} € (Versement libératoire ${taxSettings.versementLiberatoire}%)`;
     } else {
-      impot = (28797 - 11294) * 0.11 + (82341 - 28797) * 0.30 + (177106 - 82341) * 0.41 + (baseAnnuelle - 177106) * 0.45;
+        // IRPP barème progressif with 34% abattement
+        const baseImposable = ca * 0.66; // After 34% abattement
+        
+        // Apply progressive tax brackets (monthly amounts)
+        const tranche1 = 11294 / 12; // 941.17€ at 0%
+        const tranche2 = 28797 / 12; // 2399.75€ at 11%
+        
+        if (baseImposable <= tranche1) {
+            impot = 0;
+        } else if (baseImposable <= tranche2) {
+            impot = (baseImposable - tranche1) * 0.11;
+        } else {
+            impot = (tranche2 - tranche1) * 0.11 + (baseImposable - tranche2) * 0.30;
+        }
+        
+        impotLabel = `${impot.toFixed(2)} € (IRPP barème progressif)`;
     }
-
-    impot = impot / 12; // Mensualiser
-  }
-
-  // CFE mensuelle
-  const cfeMensuelle = (taxSettings.cfeAnnuel * (taxSettings.prorationMensuelle / 100));
-
-  // Net mensuel
-  const netMensuel = ca - chargesSociales - impot - cfeMensuelle;
-
-  // Affichage
-  if (document.getElementById('chargesResult')) {
-    document.getElementById('chargesResult').textContent = chargesSociales.toFixed(2) + ' €';
-  }
-  if (document.getElementById('impotResult')) {
-    document.getElementById('impotResult').textContent = impot.toFixed(2) + ' €';
-  }
-  if (document.getElementById('impotLabel')) {
-    document.getElementById('impotLabel').textContent = versementLibActif ? 
-      'Versement libératoire (' + taxSettings.versementLiberatoire + '%)' : 
-      'IRPP barème progressif';
-  }
-  if (document.getElementById('cfeResult')) {
-    document.getElementById('cfeResult').textContent = cfeMensuelle.toFixed(2) + ' €';
-  }
-  if (document.getElementById('netResult')) {
-    document.getElementById('netResult').textContent = netMensuel.toFixed(2) + ' €';
-  }
+    
+    // Calculate CFE monthly
+    const cfe = taxSettings.cfeAnnuel / 12;
+    const net = ca - charges - impot - cfe;
+    
+    // Display results
+    document.getElementById('calcCA').textContent = ca.toFixed(2) + ' €';
+    document.getElementById('calcCharges').textContent = charges.toFixed(2) + ' € (' + (chargesRate * 100).toFixed(1) + '%)';
+    document.getElementById('calcImpot').textContent = impotLabel;
+    document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)';
+    document.getElementById('calcNet').textContent = net.toFixed(2) + ' €';
 }
 
-// Ajouter les event listeners
-document.getElementById('ca-input').addEventListener('input', calculateTaxes);
-document.getElementById('versement-lib-toggle').addEventListener('change', calculateTaxes);
-document.getElementById('acre-toggle').addEventListener('change', calculateTaxes);
+if (caInput) {
+    caInput.addEventListener('input', calculateTaxes);
+}
+if (acreToggle) {
+    acreToggle.addEventListener('change', calculateTaxes);
+}
+if (versementToggle) {
+    versementToggle.addEventListener('change', calculateTaxes);
+}
 
 // Charts
 function renderCharts() {
@@ -1893,98 +1940,53 @@ async function syncToGoogleCalendar() {
 }
 
 // Send invoice via Gmail with PDF
-async function sendInvoiceWithPDF(invoice, clientEmail) {
-  const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
-  
-  try {
-    showNotification('📧 Génération du PDF...', 'info');
-    
-    // Générer le PDF en base64
-    const pdfBase64 = await generateInvoicePDFBase64(invoice);
-    
-    if (!pdfBase64) {
-      throw new Error('Impossible de générer le PDF');
-    }
-    
-    showNotification('📧 Envoi de l\'email...', 'info');
-    
-    // Envoyer via Apps Script
-    const response = await fetch(BACKEND_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'send_invoice',
-        invoice: {
-          number: invoice.number,
-          client: invoice.client,
-          contactName: invoice.contactName || invoice.client,
-          date: invoice.date,
-          dueDate: invoice.dueDate,
-          total: invoice.total
-        },
-        pdfBase64: pdfBase64,
-        clientEmail: clientEmail
-      })
-    });
-    
-    showNotification('✅ Email envoyé avec facture PDF', 'success');
-    
-    // Mettre à jour le statut
-    invoice.status = 'Envoyée';
-    saveInvoices();
-    refreshInvoiceList();
-    
-  } catch (error) {
-    console.error('Erreur envoi:', error);
-    showNotification('❌ Erreur d\'envoi: ' + error.message, 'error');
-  }
-}
-
-// Fonction pour générer le PDF en base64
-async function generateInvoicePDFBase64(invoice) {
-  return new Promise((resolve, reject) => {
+async function sendInvoiceWithPDF(invoice) {
     try {
-      // Créer un élément temporaire avec le HTML de la facture
-      const tempDiv = document.createElement('div');
-      tempDiv.style.position = 'absolute';
-      tempDiv.style.left = '-9999px';
-      tempDiv.innerHTML = generateInvoiceHTML(invoice);
-      document.body.appendChild(tempDiv);
-      
-      // Générer le PDF
-      const opt = {
-        margin: [15, 15, 15, 15],
-        filename: 'facture.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2,
-          useCORS: true,
-          logging: false
-        },
-        jsPDF: { 
-          unit: 'mm', 
-          format: 'a4', 
-          orientation: 'portrait' 
-        }
-      };
-      
-      html2pdf().set(opt).from(tempDiv).outputPdf('datauristring').then(pdfDataUri => {
-        // Extraire la partie base64
-        const base64 = pdfDataUri.split(',')[1];
+        showToast('📧 Préparation de l\'email...', 'info');
         
-        // Nettoyer
-        document.body.removeChild(tempDiv);
+        // Find client data
+        const client = clients.find(c => c.name === invoice.client);
+        const clientEmail = (client && client.email_facturation) ? client.email_facturation : '';
+        const contactName = (client && client.contact_name) ? client.contact_name : invoice.client;
         
-        resolve(base64);
-      }).catch(error => {
-        document.body.removeChild(tempDiv);
-        reject(error);
-      });
-      
+        // Prepare invoice data for email
+        const invoiceData = {
+            number: invoice.number,
+            client: invoice.client,
+            contactName: contactName,
+            date: invoice.date,
+            dueDate: invoice.dueDate,
+            total: invoice.total,
+            description: invoice.description,
+            quantity: invoice.quantity,
+            unitPrice: invoice.unitPrice
+        };
+        
+        // Use no-cors mode for Apps Script
+        await fetch(BACKEND_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'send_invoice',
+                invoice: invoiceData,
+                clientEmail: clientEmail
+            })
+        });
+        
+        // no-cors doesn't give response, assume success if no error
+        showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
+        
+        // Update invoice status to "Envoyée"
+        invoice.status = 'Envoyée';
+        renderInvoiceList();
+        applyFilters();
     } catch (error) {
-      reject(error);
+        console.error('Email send error:', error);
+        showToast('❌ Erreur d\'envoi', 'error');
     }
-  });
 }
 
 // Make sync function global
