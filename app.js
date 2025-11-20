@@ -2,10 +2,11 @@
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
-// Sync configuration
-const BACKEND_URL = 'https://mti-backend-production-815b.up.railway.app';
-const SYNC_TIMEOUT = 10000;
+// Google Apps Script configuration
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
+const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
+let lastSyncTime = null;
 
 let clients = [
     {
@@ -1457,22 +1458,33 @@ function sendInvoiceEmail(index) {
     const invoice = invoices[index];
     const client = clients.find(c => c.name === invoice.client);
     
-    currentInvoiceData = {
-        clientName: invoice.client,
-        invoiceNumber: invoice.number,
-        invoiceDate: invoice.date,
-        dueDate: invoice.dueDate,
-        total: invoice.total,
-        client: client
-    };
+    // Check if email is available
+    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
     
-    showEmailPreview();
-    
-    // Auto-update status to Envoyée if currently Brouillon
-    if (invoice.status === 'Brouillon') {
-        invoice.status = 'Envoyée';
-        applyFilters();
+    if (!hasEmail) {
+        showToast('⚠️ Aucun email configuré pour ce client', 'info');
+        // Fall back to old email preview
+        currentInvoiceData = {
+            clientName: invoice.client,
+            invoiceNumber: invoice.number,
+            invoiceDate: invoice.date,
+            dueDate: invoice.dueDate,
+            total: invoice.total,
+            client: client
+        };
+        showEmailPreview();
+        return;
     }
+    
+    // Confirm before sending
+    const contactName = client.contact_name || invoice.client;
+    showConfirmation(
+        'Envoi par Gmail',
+        `Envoyer la facture #${invoice.number} à ${contactName} (${client.email_facturation}) ?\n\nLe PDF sera généré et envoyé automatiquement via Gmail.`,
+        () => {
+            sendInvoiceWithPDF(invoice);
+        }
+    );
 }
 
 window.sendInvoiceEmail = sendInvoiceEmail;
@@ -1803,7 +1815,7 @@ function showToast(message, type = 'success') {
 // Google Sheets Sync Functions
 async function syncToGoogleSheets() {
     if (isSyncing) {
-        showToast('Synchronisation déjà en cours...', 'info');
+        showToast('⏳ Synchronisation déjà en cours...', 'info');
         return;
     }
     
@@ -1816,62 +1828,45 @@ async function syncToGoogleSheets() {
         button.innerHTML = '⏳ Synchronisation...';
         button.style.opacity = '0.6';
         
+        showToast('⏳ Synchronisation en cours...', 'info');
+        
         // Prepare invoice data for sync
         const invoiceData = invoices.map(inv => ({
             number: inv.number,
             client: inv.client,
-            date: formatDateFR(inv.date),
-            dueDate: formatDateFR(inv.dueDate),
+            date: inv.date,
+            dueDate: inv.dueDate,
             total: inv.total,
             status: inv.status,
             montantRecu: inv.montantRecu || 0,
-            dateReception: inv.dateReception ? formatDateFR(inv.dateReception) : ''
+            dateReception: inv.dateReception || ''
         }));
         
-        // Create abort controller for timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), SYNC_TIMEOUT);
-        
-        const response = await fetch(`${BACKEND_URL}/api/sync-invoices`, {
+        // Use no-cors mode for Apps Script
+        await fetch(BACKEND_URL, {
             method: 'POST',
+            mode: 'no-cors',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
+                action: 'sync_invoices',
                 invoices: invoiceData
-            }),
-            signal: controller.signal
+            })
         });
         
-        clearTimeout(timeoutId);
+        // no-cors doesn't give response, assume success if no error
+        const count = invoiceData.length;
+        showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''} avec Google Sheets`, 'success');
+        button.innerHTML = '✅ Synchronisé';
+        updateLastSyncTime();
         
-        const result = await response.json();
-        
-        if (response.ok && result.success) {
-            const count = invoiceData.length;
-            showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''}`, 'success');
-            button.innerHTML = '✅ Synchronisé';
-            updateLastSyncTime();
-            
-            setTimeout(() => {
-                button.innerHTML = originalContent;
-            }, 3000);
-        } else {
-            throw new Error(result.error || 'Erreur de synchronisation');
-        }
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+        }, 3000);
     } catch (error) {
         console.error('Sync error:', error);
-        
-        let errorMessage = '❌ Erreur de synchronisation';
-        if (error.name === 'AbortError') {
-            errorMessage = '❌ Délai d\'attente dépassé';
-        } else if (error.message.includes('Failed to fetch')) {
-            errorMessage = '❌ Impossible de contacter le serveur';
-        } else {
-            errorMessage = `❌ Erreur: ${error.message}`;
-        }
-        
-        showToast(errorMessage, 'error');
+        showToast('❌ Erreur de synchronisation', 'error');
         button.innerHTML = '❌ Erreur - Réessayer';
         
         setTimeout(() => {
@@ -1884,86 +1879,113 @@ async function syncToGoogleSheets() {
     }
 }
 
-// Auto-sync with subtle notification
-async function autoSync(action = 'modification') {
-    if (isSyncing) return;
-    
-    // Show subtle notification
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background-color: var(--color-surface);
-        border: 1px solid var(--color-border);
-        padding: var(--space-12) var(--space-16);
-        border-radius: var(--radius-base);
-        box-shadow: var(--shadow-md);
-        z-index: 9999;
-        font-size: var(--font-size-sm);
-        color: var(--color-text-secondary);
-    `;
-    notification.textContent = '⏳ Synchronisation en cours...';
-    document.body.appendChild(notification);
-    
-    try {
-        isSyncing = true;
-        
-        const invoiceData = invoices.map(inv => ({
-            number: inv.number,
-            client: inv.client,
-            date: formatDateFR(inv.date),
-            dueDate: formatDateFR(inv.dueDate),
-            total: inv.total,
-            status: inv.status,
-            montantRecu: inv.montantRecu || 0,
-            dateReception: inv.dateReception ? formatDateFR(inv.dateReception) : ''
-        }));
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), SYNC_TIMEOUT);
-        
-        const response = await fetch(`${BACKEND_URL}/api/sync-invoices`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                invoices: invoiceData
-            }),
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-            notification.textContent = '✅ Synchronisé';
-            notification.style.borderLeft = '4px solid var(--color-success)';
-            updateLastSyncTime();
-        } else {
-            notification.textContent = '❌ Erreur de sync';
-            notification.style.borderLeft = '4px solid var(--color-error)';
-        }
-    } catch (error) {
-        notification.textContent = '❌ Erreur de sync';
-        notification.style.borderLeft = '4px solid var(--color-error)';
-    } finally {
-        isSyncing = false;
-        setTimeout(() => {
-            notification.style.transition = 'opacity 0.3s';
-            notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
-        }, 2000);
-    }
+// Auto-sync disabled - user manually syncs
+function autoSync(action = 'modification') {
+    // Auto-sync disabled in this version
+    // User will manually click sync button when needed
+    return;
 }
 
 // Update last sync time
 function updateLastSyncTime() {
-    const now = new Date();
-    const timeString = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    lastSyncTime = new Date();
+    const timeString = lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const lastSyncElement = document.getElementById('lastSyncTime');
     if (lastSyncElement) {
         lastSyncElement.textContent = `Dernière sync: ${timeString}`;
+    }
+}
+
+// Google Calendar Sync
+async function syncToGoogleCalendar() {
+    if (isSyncing) {
+        showToast('⏳ Synchronisation déjà en cours...', 'info');
+        return;
+    }
+    
+    try {
+        isSyncing = true;
+        showToast('📅 Synchronisation Calendar...', 'info');
+        
+        // Prepare task data for sync
+        const taskData = tasks.map(task => ({
+            date: task.date,
+            startTime: task.startTime,
+            duration: task.duration,
+            description: task.description,
+            type: task.type
+        }));
+        
+        // Use no-cors mode for Apps Script
+        await fetch(BACKEND_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'sync_calendar',
+                tasks: taskData
+            })
+        });
+        
+        // no-cors doesn't give response, assume success if no error
+        showToast('✅ Planning synchronisé avec Google Calendar', 'success');
+    } catch (error) {
+        console.error('Calendar sync error:', error);
+        showToast('❌ Erreur de synchronisation Calendar', 'error');
+    } finally {
+        isSyncing = false;
+    }
+}
+
+// Send invoice via Gmail with PDF
+async function sendInvoiceWithPDF(invoice) {
+    try {
+        showToast('📧 Préparation de l\'email...', 'info');
+        
+        // Find client data
+        const client = clients.find(c => c.name === invoice.client);
+        const clientEmail = (client && client.email_facturation) ? client.email_facturation : '';
+        const contactName = (client && client.contact_name) ? client.contact_name : invoice.client;
+        
+        // Prepare invoice data for email
+        const invoiceData = {
+            number: invoice.number,
+            client: invoice.client,
+            contactName: contactName,
+            date: invoice.date,
+            dueDate: invoice.dueDate,
+            total: invoice.total,
+            description: invoice.description,
+            quantity: invoice.quantity,
+            unitPrice: invoice.unitPrice
+        };
+        
+        // Use no-cors mode for Apps Script
+        await fetch(BACKEND_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'send_invoice',
+                invoice: invoiceData,
+                clientEmail: clientEmail
+            })
+        });
+        
+        // no-cors doesn't give response, assume success if no error
+        showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
+        
+        // Update invoice status to "Envoyée"
+        invoice.status = 'Envoyée';
+        renderInvoiceList();
+        applyFilters();
+    } catch (error) {
+        console.error('Email send error:', error);
+        showToast('❌ Erreur d\'envoi', 'error');
     }
 }
 

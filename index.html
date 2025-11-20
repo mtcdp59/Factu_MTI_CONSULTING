@@ -916,7 +916,10 @@ tr:hover {
                         <button class="btn btn-secondary active" id="viewWeek" onclick="changeCalendarView('week')">Semaine</button>
                         <button class="btn btn-secondary" id="viewMonth" onclick="changeCalendarView('month')">Mois</button>
                     </div>
-                    <button class="btn btn-primary" id="addTaskBtn">➕ Ajouter une tâche</button>
+                    <div style="display: flex; gap: var(--space-8);">
+                        <button class="btn btn-primary" onclick="syncToGoogleCalendar()" title="Synchroniser avec Google Calendar">📅 Synchroniser Calendar</button>
+                        <button class="btn btn-primary" id="addTaskBtn">➕ Ajouter une tâche</button>
+                    </div>
                 </div>
                 
                 <!-- Date Navigation -->
