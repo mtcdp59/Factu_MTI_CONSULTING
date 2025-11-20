@@ -1869,7 +1869,7 @@ function downloadInvoicePDF() {
                 @page { margin: 15mm; size: A4; }
                 * { box-sizing: border-box; }
                 body { 
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+                    font-family: 'Arial', 'Helvetica', 'Trebuchet MS', sans-serif; 
                     padding: 0;
                     margin: 0;
                     color: #134252; 
@@ -2049,9 +2049,10 @@ function downloadInvoicePDF() {
         </html>
     `;
     
-    // Create a temporary iframe to render the PDF
+    // Create a temporary iframe to render the PDF with enhanced rendering
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
+    iframe.style.letterRendering = 'optimizeLegibility';
     document.body.appendChild(iframe);
     
     const iframeDoc = iframe.contentWindow.document;
