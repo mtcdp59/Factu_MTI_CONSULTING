@@ -1,69 +1,74 @@
-// In-memory data storage
+// MTI CONSULTING - Application de facturation
+// Version v2.0 - Google Drive Storage + Gmail API + Calendar API
+
+const CONFIG = {
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyUp4uaDfbrZpziEXI3SRBYm8M_cF32mU17Ji_L3qYnxaQGl-K6KZ19-33yHkCCMD92/exec',
+    DRIVE_FILE_NAME: 'mti_data.json',
+    SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
+    CALENDAR_ID: 'primary'
+};
+
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
-// ===== PERSISTANCE LOCALSTORAGE =====
-function saveToLocalStorage() {
+// ==========================================
+// GOOGLE DRIVE STORAGE
+// ==========================================
+
+// Sauvegarder toutes les données dans Google Drive
+async function saveToDrive() {
     try {
-        localStorage.setItem('mti_clients', JSON.stringify(clients));
-        localStorage.setItem('mti_invoices', JSON.stringify(invoices));
-        localStorage.setItem('mti_tasks', JSON.stringify(tasks));
-        localStorage.setItem('mti_companyInfo', JSON.stringify(companyInfo));
-        localStorage.setItem('mti_taxSettings', JSON.stringify(taxSettings));
-        console.log('✅ Données sauvegardées dans localStorage');
-    } catch (e) {
-        console.error('❌ Erreur sauvegarde localStorage:', e);
+        const data = { clients, invoices, tasks, companyInfo, taxSettings };
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'saveToDrive', data })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+        console.log('✅ Sauvegarde Drive OK');
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur sauvegarde:', error);
+        return false;
     }
 }
 
-function loadFromLocalStorage() {
+// Charger toutes les données depuis Google Drive
+async function loadFromDrive() {
     try {
-        const savedClients = localStorage.getItem('mti_clients');
-        const savedInvoices = localStorage.getItem('mti_invoices');
-        const savedTasks = localStorage.getItem('mti_tasks');
-        const savedCompanyInfo = localStorage.getItem('mti_companyInfo');
-        const savedTaxSettings = localStorage.getItem('mti_taxSettings');
-
-        if (savedClients) {
-            clients = JSON.parse(savedClients);
-            console.log('✅ Clients restaurés:', clients.length);
-        }
-        if (savedInvoices) {
-            invoices = JSON.parse(savedInvoices);
-            console.log('✅ Factures restaurées:', invoices.length);
-        }
-        if (savedTasks) {
-            tasks = JSON.parse(savedTasks);
-            console.log('✅ Tâches restaurées:', tasks.length);
-        }
-        if (savedCompanyInfo) {
-            companyInfo = JSON.parse(savedCompanyInfo);
-            console.log('✅ Info entreprise restaurée');
-        }
-        if (savedTaxSettings) {
-            taxSettings = JSON.parse(savedTaxSettings);
-            console.log('✅ Paramètres fiscaux restaurés');
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'loadFromDrive' })
+        });
+        const result = await response.json();
+        if (!result.success) {
+            console.log('Pas de données Drive, utilisation données par défaut');
+            return false;
         }
 
-        // CRITIQUE: Rafraîchir TOUTES les vues
-        if (typeof renderClientsTable === 'function') saveToLocalStorage();
-    renderClientsTable();
+        const data = result.data;
+        if (data.clients) clients = data.clients;
+        if (data.invoices) invoices = data.invoices;
+        if (data.tasks) tasks = data.tasks;
+        if (data.companyInfo) companyInfo = data.companyInfo;
+        if (data.taxSettings) taxSettings = data.taxSettings;
+
+        console.log('✅ Données chargées depuis Drive');
+
+        // Rafraîchir vues
+        if (typeof renderClientsTable === 'function') renderClientsTable();
         if (typeof populateClientSelects === 'function') populateClientSelects();
         if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
-        if (typeof renderCalendar === 'function') renderCalendar();
 
-        console.log('✅ Application prête');
-    } catch (e) {
-        console.error('❌ Erreur chargement localStorage:', e);
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur chargement:', error);
+        return false;
     }
 }
 
-// Initialisation au démarrage
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Initialisation MTI CONSULTING...');
-    loadFromLocalStorage();
-});
-// ===== FIN PERSISTANCE =====
 
 
 // Google Apps Script configuration
@@ -72,11 +77,93 @@ const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
 
-let clients = [];
+let clients = [
+    {
+        name: 'Entreprise ABC',
+        siret: '123 456 789 00012',
+        address: '123 Rue de la République\n75001 Paris',
+        email_facturation: 'facturation@entreprise-abc.fr',
+        contact_name: 'Marie Dupont'
+    },
+    {
+        name: 'Société XYZ',
+        siret: '987 654 321 00034',
+        address: '456 Avenue des Champs\n69002 Lyon',
+        email_facturation: '',
+        contact_name: ''
+    }
+];
 
-let invoices = [];
+let invoices = [
+    {
+        number: '202511-001',
+        client: 'Entreprise ABC',
+        clientSiret: '123 456 789 00012',
+        clientAddress: '123 Rue de la République\n75001 Paris',
+        date: '2025-11-15',
+        dueDate: '2025-12-15',
+        description: 'Prestation de conseil en développement',
+        quantity: 12,
+        unitPrice: 600,
+        total: 7200,
+        status: 'Payée',
+        montantRecu: 7200,
+        dateReception: '2025-12-10'
+    },
+    {
+        number: '202512-001',
+        client: 'Société XYZ',
+        clientSiret: '987 654 321 00034',
+        clientAddress: '456 Avenue des Champs\n69002 Lyon',
+        date: '2025-12-01',
+        dueDate: '2025-12-31',
+        description: 'Développement application web',
+        quantity: 12,
+        unitPrice: 600,
+        total: 7200,
+        status: 'Envoyée',
+        montantRecu: 0,
+        dateReception: null
+    },
+    {
+        number: '202510-001',
+        client: 'Entreprise ABC',
+        clientSiret: '123 456 789 00012',
+        clientAddress: '123 Rue de la République\n75001 Paris',
+        date: '2025-10-15',
+        dueDate: '2025-11-14',
+        description: 'Conseil stratégique',
+        quantity: 10,
+        unitPrice: 600,
+        total: 6000,
+        status: 'Retard',
+        montantRecu: 0,
+        dateReception: null
+    },
+    {
+        number: '202512-002',
+        client: 'Société XYZ',
+        clientSiret: '987 654 321 00034',
+        clientAddress: '456 Avenue des Champs\n69002 Lyon',
+        date: '2025-12-15',
+        dueDate: '2026-01-14',
+        description: 'Audit technique',
+        quantity: 12,
+        unitPrice: 600,
+        total: 7200,
+        status: 'Brouillon',
+        montantRecu: 0,
+        dateReception: null
+    }
+];
 
-let tasks = [];
+let tasks = [
+    { date: '2025-12-16', startTime: '09:00', duration: 3, description: 'Développement module facturation', type: 'Travail' },
+    { date: '2025-12-16', startTime: '14:00', duration: 2, description: 'Réunion client Entreprise ABC', type: 'Réunion client' },
+    { date: '2025-12-17', startTime: '10:00', duration: 1.5, description: 'Déclaration URSSAF', type: 'Administratif' },
+    { date: '2025-12-18', startTime: '09:30', duration: 4, description: 'Consulting SI Finance', type: 'Travail' },
+    { date: '2025-12-19', startTime: '15:00', duration: 1, description: 'Suivi projet Société XYZ', type: 'Réunion client' }
+];
 
 // Calendar state
 let currentView = 'week';
@@ -85,11 +172,11 @@ let currentDate = new Date();
 // Company info - now editable via settings
 let companyInfo = {
     name: 'MTI CONSULTING',
-    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
-    siret: '994 149 904 00017',
-    address: '13A rue du Général de Gaulle',
-    postalCode: '59110',
-    city: 'La Madeleine',
+    logoUrl: '',
+    siret: '[SIRET à venir]',
+    address: '[Adresse]',
+    postalCode: '[Code postal]',
+    city: '[Ville]',
     email: 'mticonsulting59@gmail.com',
     phone: '07 77 37 17 39'
 };
@@ -283,7 +370,7 @@ function deleteClient(index) {
         message,
         () => {
             clients.splice(index, 1);
-    saveToLocalStorage();
+    await saveToDrive();
             renderClientsTable();
             populateClientSelects();
             showToast('Client supprimé');
@@ -1052,7 +1139,6 @@ function deleteTaskFromEdit() {
         'Êtes-vous sûr de vouloir supprimer cette tâche ?',
         () => {
             tasks.splice(index, 1);
-    saveToLocalStorage();
             renderCalendar();
             document.getElementById('editTaskModal').classList.remove('show');
             showToast('Tâche supprimée');
@@ -1340,7 +1426,7 @@ function deleteInvoiceFromList(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
-    saveToLocalStorage();
+    await saveToDrive();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1394,7 +1480,7 @@ function duplicateInvoice(index) {
         dateReception: null
     };
     invoices.push(newInvoice);
-    saveToLocalStorage();
+    await saveToDrive();
     renderInvoiceList();
     applyFilters();
     showToast('Facture dupliquée');
@@ -2307,24 +2393,56 @@ function initApp() {
 // Start the app
 initApp();
 
-// ===== ENVOI FACTURES PAR EMAIL =====
+// ==========================================
+// ENVOI EMAIL GMAIL API
+// ==========================================
+
+// Envoyer une facture par email avec PDF
 async function sendInvoiceByEmail(index) {
     const invoice = invoices[index];
     const client = clients.find(c => c.name === invoice.client);
 
-    if (!client) {
-        alert('❌ Client non trouvé');
+    if (!client || !client.email_facturation) {
+        alert('❌ Email de facturation manquant');
         return;
     }
 
-    if (!client.email_facturation) {
-        alert('❌ Aucun email de facturation configuré pour ce client.\nVeuillez l\'ajouter dans la gestion des clients.');
+    if (!confirm(`📧 Envoyer la facture ${invoice.number} à ${client.email_facturation} ?`)) {
         return;
     }
 
+    try {
+        // Générer PDF base64
+        const pdfBase64 = await generateInvoicePDFBase64(invoice);
+
+        // Envoyer via backend
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'sendEmail',
+                to: client.email_facturation,
+                subject: `Facture ${invoice.number} - MTI CONSULTING`,
+                body: generateEmailBody(invoice, client),
+                pdfBase64: pdfBase64,
+                pdfFilename: `Facture_${invoice.number}.pdf`
+            })
+        });
+
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+
+        alert(`✅ Facture envoyée à ${client.email_facturation}`);
+    } catch (error) {
+        console.error('❌ Erreur:', error);
+        alert('Erreur : ' + error.message);
+    }
+}
+
+// Générer le corps de l'email
+function generateEmailBody(invoice, client) {
     const contactName = client.contact_name || client.name;
-    const emailSubject = `Facture ${invoice.number} - MTI CONSULTING`;
-    const emailBody = `Bonjour ${contactName},
+    return `Bonjour ${contactName},
 
 Veuillez trouver ci-joint la facture n°${invoice.number} d'un montant de ${invoice.total.toFixed(2)} € HT.
 
@@ -2333,48 +2451,157 @@ Date d'échéance : ${formatDate(invoice.dueDate)}
 
 Conditions de paiement : 30 jours nets
 
-Pour toute question, n'hésitez pas à me contacter.
-
 Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
-MTI CONSULTING
-Email : mticonsulting59@gmail.com
-Téléphone : 07 77 37 17 39`;
+MTI CONSULTING`;
+}
 
-    const confirmSend = confirm(`📧 APERÇU DE L'EMAIL
+// Générer PDF en base64
+async function generateInvoicePDFBase64(invoice) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
 
-À : ${client.email_facturation}
-Contact : ${contactName}
+    // Logo
+    if (companyInfo.logoUrl) {
+        try {
+            doc.addImage(companyInfo.logoUrl, 'PNG', 20, 20, 30, 30);
+        } catch(e) {}
+    }
 
-Objet : ${emailSubject}
+    // En-tête
+    doc.setFontSize(20);
+    doc.text(companyInfo.name, 60, 30);
+    doc.setFontSize(10);
+    doc.text(companyInfo.address, 60, 37);
+    doc.text(`${companyInfo.postalCode} ${companyInfo.city}`, 60, 42);
+    doc.text(`SIRET : ${companyInfo.siret}`, 60, 47);
 
-⚠️ Gmail va s'ouvrir avec un brouillon.
-Vous pourrez attacher le PDF manuellement.
+    // Titre
+    doc.setFontSize(18);
+    doc.text(`FACTURE ${invoice.number}`, 20, 70);
 
-Continuer ?`);
+    // Client
+    doc.setFontSize(10);
+    doc.text('Client :', 20, 85);
+    doc.text(invoice.client, 20, 90);
+    if (invoice.clientSiret) doc.text(`SIRET : ${invoice.clientSiret}`, 20, 95);
 
-    if (!confirmSend) {
-        alert('📭 Envoi annulé');
-        return;
+    // Dates
+    doc.text(`Date : ${formatDate(invoice.date)}`, 120, 85);
+    doc.text(`Échéance : ${formatDate(invoice.dueDate)}`, 120, 90);
+
+    // Tableau
+    doc.autoTable({
+        startY: 120,
+        head: [['Description', 'Quantité', 'Prix unitaire', 'Total HT']],
+        body: [[
+            invoice.description,
+            invoice.quantity.toString(),
+            `${invoice.unitPrice.toFixed(2)} €`,
+            `${invoice.total.toFixed(2)} €`
+        ]]
+    });
+
+    // Totaux
+    const finalY = doc.lastAutoTable.finalY + 10;
+    const tva = invoice.total * 0.2;
+    const ttc = invoice.total + tva;
+
+    doc.text(`Total HT : ${invoice.total.toFixed(2)} €`, 120, finalY);
+    doc.text(`TVA 20% : ${tva.toFixed(2)} €`, 120, finalY + 7);
+    doc.setFontSize(12);
+    doc.text(`Total TTC : ${ttc.toFixed(2)} €`, 120, finalY + 14);
+
+    return doc.output('datauristring').split(',')[1];
+}
+
+
+
+// ==========================================
+// SYNC TIERS GOOGLE SHEETS
+// ==========================================
+
+// Importer clients depuis Sheets
+async function importClientsFromSheets() {
+    const btn = document.getElementById('importClientsBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Import...';
     }
 
     try {
-        // Générer et télécharger le PDF
-        await viewInvoice(index);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                action: 'importClients',
+                sheetId: CONFIG.SHEETS_ID
+            })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
 
-        // Ouvrir Gmail
-        const mailtoUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(client.email_facturation)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-        window.open(mailtoUrl, '_blank');
+        clients = result.data.clients;
+        await saveToDrive();
+        renderClientsTable();
+        populateClientSelects();
 
-        alert(`✅ Gmail ouvert !
-
-Le PDF a été téléchargé.
-Veuillez l'attacher manuellement au brouillon Gmail.`);
-
+        alert(`✅ ${clients.length} clients importés`);
     } catch (error) {
-        console.error('Erreur envoi email:', error);
-        alert('❌ Erreur : ' + error.message);
+        alert('Erreur import : ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '📥 Importer depuis Sheets';
+        }
     }
 }
-// ===== FIN ENVOI EMAIL =====
+
+// Exporter clients vers Sheets
+async function exportClientsToSheets() {
+    const btn = document.getElementById('exportClientsBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Export...';
+    }
+
+    try {
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                action: 'exportClients',
+                sheetId: CONFIG.SHEETS_ID,
+                clients: clients
+            })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+
+        alert(`✅ ${clients.length} clients exportés`);
+        window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
+    } catch (error) {
+        alert('Erreur export : ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '📤 Exporter vers Sheets';
+        }
+    }
+}
+
+
+
+// ==========================================
+// INITIALISATION
+// ==========================================
+
+// Initialiser l'application
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Initialisation MTI CONSULTING v2.0...');
+
+    // Charger depuis Drive
+    await loadFromDrive();
+
+    console.log('✅ Application prête');
+});
