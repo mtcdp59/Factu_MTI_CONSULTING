@@ -28,6 +28,13 @@ function doPost(e) {
         return loadFromDrive();
       case 'sendEmail':
         return sendEmail(data);
+      case 'send_invoice':
+        // Expect either full pdfBase64 in payload or instruct client to provide it
+        return sendInvoiceAction(data);
+      case 'sync_invoices':
+        return syncInvoices(data.sheetId, data.invoices);
+      case 'sync_calendar':
+        return syncCalendarAction(data.tasks);
       case 'importClients':
         return importClients(data.sheetId);
       case 'exportClients':
@@ -258,6 +265,110 @@ function exportClients(sheetId, clients) {
   } catch (error) {
     return createResponse(false, 'Erreur export clients: ' + error.toString());
   }
+}
+
+// Export invoices to a dedicated sheet (Invoices)
+function exportInvoices(sheetId, invoices) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(sheetId);
+    let sheet = spreadsheet.getSheetByName('Invoices');
+
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Invoices');
+    }
+
+    sheet.clear();
+    sheet.appendRow(['Number', 'Client', 'Client SIRET', 'Client Address', 'Date', 'DueDate', 'Description', 'Quantity', 'UnitPrice', 'Total', 'Status', 'MontantRecu', 'DateReception']);
+
+    invoices.forEach(inv => {
+      sheet.appendRow([
+        inv.number || '',
+        inv.client || '',
+        inv.clientSiret || '',
+        inv.clientAddress || '',
+        inv.date || '',
+        inv.dueDate || '',
+        inv.description || '',
+        inv.quantity || 0,
+        inv.unitPrice || 0,
+        inv.total || 0,
+        inv.status || '',
+        inv.montantRecu || 0,
+        inv.dateReception || ''
+      ]);
+    });
+
+    sheet.autoResizeColumns(1, 13);
+
+    return createResponse(true, { count: invoices.length, sheetUrl: spreadsheet.getUrl() });
+  } catch (error) {
+    return createResponse(false, 'Erreur export invoices: ' + error.toString());
+  }
+}
+
+// Sync multiple tasks to Google Calendar
+function syncCalendarAction(tasks) {
+  try {
+    if (!tasks || !Array.isArray(tasks)) {
+      return createResponse(false, 'Payload tasks invalide');
+    }
+
+    const results = [];
+    tasks.forEach(task => {
+      try {
+        const date = task.date;
+        const time = task.startTime || task.time || '09:00';
+        const duration = task.duration || 1;
+        const description = task.description || 'Tâche';
+        const type = task.type || 'Autre';
+
+        const startDateTime = new Date(date + 'T' + time + ':00');
+        const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 60 * 1000);
+
+        const calEvent = CalendarApp.getDefaultCalendar().createEvent(description, startDateTime, endDateTime, { description: 'Type: ' + type, location: 'MTI CONSULTING' });
+        const colorId = getColorForType(type);
+        if (colorId) {
+          calEvent.setColor(colorId);
+        }
+
+        results.push({ task: task, eventId: calEvent.getId() });
+      } catch (errTask) {
+        results.push({ task: task, error: errTask.toString() });
+      }
+    });
+
+    return createResponse(true, { message: 'Tâches synchronisées', count: tasks.length, details: results });
+  } catch (error) {
+    return createResponse(false, 'Erreur sync calendar: ' + error.toString());
+  }
+}
+
+// Handle send_invoice action: expect pdfBase64 OR instruct client
+function sendInvoiceAction(data) {
+  try {
+    const invoice = data.invoice;
+    const clientEmail = data.clientEmail;
+
+    if (!clientEmail) {
+      return createResponse(false, 'Adresse email destinataire manquante');
+    }
+
+    // If client supplied a base64 PDF, forward to sendEmail
+    if (data.pdfBase64) {
+      return sendEmail({ to: clientEmail, subject: data.subject || ('Facture ' + (invoice && invoice.number ? invoice.number : '')), body: data.body || '', pdfBase64: data.pdfBase64, pdfFilename: data.pdfFilename || 'facture.pdf' });
+    }
+
+    // Otherwise, ask the client to provide the pdfBase64 (server-side PDF generation not implemented)
+    return createResponse(false, 'Aucun PDF fourni. Le client doit envoyer le PDF encodé en base64 (pdfBase64) avec l\'appel send_invoice.');
+  } catch (error) {
+    return createResponse(false, 'Erreur send_invoice: ' + error.toString());
+  }
+}
+
+// Wrapper for sync_invoices
+function syncInvoices(sheetId, invoices) {
+  // Reuse exportInvoices function to write invoices to a sheet
+  return exportInvoices(sheetId || CONFIG.SHEETS_ID, invoices || []);
 }
 
 // ==========================================

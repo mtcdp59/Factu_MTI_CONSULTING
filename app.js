@@ -42,6 +42,39 @@ async function callBackend(action, payload = {}) {
     }
 }
 
+// Quick backend tester (uses GET to call doGet and shows raw response in a modal)
+async function testBackend() {
+    const modal = document.getElementById('backendModal');
+    const pre = document.getElementById('backendRawResponse');
+    if (pre) pre.textContent = '⏳ Test en cours...';
+    try {
+        const resp = await fetch(CONFIG.BACKEND_URL, { method: 'GET' });
+        const text = await resp.text();
+        if (pre) pre.textContent = text;
+        if (modal) modal.classList.add('show');
+    } catch (err) {
+        const msg = 'Erreur lors du test BACKEND: ' + (err.message || err);
+        console.error(msg, err);
+        if (pre) pre.textContent = msg + '\n\nVérifiez que `CONFIG.BACKEND_URL` est correct et que le Web App Apps Script est déployé.';
+        if (modal) modal.classList.add('show');
+    }
+}
+
+// Modal handlers for backend tester
+document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'closeBackendModal') {
+        document.getElementById('backendModal')?.classList.remove('show');
+    }
+    if (e.target && e.target.id === 'copyBackendResponse') {
+        const pre = document.getElementById('backendRawResponse');
+        if (pre) {
+            navigator.clipboard?.writeText(pre.textContent || '')
+                .then(() => showToast('✅ Réponse copiée dans le presse-papiers'))
+                .catch(() => showToast('⚠️ Impossible de copier', 'error'));
+        }
+    }
+});
+
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
@@ -2336,8 +2369,29 @@ async function sendInvoiceWithPDF(invoice) {
             unitPrice: invoice.unitPrice
         };
 
+        // Generate PDF base64 on client (requires jsPDF loaded)
+        let pdfBase64 = null;
         try {
-            const result = await callBackend('send_invoice', { invoice: invoiceData, clientEmail });
+            pdfBase64 = await generateInvoicePDFBase64(invoice);
+        } catch (genErr) {
+            console.error('PDF generation error:', genErr);
+            const msg = genErr && genErr.message ? genErr.message : 'Erreur génération PDF';
+            // If it's jsPDF missing, show a helpful alert with steps
+            if (msg.toLowerCase().includes('jspdf')) {
+                alert('La bibliothèque jsPDF n\'est pas disponible.\n\nÉtapes recommandées:\n1) Vérifiez que `index.html` contient les scripts jsPDF (cdn).\n2) Rechargez la page (F5).\n3) Ouvrez la console DevTools pour erreurs réseau liées au chargement des scripts.\n\nSi besoin, copiez ce message et partagez-le pour debug.');
+            } else {
+                alert('Erreur lors de la génération du PDF: ' + msg + '\nVoir la console pour plus de détails.');
+            }
+            showToast('❌ Impossible de générer le PDF (voir alerte/console).', 'error');
+            return;
+        }
+
+        // Prepare subject/body
+        const subject = `Facture ${invoice.number} - MTI CONSULTING`;
+        const body = generateEmailBody(invoice, client || { name: invoice.client, contact_name: contactName });
+
+        try {
+            const result = await callBackend('send_invoice', { invoice: invoiceData, clientEmail, pdfBase64, pdfFilename: `Facture_${invoice.number}.pdf`, subject, body });
             if (result && result.success === false) {
                 throw new Error(result.error || 'Erreur serveur lors de l\'envoi');
             }
@@ -2723,6 +2777,21 @@ function initApp() {
     updateCFEMensuel();
     loadCompanySettings();
 
+    // Show jsPDF warning if missing
+    const pdfWarnEl = document.getElementById('pdfWarning');
+    if (!window.jspdf) {
+        if (pdfWarnEl) pdfWarnEl.style.display = 'block';
+        console.warn('jsPDF non chargé — certaines fonctionnalités PDF seront indisponibles.');
+    } else {
+        if (pdfWarnEl) pdfWarnEl.style.display = 'none';
+    }
+
+    // Backend test button binding
+    const testBtn = document.getElementById('testBackendBtn');
+    if (testBtn) testBtn.addEventListener('click', testBackend);
+
+    // Copy/close buttons exist in DOM; handlers attached globally above via event delegation
+
     // Initial persist attempt
     initialRenderAndPersist();
 }
@@ -2802,7 +2871,7 @@ MTI CONSULTING`;
 // Générer PDF en base64 (legacy jsPDF approach)
 async function generateInvoicePDFBase64(invoice) {
     if (!window.jspdf) {
-        throw new Error('jsPDF non chargé');
+        throw new Error('jsPDF non chargé. Assurez-vous que les scripts jsPDF sont inclus dans `index.html` (cdn) et que la page a été rechargée.');
     }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
@@ -2877,23 +2946,13 @@ async function importClientsFromSheets() {
     }
 
     try {
-        console.debug('Import clients payload ->', { action: 'importClients', sheetId: CONFIG.SHEETS_ID });
-        const response = await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'importClients',
-                sheetId: CONFIG.SHEETS_ID
-            })
-        });
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
-
-        clients = result.data.clients || [];
+        const result = await callBackend('importClients', { sheetId: CONFIG.SHEETS_ID });
+        if (!result || result.success === false) throw new Error((result && result.data) ? result.data : 'Erreur serveur lors de l\'import');
+        const payload = result.data || {};
+        clients = payload.clients || [];
         await saveToDrive();
         renderClientsTable();
         populateClientSelects();
-
         alert(`✅ ${clients.length} clients importés`);
     } catch (error) {
         console.error('importClientsFromSheets error:', error);
@@ -2918,19 +2977,8 @@ async function exportClientsToSheets() {
     }
 
     try {
-        console.debug('Export clients payload ->', { action: 'exportClients', sheetId: CONFIG.SHEETS_ID, clientsCount: clients.length });
-        const response = await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'exportClients',
-                sheetId: CONFIG.SHEETS_ID,
-                clients: clients
-            })
-        });
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
-
+        const result = await callBackend('exportClients', { sheetId: CONFIG.SHEETS_ID, clients });
+        if (!result || result.success === false) throw new Error((result && result.data) ? result.data : 'Erreur serveur lors de l\'export');
         alert(`✅ ${clients.length} clients exportés`);
         window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
     } catch (error) {
