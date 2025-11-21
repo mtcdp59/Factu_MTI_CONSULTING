@@ -2799,7 +2799,22 @@ function initApp() {
 // Start the app on DOM ready
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Initialisation MTI CONSULTING v2.0...');
-    // Charger depuis Drive first, then init
+    // Ensure backend storage exists (Drive folder + data file), then load from Drive
+    try {
+        const ensure = await callBackend('ensureStorage');
+        if (ensure && ensure.success) {
+            console.log('Drive storage verified:', ensure.data);
+            showToast('✅ Stockage Drive vérifié', 'success');
+        } else {
+            console.warn('ensureStorage returned error:', ensure);
+            showToast('⚠️ Vérification stockage Drive: problème (voir console)', 'info');
+        }
+    } catch (err) {
+        console.error('Erreur verify storage:', err);
+        showToast('⚠️ Impossible de vérifier le stockage Drive (voir console)', 'error');
+    }
+
+    // Charger depuis Drive
     await loadFromDrive();
     initApp();
     console.log('✅ Application prête');

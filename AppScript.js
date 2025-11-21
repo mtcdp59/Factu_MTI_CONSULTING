@@ -26,6 +26,8 @@ function doPost(e) {
         return saveToDrive(data.data);
       case 'loadFromDrive':
         return loadFromDrive();
+      case 'ensureStorage':
+        return ensureStorage();
       case 'sendEmail':
         return sendEmail(data);
       case 'send_invoice':
@@ -438,4 +440,44 @@ function createResponse(success, data) {
   return ContentService
     .createTextOutput(JSON.stringify(response))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Ensure Drive storage folder and data file exist. Returns details for client.
+function ensureStorage() {
+  try {
+    const folder = getOrCreateFolder(CONFIG.DRIVE_FOLDER);
+    const files = folder.getFilesByName(CONFIG.DATA_FILE);
+    let fileId = null;
+    let created = false;
+
+    if (files.hasNext()) {
+      const file = files.next();
+      fileId = file.getId();
+    } else {
+      // create initial empty structure
+      const emptyData = {
+        clients: [],
+        invoices: [],
+        tasks: [],
+        companyInfo: {
+          name: 'MTI CONSULTING',
+          logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+          siret: '994 149 904 00017',
+          address: '13A rue du Général de Gaulle',
+          postalCode: '59110',
+          city: 'La Madeleine',
+          email: 'mticonsulting59@gmail.com',
+          phone: '07 77 37 17 39'
+        },
+        taxSettings: { tvaRate: 20, retenuSource: 0, defaultPaymentTerms: 30 }
+      };
+      const f = folder.createFile(CONFIG.DATA_FILE, JSON.stringify(emptyData, null, 2), MimeType.PLAIN_TEXT);
+      fileId = f.getId();
+      created = true;
+    }
+
+    return createResponse(true, { folderId: folder.getId(), fileId: fileId, created: created, message: 'Storage verified' });
+  } catch (err) {
+    return createResponse(false, 'Erreur ensureStorage: ' + err.toString());
+  }
 }
