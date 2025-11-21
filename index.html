@@ -695,7 +695,7 @@ tr:hover {
     <header class="header">
         <div class="header-content">
             <img src="https://user-gen-media-assets.s3.amazonaws.com/seedream_images/16a7208c-3198-47a1-bc30-8de9aad484a0.png" alt="MTI CONSULTING Logo" class="logo">
-                    <img src="https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true" alt="MTI CONSULTING Logo" style="height: 40px; margin-right: 15px;">
+            <img src="https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true" alt="MTI CONSULTING Logo" style="height: 40px; margin-right: 15px;">
         <h1 class="header-title">MTI CONSULTING</h1>
         </div>
     </header>
@@ -851,10 +851,7 @@ tr:hover {
         <div id="tiers" class="tab-content">
             <div class="card">
                 <h2 class="card-title">Gestion des Clients</h2>
-                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-            <button class="btn btn-primary" id="addClientBtn" style="margin-bottom: var(--space-16);">➕ Nouveau client</button>
-            <button class="btn btn-secondary" id="exportClientsBtn" onclick="exportClientsToGoogleSheets()">📊 Exporter vers Google Sheets</button>
-        </div>
+                <button class="btn btn-primary" id="addClientBtn" style="margin-bottom: var(--space-16);">➕ Nouveau client</button>
                 
                 <div class="table-wrapper">
                     <table>
@@ -921,7 +918,7 @@ tr:hover {
                         <button class="btn btn-secondary" id="viewMonth" onclick="changeCalendarView('month')">Mois</button>
                     </div>
                     <div style="display: flex; gap: var(--space-8);">
-                        <button class="btn btn-primary" id="syncCalendarBtn" onclick="syncCalendar()" >📅 Synchroniser Calendar</button>
+                        <button class="btn btn-primary" id="syncCalendarBtn" onclick="syncCalendar()" title="Synchroniser avec Google Calendar">📅 Synchroniser Calendar</button>
                         <button class="btn btn-primary" id="addTaskBtn">➕ Ajouter une tâche</button>
                     </div>
                 </div>
