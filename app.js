@@ -24,61 +24,6 @@ function loadFromLocalStorage() {
         const savedCompanyInfo = localStorage.getItem('mti_companyInfo');
         const savedTaxSettings = localStorage.getItem('mti_taxSettings');
         
-        if (savedClients) {
-            clients = JSON.parse(savedClients);
-            console.log('✅ Clients restaurés:', clients.length);
-        }
-        if (savedInvoices) {
-            invoices = JSON.parse(savedInvoices);
-            console.log('✅ Factures restaurées:', invoices.length);
-        }
-        if (savedTasks) {
-            tasks = JSON.parse(savedTasks);
-            console.log('✅ Tâches restaurées:', tasks.length);
-        }
-        if (savedCompanyInfo) {
-            companyInfo = JSON.parse(savedCompanyInfo);
-            console.log('✅ Info entreprise restaurée');
-        }
-        if (savedTaxSettings) {
-            taxSettings = JSON.parse(savedTaxSettings);
-            console.log('✅ Paramètres fiscaux restaurés');
-        }
-        
-        // Mettre à jour l'interface après chargement
-        if (typeof renderClientsTable === 'function') renderClientsTable();
-        if (typeof populateClientSelects === 'function') populateClientSelects();
-        
-    } catch (e) {
-        console.error('❌ Erreur chargement localStorage:', e);
-    }
-}
-// ===== FIN AJOUT =====
-
-
-
-// ===== AJOUT PERSISTANCE LOCALSTORAGE =====
-function saveToLocalStorage() {
-    try {
-        localStorage.setItem('mti_clients', JSON.stringify(clients));
-        localStorage.setItem('mti_invoices', JSON.stringify(invoices));
-        localStorage.setItem('mti_tasks', JSON.stringify(tasks));
-        localStorage.setItem('mti_companyInfo', JSON.stringify(companyInfo));
-        localStorage.setItem('mti_taxSettings', JSON.stringify(taxSettings));
-        console.log('✅ Données sauvegardées dans localStorage');
-    } catch (e) {
-        console.error('❌ Erreur sauvegarde localStorage:', e);
-    }
-}
-
-function loadFromLocalStorage() {
-    try {
-        const savedClients = localStorage.getItem('mti_clients');
-        const savedInvoices = localStorage.getItem('mti_invoices');
-        const savedTasks = localStorage.getItem('mti_tasks');
-        const savedCompanyInfo = localStorage.getItem('mti_companyInfo');
-        const savedTaxSettings = localStorage.getItem('mti_taxSettings');
-        
         if (savedClients) clients = JSON.parse(savedClients);
         if (savedInvoices) invoices = JSON.parse(savedInvoices);
         if (savedTasks) tasks = JSON.parse(savedTasks);
@@ -141,15 +86,6 @@ const defaultSettings = {
 };
 
 // DOM Elements
-
-// ===== CHARGEMENT INITIAL =====
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Initialisation MTI CONSULTING...');
-    loadFromLocalStorage();
-    console.log('✅ Application prête');
-});
-// ===== FIN CHARGEMENT =====
-
 const navTabs = document.querySelectorAll('.nav-tab');
 const tabContents = document.querySelectorAll('.tab-content');
 
@@ -1409,7 +1345,6 @@ function deleteInvoice(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
-    saveToLocalStorage();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1878,7 +1813,7 @@ async function syncToGoogleSheets() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                action: 'sync_invoices',
+                action: 'exportInvoices',
                 invoices: invoiceData
             })
         });
@@ -2348,3 +2283,183 @@ function initApp() {
 
 // Start the app
 initApp();
+
+async function syncCalendar() {
+    const syncBtn = document.getElementById('syncCalendarBtn');
+    if (syncBtn) {
+        syncBtn.disabled = true;
+        syncBtn.textContent = '⏳ Synchronisation...';
+    }
+    
+    try {
+        console.log('🔄 Début synchronisation Calendar...');
+        
+        // Récupérer les événements de Google Calendar
+        const getResponse = await fetch(BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'getCalendarEvents' })
+        });
+        
+        const getResult = await getResponse.json();
+        console.log('📥 Événements Google récupérés:', getResult);
+        
+        if (!getResult.success) {
+            throw new Error(getResult.data || 'Erreur récupération événements');
+        }
+        
+        const remoteEvents = getResult.data.events || [];
+        console.log('📅 Nombre d\'événements Google:', remoteEvents.length);
+        
+        // Comparer avec tâches locales
+        const localEventsMap = new Map();
+        tasks.forEach(task => {
+            const key = `${task.date}-${task.startTime}-${task.description}`;
+            localEventsMap.set(key, task);
+        });
+        
+        const remoteEventsMap = new Map();
+        remoteEvents.forEach(event => {
+            const key = `${event.date}-${event.startTime}-${event.description}`;
+            remoteEventsMap.set(key, event);
+        });
+        
+        // À créer sur Google
+        const toCreate = [];
+        tasks.forEach(task => {
+            const key = `${task.date}-${task.startTime}-${task.description}`;
+            if (!remoteEventsMap.has(key)) {
+                toCreate.push(task);
+            }
+        });
+        
+        // À créer localement
+        const toCreateLocally = [];
+        remoteEvents.forEach(event => {
+            const key = `${event.date}-${event.startTime}-${event.description}`;
+            if (!localEventsMap.has(key)) {
+                toCreateLocally.push(event);
+            }
+        });
+        
+        console.log('📤 À créer sur Google:', toCreate.length);
+        console.log('📥 À créer localement:', toCreateLocally.length);
+        
+        // Envoyer vers Google
+        if (toCreate.length > 0) {
+            const syncResponse = await fetch(BACKEND_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'syncCalendar',
+                    toCreate: toCreate,
+                    toDelete: []
+                })
+            });
+            
+            const syncResult = await syncResponse.json();
+            console.log('✅ Sync Google result:', syncResult);
+            
+            if (!syncResult.success) {
+                throw new Error(syncResult.data || 'Erreur synchronisation');
+            }
+        }
+        
+        // Ajouter événements Google localement
+        toCreateLocally.forEach(event => {
+            if (!tasks.find(t => 
+                t.date === event.date && 
+                t.startTime === event.startTime && 
+                t.description === event.description
+            )) {
+                tasks.push({
+                    date: event.date,
+                    startTime: event.startTime,
+                    duration: event.duration,
+                    description: event.description,
+                    type: event.type || 'Travail',
+                    googleEventId: event.googleEventId
+                });
+            }
+        });
+        
+        // Sauvegarder et rafraîchir
+        saveToLocalStorage();
+        if (typeof renderCalendar === 'function') {
+            renderCalendar();
+        }
+        
+        alert(`✅ Synchronisation réussie !
+
+📤 ${toCreate.length} événement(s) envoyé(s) vers Google Calendar
+📥 ${toCreateLocally.length} événement(s) importé(s) depuis Google Calendar`);
+        
+    } catch (error) {
+        console.error('❌ Erreur synchronisation Calendar:', error);
+        alert('❌ Erreur synchronisation : ' + error.message);
+    } finally {
+        if (syncBtn) {
+            syncBtn.disabled = false;
+            syncBtn.textContent = '🔄 Synchroniser Calendar';
+        }
+    }
+}
+
+
+async function exportClientsToGoogleSheets() {
+    const exportBtn = document.getElementById('exportClientsBtn');
+    if (exportBtn) {
+        exportBtn.disabled = true;
+        exportBtn.textContent = '⏳ Export en cours...';
+    }
+    
+    try {
+        // Calculer les stats par client
+        const dataToExport = clients.map(client => {
+            const clientInvoices = invoices.filter(inv => inv.client === client.name);
+            const totalBilled = clientInvoices.reduce((sum, inv) => sum + inv.total, 0);
+            const totalPaid = clientInvoices.reduce((sum, inv) => sum + (inv.montantRecu || 0), 0);
+            
+            return {
+                name: client.name,
+                siret: client.siret || '',
+                address: client.address || '',
+                email_facturation: client.email_facturation || '',
+                contact_name: client.contact_name || '',
+                totalBilled: totalBilled,
+                totalPaid: totalPaid,
+                balance: totalBilled - totalPaid
+            };
+        });
+        
+        console.log('📤 Export de', dataToExport.length, 'clients...');
+        
+        const response = await fetch(BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'exportClients',
+                sheetId: '1r2fxsy94ufRqAGlgan2CCEIwsI6X_B6m0ujXs6tk8WI',
+                data: dataToExport
+            })
+        });
+        
+        const result = await response.json();
+        console.log('📥 Résultat export:', result);
+        
+        if (result.success) {
+            alert(`✅ ${result.data.count} clients exportés vers Google Sheets !`);
+            window.open('https://docs.google.com/spreadsheets/d/1r2fxsy94ufRqAGlgan2CCEIwsI6X_B6m0ujXs6tk8WI', '_blank');
+        } else {
+            throw new Error(result.error || result.data || 'Erreur inconnue');
+        }
+    } catch (error) {
+        console.error('❌ Erreur export clients:', error);
+        alert('❌ Erreur : ' + error.message);
+    } finally {
+        if (exportBtn) {
+            exportBtn.disabled = false;
+            exportBtn.textContent = '📊 Exporter vers Google Sheets';
+        }
+    }
+}
