@@ -2463,3 +2463,44 @@ async function exportClientsToGoogleSheets() {
         }
     }
 }
+
+
+async function sendInvoiceByEmail(index) {
+    const invoice = invoices[index];
+    const client = clients.find(c => c.name === invoice.client);
+
+    if (!client || !client.email_facturation) {
+        alert('❌ Aucun email de facturation configuré pour ce client');
+        return;
+    }
+
+    const contactName = client.contact_name || client.name;
+    const emailSubject = `Facture ${invoice.number} - MTI CONSULTING`;
+    const emailBody = `Bonjour ${contactName},
+
+Veuillez trouver ci-joint la facture n°${invoice.number} d'un montant de ${invoice.total.toFixed(2)} € HT.
+
+Date de facturation : ${formatDate(invoice.date)}
+Date d'échéance : ${formatDate(invoice.dueDate)}
+
+Conditions de paiement : 30 jours nets
+
+Cordialement,
+Mickaël TOURDOT-IGUEDJETAL
+MTI CONSULTING
+mticonsulting59@gmail.com
+07 77 37 17 39`;
+
+    const confirmSend = confirm(`📧 Gmail va s'ouvrir avec:\n\nÀ : ${client.email_facturation}\n\nAttacher le PDF manuellement.\n\nContinuer ?`);
+    if (!confirmSend) return;
+
+    try {
+        await viewInvoice(index);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const mailtoUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(client.email_facturation)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+        window.open(mailtoUrl, '_blank');
+        alert('✅ Gmail ouvert ! Attachez le PDF téléchargé.');
+    } catch (error) {
+        alert('❌ Erreur : ' + error.message);
+    }
+}
