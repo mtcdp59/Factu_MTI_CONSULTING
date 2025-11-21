@@ -1424,9 +1424,9 @@ function deleteInvoiceFromList(index) {
     showConfirmation(
         'Confirmation de suppression',
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
-        () => {
+        async () => {
             invoices.splice(index, 1);
-    await saveToDrive();
+            await saveToDrive();
             renderInvoiceList();
             applyFilters();
             renderCharts();
@@ -1467,7 +1467,7 @@ function deleteInvoice(index) {
 window.deleteInvoice = deleteInvoice;
 
 // Duplicate invoice
-function duplicateInvoice(index) {
+async function duplicateInvoice(index) {
     const invoice = invoices[index];
     const today = new Date().toISOString().split('T')[0];
     const newInvoice = {
@@ -1481,6 +1481,12 @@ function duplicateInvoice(index) {
     };
     invoices.push(newInvoice);
     await saveToDrive();
+    renderInvoiceList();
+    applyFilters();
+    showToast('Facture dupliquée');
+}
+
+window.duplicateInvoice = duplicateInvoice;
     renderInvoiceList();
     applyFilters();
     showToast('Facture dupliquée');
