@@ -57,10 +57,11 @@ async function loadFromDrive() {
 
         console.log('✅ Données chargées depuis Drive');
 
-        // Rafraîchir vues
+        // Rafraîchir vues si fonctions définies
         if (typeof renderClientsTable === 'function') renderClientsTable();
         if (typeof populateClientSelects === 'function') populateClientSelects();
         if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
+        if (typeof renderInvoiceList === 'function') renderInvoiceList();
 
         return true;
     } catch (error) {
@@ -69,10 +70,6 @@ async function loadFromDrive() {
     }
 }
 
-
-
-// Google Apps Script configuration
-const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
 const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
@@ -200,47 +197,63 @@ const defaultSettings = {
     acreInactif: 24.6
 };
 
-// DOM Elements
-const navTabs = document.querySelectorAll('.nav-tab');
-const tabContents = document.querySelectorAll('.tab-content');
+// DOM Elements (lazy initialization)
+let navTabs = null;
+let tabContents = null;
+let invoiceForm = null;
+let invoiceNumberInput = null;
+let invoiceDateInput = null;
+let dueDateInput = null;
+let quantityInput = null;
+let unitPriceInput = null;
+let totalHTInput = null;
 
-// Navigation
-navTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-        const targetTab = tab.dataset.tab;
-        
-        navTabs.forEach(t => t.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-        
-        tab.classList.add('active');
-        document.getElementById(targetTab).classList.add('active');
-        
-        // Refresh content when switching tabs
-        if (targetTab === 'suivi') {
-            checkOverdueInvoices();
-            applyFilters();
-            renderCharts();
-        } else if (targetTab === 'planning') {
-            renderCalendar();
-        } else if (targetTab === 'tiers') {
-            renderClientsTable();
-        } else if (targetTab === 'factures') {
-            renderInvoiceList();
-        }
+// Navigation - set up after DOM ready
+function setupNavigation() {
+    navTabs = document.querySelectorAll('.nav-tab');
+    tabContents = document.querySelectorAll('.tab-content');
+
+    if (!navTabs) return;
+
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetTab = tab.dataset.tab;
+
+            navTabs.forEach(t => t.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+
+            tab.classList.add('active');
+            const targetEl = document.getElementById(targetTab);
+            if (targetEl) targetEl.classList.add('active');
+
+            // Refresh content when switching tabs
+            if (targetTab === 'suivi') {
+                checkOverdueInvoices();
+                applyFilters();
+                renderCharts();
+            } else if (targetTab === 'planning') {
+                renderCalendar();
+            } else if (targetTab === 'tiers') {
+                renderClientsTable();
+            } else if (targetTab === 'factures') {
+                renderInvoiceList();
+            }
+        });
     });
-});
+}
 
 // TIERS - Client Management
 function renderClientsTable() {
     const tbody = document.getElementById('clientsTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
-    
+
     clients.forEach((client, index) => {
         const clientInvoices = invoices.filter(inv => inv.client === client.name);
-        const totalBilled = clientInvoices.reduce((sum, inv) => sum + inv.total, 0);
+        const totalBilled = clientInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
         const hasEmail = client.email_facturation && client.email_facturation.trim() !== '';
         const emailIcon = hasEmail ? ' ✉️' : '';
-        
+
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><strong>${client.name}${emailIcon}</strong></td>
@@ -262,17 +275,17 @@ function renderClientsTable() {
 function populateClientSelects() {
     const clientSelect = document.getElementById('clientSelect');
     const clientFilterSelect = document.getElementById('clientFilterSelect');
-    
-    // Populate invoice form select
-    clientSelect.innerHTML = '<option value="">Saisie manuelle</option>';
-    clients.forEach((client, index) => {
-        const option = document.createElement('option');
-        option.value = index;
-        option.textContent = client.name;
-        clientSelect.appendChild(option);
-    });
-    
-    // Populate filter select
+
+    if (clientSelect) {
+        clientSelect.innerHTML = '<option value="">Saisie manuelle</option>';
+        clients.forEach((client, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = client.name;
+            clientSelect.appendChild(option);
+        });
+    }
+
     if (clientFilterSelect) {
         clientFilterSelect.innerHTML = '<option value="all">Tous les clients</option>';
         clients.forEach((client) => {
@@ -284,93 +297,159 @@ function populateClientSelects() {
     }
 }
 
-document.getElementById('clientSelect').addEventListener('change', (e) => {
-    const index = e.target.value;
-    if (index === '') {
-        // Manual entry
-        document.getElementById('clientName').value = '';
-        document.getElementById('clientSiret').value = '';
-        document.getElementById('clientAddress').value = '';
-        document.getElementById('clientName').readOnly = false;
-        document.getElementById('clientSiret').readOnly = false;
-        document.getElementById('clientAddress').readOnly = false;
-        // Hide email button for manual entry
-        document.getElementById('sendEmailBtn').style.display = 'none';
-    } else {
-        // Auto-fill from client
-        const client = clients[parseInt(index)];
-        document.getElementById('clientName').value = client.name;
-        document.getElementById('clientSiret').value = client.siret || '';
-        document.getElementById('clientAddress').value = client.address || '';
-        document.getElementById('clientName').readOnly = true;
-        document.getElementById('clientSiret').readOnly = true;
-        document.getElementById('clientAddress').readOnly = true;
+// Client select change
+function setupClientSelectListener() {
+    const clientSelect = document.getElementById('clientSelect');
+    if (!clientSelect) return;
+
+    clientSelect.addEventListener('change', (e) => {
+        const index = e.target.value;
+        if (index === '') {
+            // Manual entry
+            const nameEl = document.getElementById('clientName');
+            const siretEl = document.getElementById('clientSiret');
+            const addressEl = document.getElementById('clientAddress');
+            if (nameEl) nameEl.value = '';
+            if (siretEl) siretEl.value = '';
+            if (addressEl) addressEl.value = '';
+            if (nameEl) nameEl.readOnly = false;
+            if (siretEl) siretEl.readOnly = false;
+            if (addressEl) addressEl.readOnly = false;
+            // Hide email button for manual entry
+            const sendEmailBtn = document.getElementById('sendEmailBtn');
+            if (sendEmailBtn) sendEmailBtn.style.display = 'none';
+        } else {
+            // Auto-fill from client
+            const client = clients[parseInt(index)];
+            const nameEl = document.getElementById('clientName');
+            const siretEl = document.getElementById('clientSiret');
+            const addressEl = document.getElementById('clientAddress');
+            if (nameEl) nameEl.value = client.name;
+            if (siretEl) siretEl.value = client.siret || '';
+            if (addressEl) addressEl.value = client.address || '';
+            if (nameEl) nameEl.readOnly = true;
+            if (siretEl) siretEl.readOnly = true;
+            if (addressEl) addressEl.readOnly = true;
+
+            // Show send email button if email exists
+            const sendEmailBtn = document.getElementById('sendEmailBtn');
+            if (sendEmailBtn) {
+                const hasEmail = client.email_facturation && client.email_facturation.trim() !== '';
+                sendEmailBtn.style.display = hasEmail ? 'inline-flex' : 'none';
+            }
+        }
+    });
+}
+
+// Client Form handlers
+function setupClientFormHandlers() {
+    const addClientBtn = document.getElementById('addClientBtn');
+    if (addClientBtn) {
+        addClientBtn.addEventListener('click', () => {
+            const card = document.getElementById('clientFormCard');
+            if (card) card.style.display = 'block';
+            const title = document.getElementById('clientFormTitle');
+            if (title) title.textContent = 'Nouveau client';
+            const editIdx = document.getElementById('editClientIndex');
+            if (editIdx) editIdx.value = '-1';
+            const form = document.getElementById('clientForm');
+            if (form) form.reset();
+        });
     }
-});
 
-document.getElementById('addClientBtn').addEventListener('click', () => {
-    document.getElementById('clientFormCard').style.display = 'block';
-    document.getElementById('clientFormTitle').textContent = 'Nouveau client';
-    document.getElementById('editClientIndex').value = '-1';
-    document.getElementById('clientForm').reset();
-});
-
-document.getElementById('cancelClient').addEventListener('click', () => {
-    document.getElementById('clientFormCard').style.display = 'none';
-    document.getElementById('clientForm').reset();
-});
-
-document.getElementById('clientForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    
-    const index = parseInt(document.getElementById('editClientIndex').value);
-    const client = {
-        name: document.getElementById('clientFormName').value,
-        siret: document.getElementById('clientFormSiret').value,
-        address: document.getElementById('clientFormAddress').value,
-        email_facturation: document.getElementById('clientFormEmail').value,
-        contact_name: document.getElementById('clientFormContactName').value
-    };
-    
-    if (index === -1) {
-        clients.push(client);
-    } else {
-        clients[index] = client;
+    const cancelClient = document.getElementById('cancelClient');
+    if (cancelClient) {
+        cancelClient.addEventListener('click', () => {
+            const card = document.getElementById('clientFormCard');
+            if (card) card.style.display = 'none';
+            const form = document.getElementById('clientForm');
+            if (form) form.reset();
+        });
     }
-    
-    document.getElementById('clientFormCard').style.display = 'none';
-    document.getElementById('clientForm').reset();
-    renderClientsTable();
-    populateClientSelects();
-});
+
+    const clientFormEl = document.getElementById('clientForm');
+    if (clientFormEl) {
+        clientFormEl.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const index = parseInt(document.getElementById('editClientIndex').value);
+            const client = {
+                name: document.getElementById('clientFormName').value,
+                siret: document.getElementById('clientFormSiret').value,
+                address: document.getElementById('clientFormAddress').value,
+                email_facturation: document.getElementById('clientFormEmail').value,
+                contact_name: document.getElementById('clientFormContactName').value
+            };
+
+            if (index === -1) {
+                clients.push(client);
+            } else {
+                clients[index] = client;
+            }
+
+            const card = document.getElementById('clientFormCard');
+            if (card) card.style.display = 'none';
+            clientFormEl.reset();
+            renderClientsTable();
+            populateClientSelects();
+            showToast('✅ Client enregistré');
+            saveToDrive(); // persist changes
+        });
+    }
+}
 
 function editClient(index) {
     const client = clients[index];
-    document.getElementById('clientFormTitle').textContent = 'Modifier le client';
-    document.getElementById('editClientIndex').value = index;
-    document.getElementById('clientFormName').value = client.name;
-    document.getElementById('clientFormSiret').value = client.siret || '';
-    document.getElementById('clientFormAddress').value = client.address || '';
-    document.getElementById('clientFormEmail').value = client.email_facturation || '';
-    document.getElementById('clientFormContactName').value = client.contact_name || '';
-    document.getElementById('clientFormCard').style.display = 'block';
+    const title = document.getElementById('clientFormTitle');
+    if (title) title.textContent = 'Modifier le client';
+    const editIdx = document.getElementById('editClientIndex');
+    if (editIdx) editIdx.value = index;
+    const nameEl = document.getElementById('clientFormName');
+    const siretEl = document.getElementById('clientFormSiret');
+    const addressEl = document.getElementById('clientFormAddress');
+    const emailEl = document.getElementById('clientFormEmail');
+    const contactEl = document.getElementById('clientFormContactName');
+    if (nameEl) nameEl.value = client.name;
+    if (siretEl) siretEl.value = client.siret || '';
+    if (addressEl) addressEl.value = client.address || '';
+    if (emailEl) emailEl.value = client.email_facturation || '';
+    if (contactEl) contactEl.value = client.contact_name || '';
+    const card = document.getElementById('clientFormCard');
+    if (card) card.style.display = 'block';
 }
 
 function deleteClient(index) {
     const client = clients[index];
     const clientInvoices = invoices.filter(inv => inv.client === client.name);
-    
+
     let message = `Voulez-vous vraiment supprimer le client "${client.name}" ?`;
     if (clientInvoices.length > 0) {
         message = `Attention : Ce client a ${clientInvoices.length} facture(s) associée(s).\n\nSupprimer quand même ?`;
     }
-    
+
     showConfirmation(
         'Supprimer le client',
         message,
         () => {
             clients.splice(index, 1);
-    await saveToDrive();
+            // Remove invoices for this client
+            const removedInvoicesCount = invoices.filter(inv => inv.client === client.name).length;
+            if (removedInvoicesCount > 0) {
+                invoices = invoices.filter(inv => inv.client !== client.name);
+            }
+
+            // Persist changes to Drive (non-blocking) and report if invoice(s) removed
+            saveToDrive()
+                .then(() => {
+                    if (removedInvoicesCount > 0) {
+                        showToast(`${removedInvoicesCount} facture(s) associée(s) supprimée(s)`);
+                    }
+                })
+                .catch(err => {
+                    console.error('Erreur sauvegarde après suppression client', err);
+                    showToast('⚠️ Erreur sauvegarde Drive', 'error');
+                });
+
             renderClientsTable();
             populateClientSelects();
             showToast('Client supprimé');
@@ -382,13 +461,7 @@ window.editClient = editClient;
 window.deleteClient = deleteClient;
 
 // FACTURES - Invoice Generator
-const invoiceForm = document.getElementById('invoiceForm');
-const invoiceNumberInput = document.getElementById('invoiceNumber');
-const invoiceDateInput = document.getElementById('invoiceDate');
-const dueDateInput = document.getElementById('dueDate');
-const quantityInput = document.getElementById('quantity');
-const unitPriceInput = document.getElementById('unitPrice');
-const totalHTInput = document.getElementById('totalHT');
+// lazy elements will be initialized in initApp
 
 // Initialize invoice number with new format YYYYMM-NNN
 function getNextInvoiceNumber(date = null) {
@@ -396,10 +469,10 @@ function getNextInvoiceNumber(date = null) {
     const year = invoiceDate.getFullYear();
     const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
     const yearMonth = `${year}${month}`;
-    
+
     // Find all invoices for this year-month
     const sameMonthInvoices = invoices.filter(inv => {
-        const invNumber = inv.number;
+        const invNumber = inv.number || '';
         // Extract YYYYMM from invoice number (format: YYYYMM-NNN)
         if (invNumber.includes('-')) {
             const [invYearMonth] = invNumber.split('-');
@@ -407,17 +480,17 @@ function getNextInvoiceNumber(date = null) {
         }
         return false;
     });
-    
+
     // Find max sequence number for this month
     let maxSeq = 0;
     sameMonthInvoices.forEach(inv => {
-        const parts = inv.number.split('-');
+        const parts = (inv.number || '').split('-');
         if (parts.length === 2) {
             const seq = parseInt(parts[1]);
             if (seq > maxSeq) maxSeq = seq;
         }
     });
-    
+
     const nextSeq = String(maxSeq + 1).padStart(3, '0');
     return `${yearMonth}-${nextSeq}`;
 }
@@ -427,213 +500,313 @@ function setDefaultDates() {
     const today = new Date();
     const defaultDue = new Date(today);
     defaultDue.setDate(defaultDue.getDate() + 30);
-    
-    invoiceDateInput.value = today.toISOString().split('T')[0];
-    dueDateInput.value = defaultDue.toISOString().split('T')[0];
+
+    if (invoiceDateInput) invoiceDateInput.value = today.toISOString().split('T')[0];
+    if (dueDateInput) dueDateInput.value = defaultDue.toISOString().split('T')[0];
 }
 
 // Auto-update due date and invoice number when invoice date changes
-invoiceDateInput.addEventListener('change', () => {
-    const invoiceDate = new Date(invoiceDateInput.value);
-    const dueDate = new Date(invoiceDate);
-    dueDate.setDate(dueDate.getDate() + 30);
-    dueDateInput.value = dueDate.toISOString().split('T')[0];
-    
-    // Update invoice number based on new date (only if not in edit mode)
-    if (!isEditMode) {
-        invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
+function setupInvoiceFormListeners() {
+    if (invoiceDateInput) {
+        invoiceDateInput.addEventListener('change', () => {
+            const invoiceDate = new Date(invoiceDateInput.value);
+            const dueDate = new Date(invoiceDate);
+            dueDate.setDate(dueDate.getDate() + 30);
+            if (dueDateInput) dueDateInput.value = dueDate.toISOString().split('T')[0];
+
+            // Update invoice number based on new date (only if not in edit mode)
+            if (!isEditMode && invoiceNumberInput) {
+                invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
+            }
+        });
     }
-});
+
+    if (quantityInput) {
+        quantityInput.addEventListener('input', calculateTotal);
+    }
+    if (unitPriceInput) {
+        unitPriceInput.addEventListener('input', calculateTotal);
+    }
+
+    const tvaToggle = document.getElementById('tvaToggle');
+    if (tvaToggle) {
+        tvaToggle.addEventListener('change', () => {
+            const tvaEnabled = tvaToggle.checked;
+            const tvaFields = document.getElementById('tvaFields');
+            const noTvaFields = document.getElementById('noTvaFields');
+            if (tvaFields) tvaFields.style.display = tvaEnabled ? 'block' : 'none';
+            if (noTvaFields) noTvaFields.style.display = tvaEnabled ? 'none' : 'block';
+            calculateTotal();
+        });
+    }
+
+    const previewBtn = document.getElementById('previewInvoice');
+    if (previewBtn) {
+        previewBtn.addEventListener('click', () => {
+            const clientNameEl = document.getElementById('clientName');
+            const clientAddressEl = document.getElementById('clientAddress');
+            const serviceDescriptionEl = document.getElementById('serviceDescription');
+            if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput || !serviceDescriptionEl || !quantityInput || !unitPriceInput) {
+                alert('Veuillez remplir tous les champs obligatoires');
+                return;
+            }
+
+            const clientName = clientNameEl.value;
+            const clientAddress = clientAddressEl.value;
+            const invoiceNumber = invoiceNumberInput.value;
+            const invoiceDate = invoiceDateInput.value;
+            const dueDate = dueDateInput.value;
+            const description = serviceDescriptionEl.value;
+            const quantity = quantityInput.value;
+            const unitPrice = unitPriceInput.value;
+            const total = calculateTotal();
+
+            if (!clientName || !clientAddress || !invoiceDate || !dueDate || !description || !quantity || !unitPrice) {
+                alert('Veuillez remplir tous les champs obligatoires');
+                return;
+            }
+
+            const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
+            const totalHT = total;
+            const tva = tvaEnabled ? totalHT * 0.20 : 0;
+            const totalTTC = totalHT + tva;
+
+            let tvaSection = '';
+            if (tvaEnabled) {
+                tvaSection = `
+                    <div class="invoice-total">
+                        Total HT: ${totalHT.toFixed(2)} €<br>
+                        TVA (20%): ${tva.toFixed(2)} €<br>
+                        <strong>Total TTC: ${totalTTC.toFixed(2)} €</strong>
+                    </div>
+                `;
+            } else {
+                tvaSection = `
+                    <div class="invoice-total">
+                        Total HT: ${totalHT.toFixed(2)} €<br>
+                        TVA non applicable (art. 293 B du CGI)<br>
+                        <strong>Total TTC: ${totalHT.toFixed(2)} €</strong>
+                    </div>
+                `;
+            }
+
+            const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
+                ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
+                : '[À compléter dans Paramètres]';
+
+            const logoHTML = companyInfo.logoUrl
+                ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);">`
+                : '';
+
+            const previewHTML = `
+                <div class="invoice-header">
+                    <div class="invoice-header-left">
+                        ${logoHTML}
+                        <div class="invoice-company">${companyInfo.name}</div>
+                        <div style="white-space: pre-line; font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                        <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret}</div>
+                    </div>
+                    <div class="invoice-header-right">
+                        <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
+                        <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
+                    </div>
+                </div>
+
+                <div class="invoice-details">
+                    <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
+                    <div style="font-size: 13px;">
+                        <div>Date: ${formatDateFR(invoiceDate)}</div>
+                        <div>Échéance: ${formatDateFR(dueDate)}</div>
+                    </div>
+                </div>
+
+                <hr class="separator">
+
+                <table class="invoice-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th style="text-align: center;">Quantité</th>
+                            <th style="text-align: right;">Prix unitaire</th>
+                            <th style="text-align: right;">Total HT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>${description}</td>
+                            <td style="text-align: center;">${quantity}</td>
+                            <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
+                            <td style="text-align: right;">${total.toFixed(2)} €</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                ${tvaSection}
+
+                <div class="invoice-legal">
+                    <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
+                    <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
+                </div>
+            `;
+
+            const previewContent = document.getElementById('invoicePreviewContent');
+            if (previewContent) previewContent.innerHTML = previewHTML;
+            const modal = document.getElementById('invoiceModal');
+            if (modal) modal.classList.add('show');
+        });
+    }
+
+    const closeModal = document.getElementById('closeModal');
+    if (closeModal) {
+        closeModal.addEventListener('click', () => {
+            const modal = document.getElementById('invoiceModal');
+            if (modal) modal.classList.remove('show');
+        });
+    }
+}
 
 // Calculate total with optional TVA
 function calculateTotal() {
+    if (!quantityInput || !unitPriceInput) return 0;
     const quantity = parseFloat(quantityInput.value) || 0;
     const unitPrice = parseFloat(unitPriceInput.value) || 0;
     const totalHT = quantity * unitPrice;
-    
-    const tvaEnabled = document.getElementById('tvaToggle').checked;
-    
+
+    const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
+
     if (tvaEnabled) {
         const tva = totalHT * 0.20;
         const totalTTC = totalHT + tva;
-        document.getElementById('totalHT').value = totalHT.toFixed(2) + ' €';
-        document.getElementById('totalTVA').value = tva.toFixed(2) + ' €';
-        document.getElementById('totalTTC').value = totalTTC.toFixed(2) + ' €';
+        const totalHTEl = document.getElementById('totalHT');
+        const totalTVAEl = document.getElementById('totalTVA');
+        const totalTTCEl = document.getElementById('totalTTC');
+        if (totalHTEl) totalHTEl.value = totalHT.toFixed(2) + ' €';
+        if (totalTVAEl) totalTVAEl.value = tva.toFixed(2) + ' €';
+        if (totalTTCEl) totalTTCEl.value = totalTTC.toFixed(2) + ' €';
     } else {
-        document.getElementById('totalHTOnly').value = totalHT.toFixed(2) + ' €';
+        const totalHTOnlyEl = document.getElementById('totalHTOnly');
+        if (totalHTOnlyEl) totalHTOnlyEl.value = totalHT.toFixed(2) + ' €';
     }
-    
+
     return totalHT;
 }
 
-// Toggle TVA fields visibility
-const tvaToggle = document.getElementById('tvaToggle');
-if (tvaToggle) {
-    tvaToggle.addEventListener('change', () => {
-        const tvaEnabled = tvaToggle.checked;
-        document.getElementById('tvaFields').style.display = tvaEnabled ? 'block' : 'none';
-        document.getElementById('noTvaFields').style.display = tvaEnabled ? 'none' : 'block';
-        calculateTotal();
-    });
-}
-
-quantityInput.addEventListener('input', calculateTotal);
-unitPriceInput.addEventListener('input', calculateTotal);
-
 // Format date to French format
 function formatDateFR(dateString) {
+    if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('fr-FR');
 }
 
-// Preview invoice
-document.getElementById('previewInvoice').addEventListener('click', () => {
-    const clientName = document.getElementById('clientName').value;
-    const clientAddress = document.getElementById('clientAddress').value;
-    const invoiceNumber = invoiceNumberInput.value;
-    const invoiceDate = invoiceDateInput.value;
-    const dueDate = dueDateInput.value;
-    const description = document.getElementById('serviceDescription').value;
-    const quantity = quantityInput.value;
-    const unitPrice = unitPriceInput.value;
-    const total = calculateTotal();
-    
-    if (!clientName || !clientAddress || !invoiceDate || !dueDate || !description || !quantity || !unitPrice) {
-        alert('Veuillez remplir tous les champs obligatoires');
-        return;
-    }
-    
-    const tvaEnabled = document.getElementById('tvaToggle').checked;
-    const totalHT = total;
-    const tva = tvaEnabled ? totalHT * 0.20 : 0;
-    const totalTTC = totalHT + tva;
-    
-    let tvaSection = '';
-    if (tvaEnabled) {
-        tvaSection = `
-            <div class="invoice-total">
-                Total HT: ${totalHT.toFixed(2)} €<br>
-                TVA (20%): ${tva.toFixed(2)} €<br>
-                <strong>Total TTC: ${totalTTC.toFixed(2)} €</strong>
-            </div>
-        `;
-    } else {
-        tvaSection = `
-            <div class="invoice-total">
-                Total HT: ${totalHT.toFixed(2)} €<br>
-                TVA non applicable (art. 293 B du CGI)<br>
-                <strong>Total TTC: ${totalHT.toFixed(2)} €</strong>
-            </div>
-        `;
-    }
-    
-    // Build company address
-    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city 
-        ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
-        : '[À compléter dans Paramètres]';
-    
-    const logoHTML = companyInfo.logoUrl 
-        ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);">`
-        : '';
-    
-    const previewHTML = `
-        <div class="invoice-header">
-            <div class="invoice-header-left">
-                ${logoHTML}
-                <div class="invoice-company">${companyInfo.name}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
-                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret}</div>
-            </div>
-            <div class="invoice-header-right">
-                <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
-            </div>
-        </div>
-        
-        <div class="invoice-details">
-            <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
-            <div style="font-size: 13px;">
-                <div>Date: ${formatDateFR(invoiceDate)}</div>
-                <div>Échéance: ${formatDateFR(dueDate)}</div>
-            </div>
-        </div>
-        
-        <hr class="separator">
-        
-        <table class="invoice-table">
-            <thead>
-                <tr>
-                    <th>Description</th>
-                    <th style="text-align: center;">Quantité</th>
-                    <th style="text-align: right;">Prix unitaire</th>
-                    <th style="text-align: right;">Total HT</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>${description}</td>
-                    <td style="text-align: center;">${quantity}</td>
-                    <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
-                    <td style="text-align: right;">${total.toFixed(2)} €</td>
-                </tr>
-            </tbody>
-        </table>
-        
-        ${tvaSection}
-        
-        <div class="invoice-legal">
-            <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
-            <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
-        </div>
-    `;
-    
-    document.getElementById('invoicePreviewContent').innerHTML = previewHTML;
-    document.getElementById('invoiceModal').classList.add('show');
-});
-
-// Close modal
-document.getElementById('closeModal').addEventListener('click', () => {
-    document.getElementById('invoiceModal').classList.remove('show');
-});
-
-// Email sending functionality
+// Email sending functionality (preview)
 let currentInvoiceData = null;
 
-document.getElementById('sendEmailBtn').addEventListener('click', () => {
-    const clientName = document.getElementById('clientName').value;
-    const invoiceNumber = invoiceNumberInput.value;
-    const invoiceDate = invoiceDateInput.value;
-    const dueDate = dueDateInput.value;
-    const total = calculateTotal();
-    
-    if (!clientName || !invoiceDate || !dueDate) {
-        alert('Veuillez remplir tous les champs obligatoires avant d\'envoyer l\'email');
-        return;
+function setupEmailPreviewHandlers() {
+    const sendEmailBtn = document.getElementById('sendEmailBtn');
+    if (sendEmailBtn) {
+        sendEmailBtn.addEventListener('click', () => {
+            const clientNameEl = document.getElementById('clientName');
+            if (!clientNameEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput) {
+                alert('Veuillez remplir tous les champs obligatoires avant d\'envoyer l\'email');
+                return;
+            }
+
+            const clientName = clientNameEl.value;
+            const invoiceNumber = invoiceNumberInput.value;
+            const invoiceDate = invoiceDateInput.value;
+            const dueDate = dueDateInput.value;
+            const total = calculateTotal();
+
+            // Find client data
+            const client = clients.find(c => c.name === clientName);
+
+            currentInvoiceData = {
+                clientName,
+                invoiceNumber,
+                invoiceDate,
+                dueDate,
+                total,
+                client
+            };
+
+            showEmailPreview();
+        });
     }
-    
-    // Find client data
-    const client = clients.find(c => c.name === clientName);
-    
-    currentInvoiceData = {
-        clientName,
-        invoiceNumber,
-        invoiceDate,
-        dueDate,
-        total,
-        client
-    };
-    
-    showEmailPreview();
-});
+
+    const closeEmailModal = document.getElementById('closeEmailModal');
+    if (closeEmailModal) closeEmailModal.addEventListener('click', () => {
+        const modal = document.getElementById('emailModal');
+        if (modal) modal.classList.remove('show');
+    });
+
+    const cancelEmail = document.getElementById('cancelEmail');
+    if (cancelEmail) cancelEmail.addEventListener('click', () => {
+        const modal = document.getElementById('emailModal');
+        if (modal) modal.classList.remove('show');
+    });
+
+    const confirmEmail = document.getElementById('confirmEmail');
+    if (confirmEmail) confirmEmail.addEventListener('click', () => {
+        if (!currentInvoiceData) return;
+        const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
+
+        const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
+        const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
+        const emailTo = hasEmail ? client.email_facturation : '';
+
+        // Build mailto link
+        const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
+        const body = `Bonjour ${contactName},
+
+Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
+
+Date d'émission : ${formatDateFR(invoiceDate)}
+Date d'échéance : ${formatDateFR(dueDate)}
+Conditions de paiement : 30 jours nets
+
+⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
+
+Pour toute question, n'hésitez pas à me contacter.
+
+Cordialement,
+Mickaël TOURDOT-IGUEDJETAL
+MTI CONSULTING
+Email : mticonsulting59@gmail.com
+Téléphone : 07 77 37 17 39`;
+
+        // URL encode
+        const encodedSubject = encodeURIComponent(subject);
+        const encodedBody = encodeURIComponent(body);
+
+        // Create mailto link
+        const mailtoLink = `mailto:${emailTo}?subject=${encodedSubject}&body=${encodedBody}`;
+
+        // Open in default email client
+        window.location.href = mailtoLink;
+
+        // Close modal
+        const modal = document.getElementById('emailModal');
+        if (modal) modal.classList.remove('show');
+
+        // Show confirmation and prompt to reset
+        setTimeout(() => {
+            alert('Email préparé et ouvert dans votre client de messagerie. N\'oubliez pas de joindre le PDF de la facture avant l\'envoi !');
+            if (confirm('Voulez-vous créer une nouvelle facture ?')) {
+                resetInvoiceForm();
+            }
+        }, 500);
+    });
+}
 
 function showEmailPreview() {
+    if (!currentInvoiceData) return;
     const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
-    
+
     // Check if email is configured
     const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
     const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
     const emailTo = hasEmail ? client.email_facturation : '';
-    
+
     // Build email content
     const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
     const body = `Bonjour ${contactName},
@@ -653,143 +826,105 @@ Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
 Email : mticonsulting59@gmail.com
 Téléphone : 07 77 37 17 39`;
-    
+
     // Display preview
-    document.getElementById('emailTo').textContent = emailTo || '(À compléter manuellement)';
-    document.getElementById('emailSubject').textContent = subject;
-    document.getElementById('emailBody').textContent = body;
-    
+    const emailToEl = document.getElementById('emailTo');
+    const emailSubjectEl = document.getElementById('emailSubject');
+    const emailBodyEl = document.getElementById('emailBody');
+    if (emailToEl) emailToEl.textContent = emailTo || '(À compléter manuellement)';
+    if (emailSubjectEl) emailSubjectEl.textContent = subject;
+    if (emailBodyEl) emailBodyEl.textContent = body;
+
     // Show warning if no email
     const warningDiv = document.getElementById('emailWarning');
-    if (!hasEmail) {
-        warningDiv.style.display = 'block';
-        warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>L\'email s\'ouvrira en brouillon sans destinataire. Veuillez ajouter l\'email dans la gestion des tiers ou compléter manuellement.';
-    } else {
-        warningDiv.style.display = 'none';
+    if (warningDiv) {
+        if (!hasEmail) {
+            warningDiv.style.display = 'block';
+            warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>L\'email s\'ouvrira en brouillon sans destinataire. Veuillez ajouter l\'email dans la gestion des tiers ou compléter manuellement.';
+        } else {
+            warningDiv.style.display = 'none';
+        }
     }
-    
-    document.getElementById('emailModal').classList.add('show');
+
+    const modal = document.getElementById('emailModal');
+    if (modal) modal.classList.add('show');
 }
 
-document.getElementById('closeEmailModal').addEventListener('click', () => {
-    document.getElementById('emailModal').classList.remove('show');
-});
-
-document.getElementById('cancelEmail').addEventListener('click', () => {
-    document.getElementById('emailModal').classList.remove('show');
-});
-
-document.getElementById('confirmEmail').addEventListener('click', () => {
-    const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
-    
-    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
-    const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
-    const emailTo = hasEmail ? client.email_facturation : '';
-    
-    // Build mailto link
-    const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
-    const body = `Bonjour ${contactName},
-
-Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
-
-Date d'émission : ${formatDateFR(invoiceDate)}
-Date d'échéance : ${formatDateFR(dueDate)}
-Conditions de paiement : 30 jours nets
-
-⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
-
-Pour toute question, n'hésitez pas à me contacter.
-
-Cordialement,
-Mickaël TOURDOT-IGUEDJETAL
-MTI CONSULTING
-Email : mticonsulting59@gmail.com
-Téléphone : 07 77 37 17 39`;
-    
-    // URL encode
-    const encodedSubject = encodeURIComponent(subject);
-    const encodedBody = encodeURIComponent(body);
-    
-    // Create mailto link
-    const mailtoLink = `mailto:${emailTo}?subject=${encodedSubject}&body=${encodedBody}`;
-    
-    // Open in default email client
-    window.location.href = mailtoLink;
-    
-    // Close modal
-    document.getElementById('emailModal').classList.remove('show');
-    
-    // Show confirmation and prompt to reset
-    setTimeout(() => {
-        alert('Email préparé et ouvert dans votre client de messagerie. N\'oubliez pas de joindre le PDF de la facture avant l\'envoi !');
-        if (confirm('Voulez-vous créer une nouvelle facture ?')) {
-            resetInvoiceForm();
-        }
-    }, 500);
+document.getElementById('cancelEditBtn')?.addEventListener('click', () => {
+    cancelEditMode();
 });
 
 // Save invoice
-invoiceForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    
-    const invoiceData = {
-        number: invoiceNumberInput.value,
-        client: document.getElementById('clientName').value,
-        clientSiret: document.getElementById('clientSiret').value,
-        clientAddress: document.getElementById('clientAddress').value,
-        date: invoiceDateInput.value,
-        dueDate: dueDateInput.value,
-        description: document.getElementById('serviceDescription').value,
-        quantity: parseFloat(quantityInput.value),
-        unitPrice: parseFloat(unitPriceInput.value),
-        total: calculateTotal()
-    };
-    
-    if (isEditMode) {
-        // Update existing invoice
-        invoices[editingInvoiceIndex] = {
-            ...invoices[editingInvoiceIndex],
-            ...invoiceData
+function setupInvoiceSaveHandler() {
+    if (!invoiceForm) return;
+    invoiceForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const invoiceData = {
+            number: invoiceNumberInput ? invoiceNumberInput.value : getNextInvoiceNumber(),
+            client: document.getElementById('clientName') ? document.getElementById('clientName').value : '',
+            clientSiret: document.getElementById('clientSiret') ? document.getElementById('clientSiret').value : '',
+            clientAddress: document.getElementById('clientAddress') ? document.getElementById('clientAddress').value : '',
+            date: invoiceDateInput ? invoiceDateInput.value : '',
+            dueDate: dueDateInput ? dueDateInput.value : '',
+            description: document.getElementById('serviceDescription') ? document.getElementById('serviceDescription').value : '',
+            quantity: quantityInput ? parseFloat(quantityInput.value) : 0,
+            unitPrice: unitPriceInput ? parseFloat(unitPriceInput.value) : 0,
+            total: calculateTotal()
         };
-        showToast('✅ Facture mise à jour');
-        
-        // Auto-sync after update
-        autoSync('update');
-        
-        // Exit edit mode
-        cancelEditMode();
-    } else {
-        // Create new invoice
-        const invoice = {
-            ...invoiceData,
-            status: 'Brouillon',
-            montantRecu: 0,
-            dateReception: null
-        };
-        
-        invoices.push(invoice);
-        showToast('✅ Facture créée avec succès');
-        
-        // Auto-sync after creation
-        autoSync('create');
-        
-        // Show send email button and new invoice button
-        document.getElementById('sendEmailBtn').style.display = 'inline-flex';
-        document.getElementById('newInvoiceBtn').style.display = 'inline-flex';
-        
-        // Add prompt after save
-        setTimeout(() => {
-            if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
-                document.getElementById('sendEmailBtn').click();
-            }
-        }, 100);
-    }
-    
-    // Refresh invoice list and tracking
-    renderInvoiceList();
-    applyFilters();
-    renderCharts();
-});
+
+        if (isEditMode && editingInvoiceIndex >= 0) {
+            // Update existing invoice
+            invoices[editingInvoiceIndex] = {
+                ...invoices[editingInvoiceIndex],
+                ...invoiceData
+            };
+            showToast('✅ Facture mise à jour');
+
+            // Auto-sync after update
+            autoSync('update');
+
+            // Exit edit mode
+            cancelEditMode();
+        } else {
+            // Create new invoice
+            const invoice = {
+                ...invoiceData,
+                status: 'Brouillon',
+                montantRecu: 0,
+                dateReception: null
+            };
+
+            invoices.push(invoice);
+            showToast('✅ Facture créée avec succès');
+
+            // Auto-sync after creation
+            autoSync('create');
+
+            // Show send email button and new invoice button
+            const sendEmailBtn = document.getElementById('sendEmailBtn');
+            const newInvoiceBtn = document.getElementById('newInvoiceBtn');
+            if (sendEmailBtn) sendEmailBtn.style.display = 'inline-flex';
+            if (newInvoiceBtn) newInvoiceBtn.style.display = 'inline-flex';
+
+            // Prompt after save
+            setTimeout(() => {
+                if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
+                    const sendBtn = document.getElementById('sendEmailBtn');
+                    if (sendBtn) sendBtn.click();
+                }
+            }, 100);
+        }
+
+        // Refresh invoice list and tracking
+        renderInvoiceList();
+        applyFilters();
+        renderCharts();
+
+        // Persist changes
+        saveToDrive();
+    });
+}
 
 // Add a reset button handler
 function resetInvoiceForm() {
@@ -797,19 +932,28 @@ function resetInvoiceForm() {
     if (isEditMode) {
         isEditMode = false;
         editingInvoiceIndex = -1;
-        document.getElementById('editModeIndicator').style.display = 'none';
-        document.getElementById('submitInvoiceBtn').textContent = '💾 Créer facture';
-        document.getElementById('cancelEditBtn').style.display = 'none';
+        const indicator = document.getElementById('editModeIndicator');
+        if (indicator) indicator.style.display = 'none';
+        const submitBtn = document.getElementById('submitInvoiceBtn');
+        if (submitBtn) submitBtn.textContent = '💾 Créer facture';
+        const cancelBtn = document.getElementById('cancelEditBtn');
+        if (cancelBtn) cancelBtn.style.display = 'none';
     }
-    
-    invoiceForm.reset();
-    document.getElementById('clientSelect').value = '';
-    document.getElementById('clientName').readOnly = false;
-    document.getElementById('clientSiret').readOnly = false;
-    document.getElementById('clientAddress').readOnly = false;
-    document.getElementById('sendEmailBtn').style.display = 'none';
-    document.getElementById('newInvoiceBtn').style.display = 'none';
-    invoiceNumberInput.value = getNextInvoiceNumber();
+
+    if (invoiceForm) invoiceForm.reset();
+    const clientSelect = document.getElementById('clientSelect');
+    if (clientSelect) clientSelect.value = '';
+    const nameEl = document.getElementById('clientName');
+    const siretEl = document.getElementById('clientSiret');
+    const addressEl = document.getElementById('clientAddress');
+    if (nameEl) nameEl.readOnly = false;
+    if (siretEl) siretEl.readOnly = false;
+    if (addressEl) addressEl.readOnly = false;
+    const sendEmailBtn = document.getElementById('sendEmailBtn');
+    const newInvoiceBtn = document.getElementById('newInvoiceBtn');
+    if (sendEmailBtn) sendEmailBtn.style.display = 'none';
+    if (newInvoiceBtn) newInvoiceBtn.style.display = 'none';
+    if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber();
     setDefaultDates();
     calculateTotal();
 }
@@ -819,10 +963,11 @@ window.resetInvoiceForm = resetInvoiceForm;
 // PLANNING - Calendar with Day/Week/Month views
 function changeCalendarView(view) {
     currentView = view;
-    document.getElementById('viewDay').classList.remove('active');
-    document.getElementById('viewWeek').classList.remove('active');
-    document.getElementById('viewMonth').classList.remove('active');
-    document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1)).classList.add('active');
+    document.getElementById('viewDay')?.classList.remove('active');
+    document.getElementById('viewWeek')?.classList.remove('active');
+    document.getElementById('viewMonth')?.classList.remove('active');
+    const el = document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1));
+    if (el) el.classList.add('active');
     renderCalendar();
 }
 
@@ -844,7 +989,7 @@ function getWeekDates(date) {
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(d.setDate(diff));
-    
+
     const dates = [];
     for (let i = 0; i < 5; i++) {
         const weekDay = new Date(monday);
@@ -855,15 +1000,17 @@ function getWeekDates(date) {
 }
 
 function formatDate(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
 
 function renderCalendar() {
     updateCurrentDateDisplay();
-    
+
     if (currentView === 'day') {
         renderDayView();
     } else if (currentView === 'week') {
@@ -871,14 +1018,16 @@ function renderCalendar() {
     } else if (currentView === 'month') {
         renderMonthView();
     }
-    
+
     updateWeeklyStats();
 }
 
 function updateCurrentDateDisplay() {
     const display = document.getElementById('currentDateDisplay');
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
-    
+
+    if (!display) return;
+
     if (currentView === 'day') {
         display.textContent = currentDate.toLocaleDateString('fr-FR', options);
     } else if (currentView === 'week') {
@@ -893,9 +1042,10 @@ function updateCurrentDateDisplay() {
 
 function renderDayView() {
     const container = document.getElementById('calendarContainer');
+    if (!container) return;
     const dateStr = formatDate(currentDate);
     const dayTasks = tasks.filter(task => task.date === dateStr);
-    
+
     const timeSlots = [];
     for (let h = 8; h <= 18; h++) {
         for (let m = 0; m < 60; m += 30) {
@@ -903,44 +1053,45 @@ function renderDayView() {
             timeSlots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
         }
     }
-    
+
     let html = '<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); overflow: hidden;">';
-    
+
     timeSlots.forEach(slot => {
         const tasksAtTime = dayTasks.filter(task => task.startTime === slot);
         html += `<div style="display: flex; border-bottom: 1px solid var(--color-card-border);">`;
         html += `<div style="width: 80px; padding: var(--space-8); background-color: var(--color-bg-1); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm);">${slot}</div>`;
         html += `<div style="flex: 1; padding: var(--space-8); min-height: 40px;">`;
-        
+
         tasksAtTime.forEach(task => {
             const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
             html += `<div style="background-color: rgba(var(--color-teal-500-rgb), 0.1); border-left: 3px solid ${color}; padding: var(--space-6); border-radius: var(--radius-sm); margin-bottom: var(--space-4); cursor: pointer;" onclick="editTask(${tasks.indexOf(task)})">`;
             html += `<strong>${task.description}</strong> (${task.duration}h)`;
             html += `</div>`;
         });
-        
+
         html += `</div></div>`;
     });
-    
+
     html += '</div>';
     container.innerHTML = html;
 }
 
 function renderWeekView() {
     const container = document.getElementById('calendarContainer');
+    if (!container) return;
     const weekDates = getWeekDates(currentDate);
     const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
-    
+
     let html = '<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-8);">';
-    
+
     weekDates.forEach((date, index) => {
         const dateStr = formatDate(date);
         const dayTasks = tasks.filter(task => task.date === dateStr);
         const isToday = formatDate(new Date()) === dateStr;
-        
+
         html += `<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); padding: var(--space-12); min-height: 200px; background-color: var(--color-surface); ${isToday ? 'box-shadow: 0 0 0 2px var(--color-primary);' : ''}">`;
         html += `<div style="font-weight: var(--font-weight-semibold); margin-bottom: var(--space-8); padding-bottom: var(--space-8); border-bottom: 1px solid var(--color-card-border); font-size: var(--font-size-sm);">${daysOfWeek[index]}<br><span style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">${date.getDate()}/${date.getMonth()+1}</span></div>`;
-        
+
         dayTasks.forEach(task => {
             const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
             html += `<div style="background-color: rgba(var(--color-teal-500-rgb), 0.1); border-left: 3px solid ${color}; padding: var(--space-6); border-radius: var(--radius-sm); margin-bottom: var(--space-6); font-size: var(--font-size-xs); cursor: pointer;" onclick="editTask(${tasks.indexOf(task)})">`;
@@ -948,50 +1099,51 @@ function renderWeekView() {
             html += `<div style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">${task.description}</div>`;
             html += `</div>`;
         });
-        
+
         html += `</div>`;
     });
-    
+
     html += '</div>';
     container.innerHTML = html;
 }
 
 function renderMonthView() {
     const container = document.getElementById('calendarContainer');
+    if (!container) return;
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    
+
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
     const daysInMonth = lastDay.getDate();
-    
+
     let html = '<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); overflow: hidden;">';
-    
+
     // Header
     html += '<div style="display: grid; grid-template-columns: repeat(7, 1fr); background-color: var(--color-bg-1);">';
     ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].forEach(day => {
         html += `<div style="padding: var(--space-8); text-align: center; font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">${day}</div>`;
     });
     html += '</div>';
-    
+
     // Days
     html += '<div style="display: grid; grid-template-columns: repeat(7, 1fr);">';
-    
+
     for (let i = 0; i < firstDayOfWeek; i++) {
         html += '<div style="padding: var(--space-8); min-height: 80px; border: 1px solid var(--color-card-border); background-color: var(--color-secondary);"></div>';
     }
-    
+
     for (let day = 1; day <= daysInMonth; day++) {
         const date = new Date(year, month, day);
         const dateStr = formatDate(date);
         const dayTasks = tasks.filter(task => task.date === dateStr);
         const isToday = formatDate(new Date()) === dateStr;
         const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-        
+
         html += `<div style="padding: var(--space-8); min-height: 80px; border: 1px solid var(--color-card-border); cursor: pointer; ${isToday ? 'background-color: rgba(var(--color-teal-500-rgb), 0.1); font-weight: var(--font-weight-bold);' : ''} ${isWeekend ? 'background-color: var(--color-secondary);' : ''}" onclick="showDayTasks('${dateStr}')">`;
         html += `<div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4);">${day}</div>`;
-        
+
         if (dayTasks.length > 0) {
             dayTasks.slice(0, 2).forEach(task => {
                 const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
@@ -1001,10 +1153,10 @@ function renderMonthView() {
                 html += `<span style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">+${dayTasks.length - 2}</span>`;
             }
         }
-        
+
         html += '</div>';
     }
-    
+
     html += '</div></div>';
     container.innerHTML = html;
 }
@@ -1013,18 +1165,18 @@ function showDayTasks(dateStr) {
     const dayTasks = tasks.filter(task => task.date === dateStr);
     const date = new Date(dateStr);
     const dateFormatted = date.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    
+
     if (dayTasks.length === 0) {
         alert(`Aucune tâche pour ${dateFormatted}`);
         return;
     }
-    
+
     let message = `Tâches pour ${dateFormatted}:\n\n`;
     dayTasks.forEach((task, index) => {
         message += `${index + 1}. ${task.startTime} - ${task.description} (${task.duration}h)\n`;
     });
     message += `\nCliquez sur une tâche dans le calendrier pour la modifier.`;
-    
+
     alert(message);
 }
 
@@ -1034,7 +1186,7 @@ window.showDayTasks = showDayTasks;
 
 function updateWeeklyStats() {
     let filteredTasks = tasks;
-    
+
     if (currentView === 'week') {
         const weekDates = getWeekDates(currentDate);
         const weekDateStrs = weekDates.map(d => formatDate(d));
@@ -1050,52 +1202,73 @@ function updateWeeklyStats() {
             return taskDate.getFullYear() === year && taskDate.getMonth() === month;
         });
     }
-    
-    const totalHours = filteredTasks.reduce((sum, task) => sum + task.duration, 0);
-    const workHours = filteredTasks.filter(t => t.type === 'Travail').reduce((sum, task) => sum + task.duration, 0);
-    const meetingHours = filteredTasks.filter(t => t.type === 'Réunion client').reduce((sum, task) => sum + task.duration, 0);
-    const adminHours = filteredTasks.filter(t => t.type === 'Administratif').reduce((sum, task) => sum + task.duration, 0);
-    
+
+    const totalHours = filteredTasks.reduce((sum, task) => sum + (task.duration || 0), 0);
+    const workHours = filteredTasks.filter(t => t.type === 'Travail').reduce((sum, task) => sum + (task.duration || 0), 0);
+    const meetingHours = filteredTasks.filter(t => t.type === 'Réunion client').reduce((sum, task) => sum + (task.duration || 0), 0);
+    const adminHours = filteredTasks.filter(t => t.type === 'Administratif').reduce((sum, task) => sum + (task.duration || 0), 0);
+
     const viewLabel = currentView === 'day' ? 'journalier' : currentView === 'week' ? 'hebdomadaire' : 'mensuel';
-    
-    document.getElementById('weeklyStats').innerHTML = `
-        <strong>Total ${viewLabel}: ${totalHours}h</strong> 
-        (Travail: ${workHours}h | Réunions: ${meetingHours}h | Admin: ${adminHours}h)
-    `;
+
+    const statsEl = document.getElementById('weeklyStats');
+    if (statsEl) {
+        statsEl.innerHTML = `
+            <strong>Total ${viewLabel}: ${totalHours}h</strong> 
+            (Travail: ${workHours}h | Réunions: ${meetingHours}h | Admin: ${adminHours}h)
+        `;
+    }
 }
 
 // Task form
-document.getElementById('addTaskBtn').addEventListener('click', () => {
-    document.getElementById('taskDate').value = formatDate(currentDate);
-    document.getElementById('taskFormCard').style.display = 'block';
-});
+function setupTaskHandlers() {
+    const addTaskBtn = document.getElementById('addTaskBtn');
+    if (addTaskBtn) {
+        addTaskBtn.addEventListener('click', () => {
+            const taskDate = document.getElementById('taskDate');
+            if (taskDate) taskDate.value = formatDate(currentDate);
+            const card = document.getElementById('taskFormCard');
+            if (card) card.style.display = 'block';
+        });
+    }
 
-document.getElementById('cancelTask').addEventListener('click', () => {
-    document.getElementById('taskFormCard').style.display = 'none';
-    document.getElementById('taskForm').reset();
-});
+    const cancelTask = document.getElementById('cancelTask');
+    if (cancelTask) {
+        cancelTask.addEventListener('click', () => {
+            const card = document.getElementById('taskFormCard');
+            if (card) card.style.display = 'none';
+            const form = document.getElementById('taskForm');
+            if (form) form.reset();
+        });
+    }
 
-document.getElementById('taskForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    
-    const task = {
-        date: document.getElementById('taskDate').value,
-        startTime: document.getElementById('taskTime').value,
-        duration: parseFloat(document.getElementById('taskDuration').value),
-        type: document.getElementById('taskType').value,
-        description: document.getElementById('taskDescription').value
-    };
-    
-    tasks.push(task);
-    renderCalendar();
-    document.getElementById('taskFormCard').style.display = 'none';
-    document.getElementById('taskForm').reset();
-    showToast('Tâche ajoutée avec succès');
-});
+    const taskForm = document.getElementById('taskForm');
+    if (taskForm) {
+        taskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const task = {
+                date: document.getElementById('taskDate').value,
+                startTime: document.getElementById('taskTime').value,
+                duration: parseFloat(document.getElementById('taskDuration').value) || 0,
+                type: document.getElementById('taskType').value,
+                description: document.getElementById('taskDescription').value
+            };
+
+            tasks.push(task);
+            renderCalendar();
+            const card = document.getElementById('taskFormCard');
+            if (card) card.style.display = 'none';
+            taskForm.reset();
+            showToast('Tâche ajoutée avec succès');
+            saveToDrive();
+        });
+    }
+}
 
 // Edit task
 function editTask(index) {
     const task = tasks[index];
+    if (!task) return;
     document.getElementById('editTaskIndex').value = index;
     document.getElementById('editTaskDate').value = task.date;
     document.getElementById('editTaskTime').value = task.startTime;
@@ -1107,29 +1280,30 @@ function editTask(index) {
 
 window.editTask = editTask;
 
-document.getElementById('closeEditTaskModal').addEventListener('click', () => {
-    document.getElementById('editTaskModal').classList.remove('show');
+document.getElementById('closeEditTaskModal')?.addEventListener('click', () => {
+    document.getElementById('editTaskModal')?.classList.remove('show');
 });
 
-document.getElementById('cancelEditTask').addEventListener('click', () => {
-    document.getElementById('editTaskModal').classList.remove('show');
+document.getElementById('cancelEditTask')?.addEventListener('click', () => {
+    document.getElementById('editTaskModal')?.classList.remove('show');
 });
 
-document.getElementById('editTaskForm').addEventListener('submit', (e) => {
+document.getElementById('editTaskForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    
+
     const index = parseInt(document.getElementById('editTaskIndex').value);
     tasks[index] = {
         date: document.getElementById('editTaskDate').value,
         startTime: document.getElementById('editTaskTime').value,
-        duration: parseFloat(document.getElementById('editTaskDuration').value),
+        duration: parseFloat(document.getElementById('editTaskDuration').value) || 0,
         type: document.getElementById('editTaskType').value,
         description: document.getElementById('editTaskDescription').value
     };
-    
+
     renderCalendar();
-    document.getElementById('editTaskModal').classList.remove('show');
+    document.getElementById('editTaskModal')?.classList.remove('show');
     showToast('Tâche mise à jour');
+    saveToDrive();
 });
 
 function deleteTaskFromEdit() {
@@ -1140,8 +1314,9 @@ function deleteTaskFromEdit() {
         () => {
             tasks.splice(index, 1);
             renderCalendar();
-            document.getElementById('editTaskModal').classList.remove('show');
+            document.getElementById('editTaskModal')?.classList.remove('show');
             showToast('Tâche supprimée');
+            saveToDrive();
         }
     );
 }
@@ -1152,11 +1327,11 @@ window.deleteTaskFromEdit = deleteTaskFromEdit;
 function checkOverdueInvoices() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     invoices.forEach(invoice => {
         const dueDate = new Date(invoice.dueDate);
         dueDate.setHours(0, 0, 0, 0);
-        
+
         if (invoice.status === 'Envoyée' && dueDate < today) {
             invoice.status = 'Retard';
         }
@@ -1165,17 +1340,18 @@ function checkOverdueInvoices() {
 
 function getFilteredInvoices() {
     let filtered = [...invoices];
-    
+
     // Period filter
-    const period = document.getElementById('periodFilter').value;
+    const periodEl = document.getElementById('periodFilter');
+    const period = periodEl ? periodEl.value : 'all';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     if (period !== 'all') {
         filtered = filtered.filter(inv => {
             const invDate = new Date(inv.date);
             invDate.setHours(0, 0, 0, 0);
-            
+
             if (period === 'day') {
                 return invDate.getTime() === today.getTime();
             } else if (period === 'week') {
@@ -1192,35 +1368,35 @@ function getFilteredInvoices() {
             return true;
         });
     }
-    
+
     // Date range filter
-    const startDate = document.getElementById('startDateFilter').value;
-    const endDate = document.getElementById('endDateFilter').value;
-    
+    const startDate = document.getElementById('startDateFilter')?.value;
+    const endDate = document.getElementById('endDateFilter')?.value;
+
     if (startDate) {
         const start = new Date(startDate);
         start.setHours(0, 0, 0, 0);
-            filtered = filtered.filter(inv => new Date(inv.date) >= start);
+        filtered = filtered.filter(inv => new Date(inv.date) >= start);
     }
-    
+
     if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-            filtered = filtered.filter(inv => new Date(inv.date) <= end);
+        filtered = filtered.filter(inv => new Date(inv.date) <= end);
     }
-    
+
     // Client filter
-    const clientFilter = document.getElementById('clientFilterSelect').value;
+    const clientFilter = document.getElementById('clientFilterSelect') ? document.getElementById('clientFilterSelect').value : 'all';
     if (clientFilter !== 'all') {
         filtered = filtered.filter(inv => inv.client === clientFilter);
     }
-    
+
     // Status filter
-    const statusFilter = document.getElementById('statusFilter').value;
+    const statusFilter = document.getElementById('statusFilter') ? document.getElementById('statusFilter').value : 'all';
     if (statusFilter !== 'all') {
         filtered = filtered.filter(inv => inv.status === statusFilter);
     }
-    
+
     return filtered;
 }
 
@@ -1232,24 +1408,25 @@ function applyFilters() {
 
 function renderInvoiceTable(filteredInvoices) {
     const tbody = document.getElementById('invoiceTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
-    
-    filteredInvoices.forEach((invoice, realIndex) => {
+
+    filteredInvoices.forEach((invoice) => {
         const index = invoices.indexOf(invoice);
         const montantRecu = parseFloat(invoice.montantRecu) || 0;
-        const reste = invoice.total - montantRecu;
-        
+        const reste = (invoice.total || 0) - montantRecu;
+
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><strong>${invoice.number}</strong></td>
             <td>${invoice.client}</td>
             <td>${formatDateFR(invoice.date)}</td>
             <td>${formatDateFR(invoice.dueDate)}</td>
-            <td><strong>${invoice.total.toFixed(2)} €</strong></td>
+            <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
             <td><input type="number" class="form-control" style="width: 100px; font-size: var(--font-size-xs);" value="${montantRecu}" step="0.01" min="0" onchange="updateMontantRecu(${index}, this.value)"></td>
             <td><input type="date" class="form-control" style="width: 140px; font-size: var(--font-size-xs);" value="${invoice.dateReception || ''}" onchange="updateDateReception(${index}, this.value)"></td>
             <td><strong>${reste.toFixed(2)} €</strong></td>
-            <td><span class="status-badge status-${invoice.status.toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status}</span></td>
+            <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoice(${index})" title="Modifier">✏️</button>
                 <button class="btn btn-sm btn-secondary" onclick="duplicateInvoice(${index})" title="Dupliquer" style="margin-left: var(--space-4);">📋</button>
@@ -1264,23 +1441,24 @@ function renderInvoiceTable(filteredInvoices) {
 // Render invoice list in FACTURES tab
 function renderInvoiceList() {
     const tbody = document.getElementById('invoiceListBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
-    
+
     if (invoices.length === 0) {
         const row = document.createElement('tr');
         row.innerHTML = '<td colspan="6" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucune facture créée</td>';
         tbody.appendChild(row);
         return;
     }
-    
+
     invoices.forEach((invoice, index) => {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><strong>${invoice.number}</strong></td>
             <td>${invoice.client}</td>
             <td>${formatDateFR(invoice.date)}</td>
-            <td><strong>${invoice.total.toFixed(2)} €</strong></td>
-            <td><span class="status-badge status-${invoice.status.toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status}</span></td>
+            <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
+            <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
                 <button class="btn btn-sm btn-secondary" onclick="deleteInvoiceFromList(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
@@ -1294,41 +1472,51 @@ function renderInvoiceList() {
 // Edit invoice in main form (FACTURES tab)
 function editInvoiceInForm(index) {
     const invoice = invoices[index];
-    
+    if (!invoice) return;
+
     // Set edit mode
     isEditMode = true;
     editingInvoiceIndex = index;
-    
+
     // Show edit mode indicator
-    document.getElementById('editModeIndicator').style.display = 'block';
-    document.getElementById('editingInvoiceNumber').textContent = invoice.number;
-    
+    const indicator = document.getElementById('editModeIndicator');
+    if (indicator) indicator.style.display = 'block';
+    const editingInvoiceNumberEl = document.getElementById('editingInvoiceNumber');
+    if (editingInvoiceNumberEl) editingInvoiceNumberEl.textContent = invoice.number;
+
     // Update submit button text
-    document.getElementById('submitInvoiceBtn').textContent = '💾 Mettre à jour facture';
-    
+    const submitBtn = document.getElementById('submitInvoiceBtn');
+    if (submitBtn) submitBtn.textContent = '💾 Mettre à jour facture';
+
     // Show cancel button
-    document.getElementById('cancelEditBtn').style.display = 'inline-flex';
-    
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+
     // Pre-fill form fields
-    document.getElementById('invoiceNumber').value = invoice.number;
-    document.getElementById('clientName').value = invoice.client;
-    document.getElementById('clientSiret').value = invoice.clientSiret || '';
-    document.getElementById('clientAddress').value = invoice.clientAddress || '';
-    document.getElementById('invoiceDate').value = invoice.date;
-    document.getElementById('dueDate').value = invoice.dueDate;
-    document.getElementById('serviceDescription').value = invoice.description;
-    document.getElementById('quantity').value = invoice.quantity;
-    document.getElementById('unitPrice').value = invoice.unitPrice;
-    
+    if (invoiceNumberInput) invoiceNumberInput.value = invoice.number;
+    const clientNameEl = document.getElementById('clientName');
+    if (clientNameEl) clientNameEl.value = invoice.client;
+    const clientSiretEl = document.getElementById('clientSiret');
+    if (clientSiretEl) clientSiretEl.value = invoice.clientSiret || '';
+    const clientAddressEl = document.getElementById('clientAddress');
+    if (clientAddressEl) clientAddressEl.value = invoice.clientAddress || '';
+    if (invoiceDateInput) invoiceDateInput.value = invoice.date;
+    if (dueDateInput) dueDateInput.value = invoice.dueDate;
+    const serviceDescriptionEl = document.getElementById('serviceDescription');
+    if (serviceDescriptionEl) serviceDescriptionEl.value = invoice.description;
+    if (quantityInput) quantityInput.value = invoice.quantity;
+    if (unitPriceInput) unitPriceInput.value = invoice.unitPrice;
+
     // Reset client select to manual mode
-    document.getElementById('clientSelect').value = '';
-    document.getElementById('clientName').readOnly = false;
-    document.getElementById('clientSiret').readOnly = false;
-    document.getElementById('clientAddress').readOnly = false;
-    
+    const clientSelect = document.getElementById('clientSelect');
+    if (clientSelect) clientSelect.value = '';
+    if (clientNameEl) clientNameEl.readOnly = false;
+    if (clientSiretEl) clientSiretEl.readOnly = false;
+    if (clientAddressEl) clientAddressEl.readOnly = false;
+
     // Recalculate totals
     calculateTotal();
-    
+
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1337,24 +1525,31 @@ function editInvoiceInForm(index) {
 function cancelEditMode() {
     isEditMode = false;
     editingInvoiceIndex = -1;
-    
+
     // Hide edit mode indicator
-    document.getElementById('editModeIndicator').style.display = 'none';
-    
+    const indicator = document.getElementById('editModeIndicator');
+    if (indicator) indicator.style.display = 'none';
+
     // Reset submit button text
-    document.getElementById('submitInvoiceBtn').textContent = '💾 Créer facture';
-    
+    const submitBtn = document.getElementById('submitInvoiceBtn');
+    if (submitBtn) submitBtn.textContent = '💾 Créer facture';
+
     // Hide cancel button
-    document.getElementById('cancelEditBtn').style.display = 'none';
-    
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+
     // Reset form
-    invoiceForm.reset();
-    document.getElementById('clientSelect').value = '';
-    document.getElementById('clientName').readOnly = false;
-    document.getElementById('clientSiret').readOnly = false;
-    document.getElementById('clientAddress').readOnly = false;
+    if (invoiceForm) invoiceForm.reset();
+    const clientSelect = document.getElementById('clientSelect');
+    if (clientSelect) clientSelect.value = '';
+    const clientNameEl = document.getElementById('clientName');
+    const clientSiretEl = document.getElementById('clientSiret');
+    const clientAddressEl = document.getElementById('clientAddress');
+    if (clientNameEl) clientNameEl.readOnly = false;
+    if (clientSiretEl) clientSiretEl.readOnly = false;
+    if (clientAddressEl) clientAddressEl.readOnly = false;
     setDefaultDates();
-    invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
+    if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput ? invoiceDateInput.value : null);
     calculateTotal();
 }
 
@@ -1364,6 +1559,7 @@ window.cancelEditMode = cancelEditMode;
 // Edit invoice (for tracking table modal)
 function editInvoice(index) {
     const invoice = invoices[index];
+    if (!invoice) return;
     document.getElementById('editInvoiceIndex').value = index;
     document.getElementById('editInvoiceNumber').value = invoice.number;
     document.getElementById('editInvoiceStatus').value = invoice.status;
@@ -1380,21 +1576,21 @@ function editInvoice(index) {
 
 window.editInvoice = editInvoice;
 
-document.getElementById('closeEditInvoiceModal').addEventListener('click', () => {
-    document.getElementById('editInvoiceModal').classList.remove('show');
+document.getElementById('closeEditInvoiceModal')?.addEventListener('click', () => {
+    document.getElementById('editInvoiceModal')?.classList.remove('show');
 });
 
-document.getElementById('cancelEditInvoice').addEventListener('click', () => {
-    document.getElementById('editInvoiceModal').classList.remove('show');
+document.getElementById('cancelEditInvoice')?.addEventListener('click', () => {
+    document.getElementById('editInvoiceModal')?.classList.remove('show');
 });
 
-document.getElementById('editInvoiceForm').addEventListener('submit', (e) => {
+document.getElementById('editInvoiceForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    
+
     const index = parseInt(document.getElementById('editInvoiceIndex').value);
-    const quantity = parseFloat(document.getElementById('editQuantity').value);
-    const unitPrice = parseFloat(document.getElementById('editUnitPrice').value);
-    
+    const quantity = parseFloat(document.getElementById('editQuantity').value) || 0;
+    const unitPrice = parseFloat(document.getElementById('editUnitPrice').value) || 0;
+
     invoices[index] = {
         ...invoices[index],
         status: document.getElementById('editInvoiceStatus').value,
@@ -1408,14 +1604,15 @@ document.getElementById('editInvoiceForm').addEventListener('submit', (e) => {
         unitPrice: unitPrice,
         total: quantity * unitPrice
     };
-    
-    document.getElementById('editInvoiceModal').classList.remove('show');
+
+    document.getElementById('editInvoiceModal')?.classList.remove('show');
     renderInvoiceList();
     applyFilters();
     showToast('Facture mise à jour');
-    
+
     // Auto-sync after edit
     autoSync('update');
+    saveToDrive();
 });
 
 // Delete invoice from list (FACTURES tab)
@@ -1431,10 +1628,10 @@ function deleteInvoiceFromList(index) {
             applyFilters();
             renderCharts();
             showToast('✅ Facture supprimée');
-            
+
             // Auto-sync after deletion
             autoSync('delete');
-            
+
             // If we were editing this invoice, cancel edit mode
             if (isEditMode && editingInvoiceIndex === index) {
                 cancelEditMode();
@@ -1457,9 +1654,10 @@ function deleteInvoice(index) {
             applyFilters();
             renderCharts();
             showToast('✅ Facture supprimée');
-            
+
             // Auto-sync after deletion
             autoSync('delete');
+            saveToDrive();
         }
     );
 }
@@ -1469,6 +1667,7 @@ window.deleteInvoice = deleteInvoice;
 // Duplicate invoice
 async function duplicateInvoice(index) {
     const invoice = invoices[index];
+    if (!invoice) return;
     const today = new Date().toISOString().split('T')[0];
     const newInvoice = {
         ...invoice,
@@ -1487,45 +1686,59 @@ async function duplicateInvoice(index) {
 }
 
 window.duplicateInvoice = duplicateInvoice;
+
+// Initial render & try to persist current data to Drive (non-blocking)
+function initialRenderAndPersist() {
     renderInvoiceList();
     applyFilters();
-    showToast('Facture dupliquée');
+    saveToDrive()
+        .then(() => {
+            showToast('✅ Données sauvegardées sur Drive');
+        })
+        .catch(() => {
+            showToast('⚠️ Impossible de sauvegarder sur Drive', 'error');
+        });
 }
-
-window.duplicateInvoice = duplicateInvoice;
 
 function updateMontantRecu(index, value) {
     invoices[index].montantRecu = parseFloat(value) || 0;
-    
+
     // Auto-update status to Payée if fully paid
     if (invoices[index].montantRecu >= invoices[index].total) {
         invoices[index].status = 'Payée';
     }
-    
+
     applyFilters();
-    
+
     // Auto-sync after payment update
     autoSync('payment');
+    saveToDrive();
 }
 
 function updateDateReception(index, value) {
     invoices[index].dateReception = value;
     applyFilters();
-    
+
     // Auto-sync after date update
     autoSync('payment');
+    saveToDrive();
 }
 
 function updateSummary(filteredInvoices = invoices) {
-    const totalFacture = filteredInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    const totalFacture = filteredInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
     const totalPaye = filteredInvoices.reduce((sum, inv) => sum + (parseFloat(inv.montantRecu) || 0), 0);
     const totalAttente = totalFacture - totalPaye;
     const tauxRecouvrement = totalFacture > 0 ? (totalPaye / totalFacture * 100) : 0;
-    
-    document.getElementById('totalFacture').textContent = totalFacture.toFixed(2) + ' €';
-    document.getElementById('totalPaye').textContent = totalPaye.toFixed(2) + ' €';
-    document.getElementById('totalAttente').textContent = totalAttente.toFixed(2) + ' €';
-    document.getElementById('tauxRecouvrement').textContent = tauxRecouvrement.toFixed(1) + '%';
+
+    const totalFactEl = document.getElementById('totalFacture');
+    const totalPayeEl = document.getElementById('totalPaye');
+    const totalAttEl = document.getElementById('totalAttente');
+    const tauxEl = document.getElementById('tauxRecouvrement');
+
+    if (totalFactEl) totalFactEl.textContent = totalFacture.toFixed(2) + ' €';
+    if (totalPayeEl) totalPayeEl.textContent = totalPaye.toFixed(2) + ' €';
+    if (totalAttEl) totalAttEl.textContent = totalAttente.toFixed(2) + ' €';
+    if (tauxEl) tauxEl.textContent = tauxRecouvrement.toFixed(1) + '%';
 }
 
 window.updateMontantRecu = updateMontantRecu;
@@ -1535,10 +1748,10 @@ window.updateDateReception = updateDateReception;
 function sendInvoiceEmail(index) {
     const invoice = invoices[index];
     const client = clients.find(c => c.name === invoice.client);
-    
+
     // Check if email is available
     const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
-    
+
     if (!hasEmail) {
         showToast('⚠️ Aucun email configuré pour ce client', 'info');
         // Fall back to old email preview
@@ -1553,7 +1766,7 @@ function sendInvoiceEmail(index) {
         showEmailPreview();
         return;
     }
-    
+
     // Confirm before sending
     const contactName = client.contact_name || invoice.client;
     showConfirmation(
@@ -1568,12 +1781,12 @@ function sendInvoiceEmail(index) {
 window.sendInvoiceEmail = sendInvoiceEmail;
 
 // Filter event listeners
-if (document.getElementById('periodFilter')) {
-    document.getElementById('periodFilter').addEventListener('change', applyFilters);
-    document.getElementById('startDateFilter').addEventListener('change', applyFilters);
-    document.getElementById('endDateFilter').addEventListener('change', applyFilters);
-    document.getElementById('clientFilterSelect').addEventListener('change', applyFilters);
-    document.getElementById('statusFilter').addEventListener('change', applyFilters);
+function setupFilterListeners() {
+    document.getElementById('periodFilter')?.addEventListener('change', applyFilters);
+    document.getElementById('startDateFilter')?.addEventListener('change', applyFilters);
+    document.getElementById('endDateFilter')?.addEventListener('change', applyFilters);
+    document.getElementById('clientFilterSelect')?.addEventListener('change', applyFilters);
+    document.getElementById('statusFilter')?.addEventListener('change', applyFilters);
 }
 
 // PARAMÈTRES - Settings Management
@@ -1596,22 +1809,25 @@ function saveSettings() {
         companyInfo.postalCode = document.getElementById('companyPostal').value || '[Code postal]';
         companyInfo.city = document.getElementById('companyCity').value || '[Ville]';
     }
-    taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS').value) || 0;
-    taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib').value) || 2.2;
-    taxSettings.prorationMensuelle = parseFloat(document.getElementById('prorationMensuelle').value) || 8.33;
-    taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel').value) || 600;
-    taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif').value) || 11.6;
-    taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif').value) || 24.6;
-    
+    taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS')?.value) || 0;
+    taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib')?.value) || 2.2;
+    taxSettings.prorationMensuelle = parseFloat(document.getElementById('prorationMensuelle')?.value) || 8.33;
+    taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
+    taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif')?.value) || 11.6;
+    taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif')?.value) || 24.6;
+
     // Show confirmation
     const confirmation = document.getElementById('saveConfirmation');
-    confirmation.style.display = 'block';
-    setTimeout(() => {
-        confirmation.style.display = 'none';
-    }, 3000);
-    
+    if (confirmation) {
+        confirmation.style.display = 'block';
+        setTimeout(() => {
+            confirmation.style.display = 'none';
+        }, 3000);
+    }
+
     // Recalculate taxes if on calculs tab
     calculateTaxes();
+    saveToDrive();
 }
 
 function resetSettings() {
@@ -1621,21 +1837,22 @@ function resetSettings() {
     document.getElementById('cfeAnnuel').value = defaultSettings.cfeAnnuel;
     document.getElementById('tauxAcreActif').value = defaultSettings.acreActif;
     document.getElementById('tauxAcreInactif').value = defaultSettings.acreInactif;
-    
+
     updateCFEMensuel();
 }
 
 function updateCFEMensuel() {
-    const cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel').value) || 600;
+    const cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
     const cfeMensuel = cfeAnnuel / 12;
-    document.getElementById('cfeMensuel').textContent = cfeMensuel.toFixed(2);
+    const el = document.getElementById('cfeMensuel');
+    if (el) el.textContent = cfeMensuel.toFixed(2);
 }
 
 // Settings event listeners
 if (document.getElementById('saveSettings')) {
     document.getElementById('saveSettings').addEventListener('click', saveSettings);
     document.getElementById('resetSettings').addEventListener('click', resetSettings);
-    document.getElementById('cfeAnnuel').addEventListener('input', updateCFEMensuel);
+    document.getElementById('cfeAnnuel')?.addEventListener('input', updateCFEMensuel);
 }
 
 // Company settings event listeners
@@ -1663,18 +1880,18 @@ const acreToggle = document.getElementById('acreToggle');
 const versementToggle = document.getElementById('versementToggle');
 
 function calculateTaxes() {
-    const ca = parseFloat(caInput.value) || 0;
-    const acreActive = acreToggle.checked;
-    const versementLib = versementToggle.checked;
-    
+    const ca = parseFloat(caInput?.value) || 0;
+    const acreActive = acreToggle ? acreToggle.checked : false;
+    const versementLib = versementToggle ? versementToggle.checked : false;
+
     // Calculate charges using settings
     const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
     const charges = ca * chargesRate;
-    
+
     // Calculate taxes based on versement libératoire toggle
     let impot = 0;
     let impotLabel = '';
-    
+
     if (versementLib) {
         // Versement libératoire: 2.2% flat rate on CA
         impot = ca * (taxSettings.versementLiberatoire / 100);
@@ -1682,11 +1899,11 @@ function calculateTaxes() {
     } else {
         // IRPP barème progressif with 34% abattement
         const baseImposable = ca * 0.66; // After 34% abattement
-        
+
         // Apply progressive tax brackets (monthly amounts)
         const tranche1 = 11294 / 12; // 941.17€ at 0%
         const tranche2 = 28797 / 12; // 2399.75€ at 11%
-        
+
         if (baseImposable <= tranche1) {
             impot = 0;
         } else if (baseImposable <= tranche2) {
@@ -1694,20 +1911,20 @@ function calculateTaxes() {
         } else {
             impot = (tranche2 - tranche1) * 0.11 + (baseImposable - tranche2) * 0.30;
         }
-        
+
         impotLabel = `${impot.toFixed(2)} € (IRPP barème progressif)`;
     }
-    
+
     // Calculate CFE monthly
     const cfe = taxSettings.cfeAnnuel / 12;
     const net = ca - charges - impot - cfe;
-    
+
     // Display results
-    document.getElementById('calcCA').textContent = ca.toFixed(2) + ' €';
-    document.getElementById('calcCharges').textContent = charges.toFixed(2) + ' € (' + (chargesRate * 100).toFixed(1) + '%)';
-    document.getElementById('calcImpot').textContent = impotLabel;
-    document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)';
-    document.getElementById('calcNet').textContent = net.toFixed(2) + ' €';
+    document.getElementById('calcCA') && (document.getElementById('calcCA').textContent = ca.toFixed(2) + ' €');
+    document.getElementById('calcCharges') && (document.getElementById('calcCharges').textContent = charges.toFixed(2) + ' € (' + (chargesRate * 100).toFixed(1) + '%)');
+    document.getElementById('calcImpot') && (document.getElementById('calcImpot').textContent = impotLabel);
+    document.getElementById('calcCFE') && (document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)');
+    document.getElementById('calcNet') && (document.getElementById('calcNet').textContent = net.toFixed(2) + ' €');
 }
 
 if (caInput) {
@@ -1729,51 +1946,51 @@ function renderCharts() {
 function renderCAChart() {
     const canvas = document.getElementById('caChart');
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     const rect = canvas.parentElement.getBoundingClientRect();
     canvas.width = rect.width - 48;
     canvas.height = 300;
-    
-    // Get last 6 months data
+
+    // Get last 6 months data (example labels - consider dynamic if needed)
     const months = ['Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
     const monthValues = [7, 8, 9, 10, 11, 12];
     const data = [0, 0, 0, 0, 0, 0];
-    
+
     invoices.forEach(inv => {
         const invDate = new Date(inv.date);
         const monthIndex = monthValues.indexOf(invDate.getMonth() + 1);
         if (monthIndex !== -1 && invDate.getFullYear() === 2025) {
-            data[monthIndex] += inv.total;
+            data[monthIndex] += inv.total || 0;
         }
     });
-    
+
     // Draw chart
     const maxValue = Math.max(...data, 1);
     const padding = 40;
     const chartWidth = canvas.width - padding * 2;
     const chartHeight = canvas.height - padding * 2;
     const barWidth = chartWidth / months.length;
-    
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#626C71';
     ctx.font = '12px -apple-system, sans-serif';
-    
+
     // Draw bars
     data.forEach((value, index) => {
         const barHeight = (value / maxValue) * chartHeight;
         const x = padding + index * barWidth + barWidth * 0.2;
         const y = padding + chartHeight - barHeight;
         const width = barWidth * 0.6;
-        
+
         ctx.fillStyle = '#21808D';
         ctx.fillRect(x, y, width, barHeight);
-        
+
         // Labels
         ctx.fillStyle = '#134252';
         ctx.textAlign = 'center';
         ctx.fillText(months[index], x + width / 2, canvas.height - 10);
-        
+
         if (value > 0) {
             ctx.fillText(value.toFixed(0) + '€', x + width / 2, y - 5);
         }
@@ -1783,12 +2000,12 @@ function renderCAChart() {
 function renderStatusChart() {
     const canvas = document.getElementById('statusChart');
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     const rect = canvas.parentElement.getBoundingClientRect();
     canvas.width = rect.width - 48;
     canvas.height = 300;
-    
+
     // Count by status
     const statusCounts = {
         'Brouillon': 0,
@@ -1796,60 +2013,60 @@ function renderStatusChart() {
         'Payée': 0,
         'Retard': 0
     };
-    
+
     invoices.forEach(inv => {
         statusCounts[inv.status] = (statusCounts[inv.status] || 0) + 1;
     });
-    
+
     const colors = {
         'Brouillon': '#626C71',
         'Envoyée': '#3B82F6',
         'Payée': '#21808D',
         'Retard': '#C0152F'
     };
-    
+
     const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
     if (total === 0) return;
-    
+
     // Draw pie chart
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2 - 20;
     const radius = Math.min(centerX, centerY) - 40;
-    
+
     let currentAngle = -Math.PI / 2;
-    
-    Object.keys(statusCounts).forEach((status, index) => {
+
+    Object.keys(statusCounts).forEach((status) => {
         const count = statusCounts[status];
         if (count === 0) return;
-        
+
         const sliceAngle = (count / total) * Math.PI * 2;
-        
+
         ctx.fillStyle = colors[status];
         ctx.beginPath();
         ctx.moveTo(centerX, centerY);
         ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
         ctx.closePath();
         ctx.fill();
-        
+
         currentAngle += sliceAngle;
     });
-    
+
     // Draw legend
     const legendY = canvas.height - 50;
     let legendX = 20;
-    
+
     ctx.font = '12px -apple-system, sans-serif';
     ctx.textAlign = 'left';
-    
+
     Object.keys(statusCounts).forEach(status => {
         const count = statusCounts[status];
-        
+
         ctx.fillStyle = colors[status];
         ctx.fillRect(legendX, legendY, 12, 12);
-        
+
         ctx.fillStyle = '#134252';
         ctx.fillText(`${status} (${count})`, legendX + 18, legendY + 10);
-        
+
         legendX += 120;
     });
 }
@@ -1857,17 +2074,18 @@ function renderStatusChart() {
 // Toast notification with types
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
+    if (!container) return;
     const toast = document.createElement('div');
-    
+
     let borderColor = 'var(--color-success)';
     let bgColor = 'var(--color-surface)';
-    
+
     if (type === 'error') {
         borderColor = 'var(--color-error)';
     } else if (type === 'info') {
         borderColor = '#3B82F6';
     }
-    
+
     toast.style.cssText = `
         background-color: ${bgColor};
         border: 1px solid var(--color-border);
@@ -1881,7 +2099,7 @@ function showToast(message, type = 'success') {
     `;
     toast.textContent = message;
     container.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.transition = 'opacity 0.3s, transform 0.3s';
         toast.style.opacity = '0';
@@ -1896,18 +2114,19 @@ async function syncToGoogleSheets() {
         showToast('⏳ Synchronisation déjà en cours...', 'info');
         return;
     }
-    
+
     const button = document.getElementById('syncButton');
+    if (!button) return;
     const originalContent = button.innerHTML;
-    
+
     try {
         isSyncing = true;
         button.disabled = true;
         button.innerHTML = '⏳ Synchronisation...';
         button.style.opacity = '0.6';
-        
+
         showToast('⏳ Synchronisation en cours...', 'info');
-        
+
         // Prepare invoice data for sync
         const invoiceData = invoices.map(inv => ({
             number: inv.number,
@@ -1919,9 +2138,9 @@ async function syncToGoogleSheets() {
             montantRecu: inv.montantRecu || 0,
             dateReception: inv.dateReception || ''
         }));
-        
+
         // Use no-cors mode for Apps Script
-        await fetch(BACKEND_URL, {
+        await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             mode: 'no-cors',
             headers: {
@@ -1932,13 +2151,13 @@ async function syncToGoogleSheets() {
                 invoices: invoiceData
             })
         });
-        
+
         // no-cors doesn't give response, assume success if no error
         const count = invoiceData.length;
         showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''} avec Google Sheets`, 'success');
         button.innerHTML = '✅ Synchronisé';
         updateLastSyncTime();
-        
+
         setTimeout(() => {
             button.innerHTML = originalContent;
         }, 3000);
@@ -1946,7 +2165,7 @@ async function syncToGoogleSheets() {
         console.error('Sync error:', error);
         showToast('❌ Erreur de synchronisation', 'error');
         button.innerHTML = '❌ Erreur - Réessayer';
-        
+
         setTimeout(() => {
             button.innerHTML = originalContent;
         }, 3000);
@@ -1980,11 +2199,11 @@ async function syncToGoogleCalendar() {
         showToast('⏳ Synchronisation déjà en cours...', 'info');
         return;
     }
-    
+
     try {
         isSyncing = true;
         showToast('📅 Synchronisation Calendar...', 'info');
-        
+
         // Prepare task data for sync
         const taskData = tasks.map(task => ({
             date: task.date,
@@ -1993,9 +2212,9 @@ async function syncToGoogleCalendar() {
             description: task.description,
             type: task.type
         }));
-        
+
         // Use no-cors mode for Apps Script
-        await fetch(BACKEND_URL, {
+        await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             mode: 'no-cors',
             headers: {
@@ -2006,7 +2225,7 @@ async function syncToGoogleCalendar() {
                 tasks: taskData
             })
         });
-        
+
         // no-cors doesn't give response, assume success if no error
         showToast('✅ Planning synchronisé avec Google Calendar', 'success');
     } catch (error) {
@@ -2021,12 +2240,12 @@ async function syncToGoogleCalendar() {
 async function sendInvoiceWithPDF(invoice) {
     try {
         showToast('📧 Préparation de l\'email...', 'info');
-        
+
         // Find client data
         const client = clients.find(c => c.name === invoice.client);
         const clientEmail = (client && client.email_facturation) ? client.email_facturation : '';
         const contactName = (client && client.contact_name) ? client.contact_name : invoice.client;
-        
+
         // Prepare invoice data for email
         const invoiceData = {
             number: invoice.number,
@@ -2039,9 +2258,9 @@ async function sendInvoiceWithPDF(invoice) {
             quantity: invoice.quantity,
             unitPrice: invoice.unitPrice
         };
-        
+
         // Use no-cors mode for Apps Script
-        await fetch(BACKEND_URL, {
+        await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             mode: 'no-cors',
             headers: {
@@ -2053,14 +2272,15 @@ async function sendInvoiceWithPDF(invoice) {
                 clientEmail: clientEmail
             })
         });
-        
+
         // no-cors doesn't give response, assume success if no error
         showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
-        
+
         // Update invoice status to "Envoyée"
         invoice.status = 'Envoyée';
         renderInvoiceList();
         applyFilters();
+        saveToDrive();
     } catch (error) {
         console.error('Email send error:', error);
         showToast('❌ Erreur d\'envoi', 'error');
@@ -2069,83 +2289,96 @@ async function sendInvoiceWithPDF(invoice) {
 
 // Make sync function global
 window.syncToGoogleSheets = syncToGoogleSheets;
+window.syncToGoogleCalendar = syncToGoogleCalendar;
 
 // Confirmation modal
 let confirmCallback = null;
 
 function showConfirmation(title, message, callback) {
-    document.getElementById('confirmTitle').textContent = title;
-    document.getElementById('confirmMessage').textContent = message;
+    const titleEl = document.getElementById('confirmTitle');
+    const messageEl = document.getElementById('confirmMessage');
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
     confirmCallback = callback;
-    
+
     // Update button styling for delete confirmations
     const confirmBtn = document.getElementById('confirmAction');
-    if (title.toLowerCase().includes('supprimer')) {
-        confirmBtn.textContent = 'Supprimer';
-        confirmBtn.style.backgroundColor = 'var(--color-error)';
-        confirmBtn.style.color = 'white';
-    } else {
-        confirmBtn.textContent = 'Confirmer';
+    if (confirmBtn) {
+        if (title.toLowerCase().includes('supprimer')) {
+            confirmBtn.textContent = 'Supprimer';
+            confirmBtn.style.backgroundColor = 'var(--color-error)';
+            confirmBtn.style.color = 'white';
+        } else {
+            confirmBtn.textContent = 'Confirmer';
+            confirmBtn.style.backgroundColor = '';
+            confirmBtn.style.color = '';
+        }
+    }
+
+    document.getElementById('confirmModal')?.classList.add('show');
+}
+
+document.getElementById('cancelConfirm')?.addEventListener('click', () => {
+    document.getElementById('confirmModal')?.classList.remove('show');
+    confirmCallback = null;
+
+    // Reset button styling
+    const confirmBtn = document.getElementById('confirmAction');
+    if (confirmBtn) {
         confirmBtn.style.backgroundColor = '';
         confirmBtn.style.color = '';
     }
-    
-    document.getElementById('confirmModal').classList.add('show');
-}
-
-document.getElementById('cancelConfirm').addEventListener('click', () => {
-    document.getElementById('confirmModal').classList.remove('show');
-    confirmCallback = null;
-    
-    // Reset button styling
-    const confirmBtn = document.getElementById('confirmAction');
-    confirmBtn.style.backgroundColor = '';
-    confirmBtn.style.color = '';
 });
 
-document.getElementById('confirmAction').addEventListener('click', () => {
+document.getElementById('confirmAction')?.addEventListener('click', () => {
     if (confirmCallback) {
         confirmCallback();
     }
-    document.getElementById('confirmModal').classList.remove('show');
+    document.getElementById('confirmModal')?.classList.remove('show');
     confirmCallback = null;
-    
+
     // Reset button styling
     const confirmBtn = document.getElementById('confirmAction');
-    confirmBtn.style.backgroundColor = '';
-    confirmBtn.style.color = '';
+    if (confirmBtn) {
+        confirmBtn.style.backgroundColor = '';
+        confirmBtn.style.color = '';
+    }
 });
 
-// PDF Download functionality using html2pdf
+// PDF Download functionality using iframe print fallback
 function downloadInvoicePDF() {
-    const clientName = document.getElementById('clientName').value;
-    const clientAddress = document.getElementById('clientAddress').value;
-    const invoiceNumber = invoiceNumberInput.value;
-    const invoiceDate = invoiceDateInput.value;
-    const dueDate = dueDateInput.value;
-    const description = document.getElementById('serviceDescription').value;
-    const quantity = quantityInput.value;
-    const unitPrice = unitPriceInput.value;
-    const total = calculateTotal();
-    
-    if (!clientName || !clientAddress || !invoiceDate || !dueDate || !description || !quantity || !unitPrice) {
+    const clientNameEl = document.getElementById('clientName');
+    const clientAddressEl = document.getElementById('clientAddress');
+    const serviceDescriptionEl = document.getElementById('serviceDescription');
+
+    if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput || !serviceDescriptionEl || !quantityInput || !unitPriceInput) {
         alert('Veuillez remplir tous les champs obligatoires avant de télécharger le PDF');
         return;
     }
-    
-    const tvaEnabled = document.getElementById('tvaToggle').checked;
+
+    const clientName = clientNameEl.value;
+    const clientAddress = clientAddressEl.value;
+    const invoiceNumber = invoiceNumberInput.value;
+    const invoiceDate = invoiceDateInput.value;
+    const dueDate = dueDateInput.value;
+    const description = serviceDescriptionEl.value;
+    const quantity = quantityInput.value;
+    const unitPrice = unitPriceInput.value;
+    const total = calculateTotal();
+
+    const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
     const totalHT = total;
     const tva = tvaEnabled ? totalHT * 0.20 : 0;
     const totalTTC = totalHT + tva;
-    
-    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city 
+
+    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
         ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
-    
-    const logoHTML = companyInfo.logoUrl 
+
+    const logoHTML = companyInfo.logoUrl
         ? `<img src="${companyInfo.logoUrl}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;">`
         : '';
-    
+
     let tvaSection = '';
     if (tvaEnabled) {
         tvaSection = `
@@ -2164,7 +2397,7 @@ function downloadInvoicePDF() {
             </div>
         `;
     }
-    
+
     const pdfContent = `
         <!DOCTYPE html>
         <html>
@@ -2303,7 +2536,7 @@ function downloadInvoicePDF() {
                         <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
                     </div>
                 </div>
-                
+
                 <div class="invoice-details">
                     <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
                     <div style="font-size: 13px;">
@@ -2311,9 +2544,9 @@ function downloadInvoicePDF() {
                         <div>Échéance: ${formatDateFR(dueDate)}</div>
                     </div>
                 </div>
-                
+
                 <hr class="separator">
-                
+
                 <table>
                     <thead>
                         <tr>
@@ -2332,7 +2565,7 @@ function downloadInvoicePDF() {
                         </tr>
                     </tbody>
                 </table>
-                
+
                 <div class="totals">
                     ${tvaEnabled ? `
                         <div>Total HT: ${totalHT.toFixed(2)} €</div>
@@ -2345,7 +2578,7 @@ function downloadInvoicePDF() {
                     `}
                 </div>
             </div>
-            
+
             <div class="legal">
                 <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
                 <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
@@ -2353,36 +2586,58 @@ function downloadInvoicePDF() {
         </body>
         </html>
     `;
-    
+
     // Create a temporary iframe to render the PDF with enhanced rendering
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
-    iframe.style.letterRendering = 'optimizeLegibility';
     document.body.appendChild(iframe);
-    
+
     const iframeDoc = iframe.contentWindow.document;
     iframeDoc.open();
     iframeDoc.write(pdfContent);
     iframeDoc.close();
-    
+
     // Wait for content to load, then print
     setTimeout(() => {
-        iframe.contentWindow.print();
-        setTimeout(() => {
-            document.body.removeChild(iframe);
-        }, 1000);
+        try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch (e) {
+            console.error('Print error', e);
+            alert('Erreur lors de la génération du PDF');
+        } finally {
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+            }, 1000);
+        }
     }, 500);
 }
 
 // Download PDF button listener
-if (document.getElementById('downloadPDF')) {
-    document.getElementById('downloadPDF').addEventListener('click', downloadInvoicePDF);
-}
+document.getElementById('downloadPDF')?.addEventListener('click', downloadInvoicePDF);
 
 // Initialize app
 function initApp() {
+    // Setup lazy DOM references
+    invoiceForm = document.getElementById('invoiceForm');
+    invoiceNumberInput = document.getElementById('invoiceNumber');
+    invoiceDateInput = document.getElementById('invoiceDate');
+    dueDateInput = document.getElementById('dueDate');
+    quantityInput = document.getElementById('quantity');
+    unitPriceInput = document.getElementById('unitPrice');
+    totalHTInput = document.getElementById('totalHT');
+
+    setupNavigation();
+    setupClientSelectListener();
+    setupClientFormHandlers();
+    setupInvoiceFormListeners();
+    setupInvoiceSaveHandler();
+    setupTaskHandlers();
+    setupEmailPreviewHandlers();
+    setupFilterListeners();
+
     setDefaultDates();
-    invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput.value);
+    if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput ? invoiceDateInput.value : null);
     calculateTotal();
     renderCalendar();
     renderClientsTable();
@@ -2394,16 +2649,25 @@ function initApp() {
     calculateTaxes();
     updateCFEMensuel();
     loadCompanySettings();
+
+    // Initial persist attempt
+    initialRenderAndPersist();
 }
 
-// Start the app
-initApp();
+// Start the app on DOM ready
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Initialisation MTI CONSULTING v2.0...');
+    // Charger depuis Drive first, then init
+    await loadFromDrive();
+    initApp();
+    console.log('✅ Application prête');
+});
 
 // ==========================================
-// ENVOI EMAIL GMAIL API
+// ENVOI EMAIL GMAIL API (legacy functions kept)
 // ==========================================
 
-// Envoyer une facture par email avec PDF
+// Envoyer une facture par email avec PDF (legacy helper)
 async function sendInvoiceByEmail(index) {
     const invoice = invoices[index];
     const client = clients.find(c => c.name === invoice.client);
@@ -2418,7 +2682,7 @@ async function sendInvoiceByEmail(index) {
     }
 
     try {
-        // Générer PDF base64
+        // Générer PDF base64 (requires jsPDF & autotable)
         const pdfBase64 = await generateInvoicePDFBase64(invoice);
 
         // Envoyer via backend
@@ -2441,7 +2705,7 @@ async function sendInvoiceByEmail(index) {
         alert(`✅ Facture envoyée à ${client.email_facturation}`);
     } catch (error) {
         console.error('❌ Erreur:', error);
-        alert('Erreur : ' + error.message);
+        alert('Erreur : ' + (error.message || error));
     }
 }
 
@@ -2450,10 +2714,10 @@ function generateEmailBody(invoice, client) {
     const contactName = client.contact_name || client.name;
     return `Bonjour ${contactName},
 
-Veuillez trouver ci-joint la facture n°${invoice.number} d'un montant de ${invoice.total.toFixed(2)} € HT.
+Veuillez trouver ci-joint la facture n°${invoice.number} d'un montant de ${(invoice.total || 0).toFixed(2)} € HT.
 
-Date de facturation : ${formatDate(invoice.date)}
-Date d'échéance : ${formatDate(invoice.dueDate)}
+Date de facturation : ${formatDateFR(invoice.date)}
+Date d'échéance : ${formatDateFR(invoice.dueDate)}
 
 Conditions de paiement : 30 jours nets
 
@@ -2462,8 +2726,11 @@ Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING`;
 }
 
-// Générer PDF en base64
+// Générer PDF en base64 (legacy jsPDF approach)
 async function generateInvoicePDFBase64(invoice) {
+    if (!window.jspdf) {
+        throw new Error('jsPDF non chargé');
+    }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
@@ -2493,35 +2760,36 @@ async function generateInvoicePDFBase64(invoice) {
     if (invoice.clientSiret) doc.text(`SIRET : ${invoice.clientSiret}`, 20, 95);
 
     // Dates
-    doc.text(`Date : ${formatDate(invoice.date)}`, 120, 85);
-    doc.text(`Échéance : ${formatDate(invoice.dueDate)}`, 120, 90);
+    doc.text(`Date : ${formatDateFR(invoice.date)}`, 120, 85);
+    doc.text(`Échéance : ${formatDateFR(invoice.dueDate)}`, 120, 90);
 
     // Tableau
-    doc.autoTable({
-        startY: 120,
-        head: [['Description', 'Quantité', 'Prix unitaire', 'Total HT']],
-        body: [[
-            invoice.description,
-            invoice.quantity.toString(),
-            `${invoice.unitPrice.toFixed(2)} €`,
-            `${invoice.total.toFixed(2)} €`
-        ]]
-    });
+    if (doc.autoTable) {
+        doc.autoTable({
+            startY: 120,
+            head: [['Description', 'Quantité', 'Prix unitaire', 'Total HT']],
+            body: [[
+                invoice.description || '',
+                (invoice.quantity || 0).toString(),
+                `${(invoice.unitPrice || 0).toFixed(2)} €`,
+                `${(invoice.total || 0).toFixed(2)} €`
+            ]]
+        });
+    } else {
+        doc.text(invoice.description || '', 20, 120);
+    }
 
-    // Totaux
-    const finalY = doc.lastAutoTable.finalY + 10;
-    const tva = invoice.total * 0.2;
-    const ttc = invoice.total + tva;
+    const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 10 : 140;
+    const tva = (invoice.total || 0) * 0.2;
+    const ttc = (invoice.total || 0) + tva;
 
-    doc.text(`Total HT : ${invoice.total.toFixed(2)} €`, 120, finalY);
+    doc.text(`Total HT : ${(invoice.total || 0).toFixed(2)} €`, 120, finalY);
     doc.text(`TVA 20% : ${tva.toFixed(2)} €`, 120, finalY + 7);
     doc.setFontSize(12);
     doc.text(`Total TTC : ${ttc.toFixed(2)} €`, 120, finalY + 14);
 
     return doc.output('datauristring').split(',')[1];
 }
-
-
 
 // ==========================================
 // SYNC TIERS GOOGLE SHEETS
@@ -2539,7 +2807,7 @@ async function importClientsFromSheets() {
         const response = await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 action: 'importClients',
                 sheetId: CONFIG.SHEETS_ID
             })
@@ -2547,14 +2815,14 @@ async function importClientsFromSheets() {
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
 
-        clients = result.data.clients;
+        clients = result.data.clients || [];
         await saveToDrive();
         renderClientsTable();
         populateClientSelects();
 
         alert(`✅ ${clients.length} clients importés`);
     } catch (error) {
-        alert('Erreur import : ' + error.message);
+        alert('Erreur import : ' + (error.message || error));
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -2575,7 +2843,7 @@ async function exportClientsToSheets() {
         const response = await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 action: 'exportClients',
                 sheetId: CONFIG.SHEETS_ID,
                 clients: clients
@@ -2587,7 +2855,7 @@ async function exportClientsToSheets() {
         alert(`✅ ${clients.length} clients exportés`);
         window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
     } catch (error) {
-        alert('Erreur export : ' + error.message);
+        alert('Erreur export : ' + (error.message || error));
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -2595,19 +2863,3 @@ async function exportClientsToSheets() {
         }
     }
 }
-
-
-
-// ==========================================
-// INITIALISATION
-// ==========================================
-
-// Initialiser l'application
-document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 Initialisation MTI CONSULTING v2.0...');
-
-    // Charger depuis Drive
-    await loadFromDrive();
-
-    console.log('✅ Application prête');
-});
