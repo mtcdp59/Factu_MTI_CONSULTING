@@ -24,6 +24,61 @@ function loadFromLocalStorage() {
         const savedCompanyInfo = localStorage.getItem('mti_companyInfo');
         const savedTaxSettings = localStorage.getItem('mti_taxSettings');
         
+        if (savedClients) {
+            clients = JSON.parse(savedClients);
+            console.log('✅ Clients restaurés:', clients.length);
+        }
+        if (savedInvoices) {
+            invoices = JSON.parse(savedInvoices);
+            console.log('✅ Factures restaurées:', invoices.length);
+        }
+        if (savedTasks) {
+            tasks = JSON.parse(savedTasks);
+            console.log('✅ Tâches restaurées:', tasks.length);
+        }
+        if (savedCompanyInfo) {
+            companyInfo = JSON.parse(savedCompanyInfo);
+            console.log('✅ Info entreprise restaurée');
+        }
+        if (savedTaxSettings) {
+            taxSettings = JSON.parse(savedTaxSettings);
+            console.log('✅ Paramètres fiscaux restaurés');
+        }
+        
+        // Mettre à jour l'interface après chargement
+        if (typeof renderClientsTable === 'function') renderClientsTable();
+        if (typeof populateClientSelects === 'function') populateClientSelects();
+        
+    } catch (e) {
+        console.error('❌ Erreur chargement localStorage:', e);
+    }
+}
+// ===== FIN AJOUT =====
+
+
+
+// ===== AJOUT PERSISTANCE LOCALSTORAGE =====
+function saveToLocalStorage() {
+    try {
+        localStorage.setItem('mti_clients', JSON.stringify(clients));
+        localStorage.setItem('mti_invoices', JSON.stringify(invoices));
+        localStorage.setItem('mti_tasks', JSON.stringify(tasks));
+        localStorage.setItem('mti_companyInfo', JSON.stringify(companyInfo));
+        localStorage.setItem('mti_taxSettings', JSON.stringify(taxSettings));
+        console.log('✅ Données sauvegardées dans localStorage');
+    } catch (e) {
+        console.error('❌ Erreur sauvegarde localStorage:', e);
+    }
+}
+
+function loadFromLocalStorage() {
+    try {
+        const savedClients = localStorage.getItem('mti_clients');
+        const savedInvoices = localStorage.getItem('mti_invoices');
+        const savedTasks = localStorage.getItem('mti_tasks');
+        const savedCompanyInfo = localStorage.getItem('mti_companyInfo');
+        const savedTaxSettings = localStorage.getItem('mti_taxSettings');
+        
         if (savedClients) clients = JSON.parse(savedClients);
         if (savedInvoices) invoices = JSON.parse(savedInvoices);
         if (savedTasks) tasks = JSON.parse(savedTasks);
@@ -86,6 +141,15 @@ const defaultSettings = {
 };
 
 // DOM Elements
+
+// ===== CHARGEMENT INITIAL =====
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initialisation MTI CONSULTING...');
+    loadFromLocalStorage();
+    console.log('✅ Application prête');
+});
+// ===== FIN CHARGEMENT =====
+
 const navTabs = document.querySelectorAll('.nav-tab');
 const tabContents = document.querySelectorAll('.tab-content');
 
@@ -263,6 +327,7 @@ function deleteClient(index) {
         message,
         () => {
             clients.splice(index, 1);
+    saveToLocalStorage();
             renderClientsTable();
             populateClientSelects();
             showToast('Client supprimé');
@@ -1344,6 +1409,7 @@ function deleteInvoice(index) {
         `Êtes-vous sûr de vouloir supprimer la facture #${invoice.number} du client ${invoice.client} ?`,
         () => {
             invoices.splice(index, 1);
+    saveToLocalStorage();
             renderInvoiceList();
             applyFilters();
             renderCharts();
