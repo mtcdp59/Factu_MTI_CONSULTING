@@ -2,99 +2,53 @@
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
+// ===== AJOUT PERSISTANCE LOCALSTORAGE =====
+function saveToLocalStorage() {
+    try {
+        localStorage.setItem('mti_clients', JSON.stringify(clients));
+        localStorage.setItem('mti_invoices', JSON.stringify(invoices));
+        localStorage.setItem('mti_tasks', JSON.stringify(tasks));
+        localStorage.setItem('mti_companyInfo', JSON.stringify(companyInfo));
+        localStorage.setItem('mti_taxSettings', JSON.stringify(taxSettings));
+        console.log('✅ Données sauvegardées dans localStorage');
+    } catch (e) {
+        console.error('❌ Erreur sauvegarde localStorage:', e);
+    }
+}
+
+function loadFromLocalStorage() {
+    try {
+        const savedClients = localStorage.getItem('mti_clients');
+        const savedInvoices = localStorage.getItem('mti_invoices');
+        const savedTasks = localStorage.getItem('mti_tasks');
+        const savedCompanyInfo = localStorage.getItem('mti_companyInfo');
+        const savedTaxSettings = localStorage.getItem('mti_taxSettings');
+        
+        if (savedClients) clients = JSON.parse(savedClients);
+        if (savedInvoices) invoices = JSON.parse(savedInvoices);
+        if (savedTasks) tasks = JSON.parse(savedTasks);
+        if (savedCompanyInfo) companyInfo = JSON.parse(savedCompanyInfo);
+        if (savedTaxSettings) taxSettings = JSON.parse(savedTaxSettings);
+        
+        console.log('✅ Données restaurées depuis localStorage');
+    } catch (e) {
+        console.error('❌ Erreur chargement localStorage:', e);
+    }
+}
+// ===== FIN AJOUT =====
+
+
 // Google Apps Script configuration
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxOdUw3IXIytGkenoi8pAUDPa8fnUn6XRPnHvRzxNopEAph4asS3Ja4rLOr9AXi_xXO/exec';
 const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
 
-let clients = [
-    {
-        name: 'Entreprise ABC',
-        siret: '123 456 789 00012',
-        address: '123 Rue de la République\n75001 Paris',
-        email_facturation: 'facturation@entreprise-abc.fr',
-        contact_name: 'Marie Dupont'
-    },
-    {
-        name: 'Société XYZ',
-        siret: '987 654 321 00034',
-        address: '456 Avenue des Champs\n69002 Lyon',
-        email_facturation: '',
-        contact_name: ''
-    }
-];
+let clients = [];
 
-let invoices = [
-    {
-        number: '202511-001',
-        client: 'Entreprise ABC',
-        clientSiret: '123 456 789 00012',
-        clientAddress: '123 Rue de la République\n75001 Paris',
-        date: '2025-11-15',
-        dueDate: '2025-12-15',
-        description: 'Prestation de conseil en développement',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Payée',
-        montantRecu: 7200,
-        dateReception: '2025-12-10'
-    },
-    {
-        number: '202512-001',
-        client: 'Société XYZ',
-        clientSiret: '987 654 321 00034',
-        clientAddress: '456 Avenue des Champs\n69002 Lyon',
-        date: '2025-12-01',
-        dueDate: '2025-12-31',
-        description: 'Développement application web',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Envoyée',
-        montantRecu: 0,
-        dateReception: null
-    },
-    {
-        number: '202510-001',
-        client: 'Entreprise ABC',
-        clientSiret: '123 456 789 00012',
-        clientAddress: '123 Rue de la République\n75001 Paris',
-        date: '2025-10-15',
-        dueDate: '2025-11-14',
-        description: 'Conseil stratégique',
-        quantity: 10,
-        unitPrice: 600,
-        total: 6000,
-        status: 'Retard',
-        montantRecu: 0,
-        dateReception: null
-    },
-    {
-        number: '202512-002',
-        client: 'Société XYZ',
-        clientSiret: '987 654 321 00034',
-        clientAddress: '456 Avenue des Champs\n69002 Lyon',
-        date: '2025-12-15',
-        dueDate: '2026-01-14',
-        description: 'Audit technique',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Brouillon',
-        montantRecu: 0,
-        dateReception: null
-    }
-];
+let invoices = [];
 
-let tasks = [
-    { date: '2025-12-16', startTime: '09:00', duration: 3, description: 'Développement module facturation', type: 'Travail' },
-    { date: '2025-12-16', startTime: '14:00', duration: 2, description: 'Réunion client Entreprise ABC', type: 'Réunion client' },
-    { date: '2025-12-17', startTime: '10:00', duration: 1.5, description: 'Déclaration URSSAF', type: 'Administratif' },
-    { date: '2025-12-18', startTime: '09:30', duration: 4, description: 'Consulting SI Finance', type: 'Travail' },
-    { date: '2025-12-19', startTime: '15:00', duration: 1, description: 'Suivi projet Société XYZ', type: 'Réunion client' }
-];
+let tasks = [];
 
 // Calendar state
 let currentView = 'week';
@@ -103,11 +57,11 @@ let currentDate = new Date();
 // Company info - now editable via settings
 let companyInfo = {
     name: 'MTI CONSULTING',
-    logoUrl: '',
-    siret: '[SIRET à venir]',
-    address: '[Adresse]',
-    postalCode: '[Code postal]',
-    city: '[Ville]',
+    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+    siret: '994 149 904 00017',
+    address: '13A rue du Général de Gaulle',
+    postalCode: '59110',
+    city: 'La Madeleine',
     email: 'mticonsulting59@gmail.com',
     phone: '07 77 37 17 39'
 };
@@ -134,6 +88,14 @@ const defaultSettings = {
 // DOM Elements
 const navTabs = document.querySelectorAll('.nav-tab');
 const tabContents = document.querySelectorAll('.tab-content');
+
+
+// ===== AJOUT CHARGEMENT INITIAL =====
+document.addEventListener('DOMContentLoaded', () => {
+    loadFromLocalStorage();
+    console.log('✅ Application MTI CONSULTING initialisée avec données sauvegardées');
+});
+// ===== FIN AJOUT =====
 
 // Navigation
 navTabs.forEach(tab => {
