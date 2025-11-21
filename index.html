@@ -822,12 +822,12 @@ tr:hover {
                     </div>
 
                     <div class="action-buttons">
-                        <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEditMode()">Annuler</button>
+                        <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;">Annuler</button>
                         <button type="button" class="btn btn-secondary" id="previewInvoice">👁️ Aperçu</button>
                         <button type="button" class="btn btn-secondary" id="downloadPDF">📥 Télécharger PDF</button>
                         <button type="submit" class="btn btn-primary" id="submitInvoiceBtn">💾 Créer facture</button>
                         <button type="button" class="btn btn-primary" id="sendEmailBtn" style="display: none;">📧 Envoyer par email</button>
-                        <button type="button" class="btn btn-secondary" id="newInvoiceBtn" style="display: none;" onclick="resetInvoiceForm()">➕ Nouvelle facture</button>
+                        <button type="button" class="btn btn-secondary" id="newInvoiceBtn" style="display: none;">➕ Nouvelle facture</button>
                     </div>
                 </form>
             </div>
@@ -860,9 +860,9 @@ tr:hover {
             <div class="card">
                 <h2 class="card-title">Gestion des Clients</h2>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-                <button class="btn btn-primary" id="addClientBtn" onclick="openClientModal()">➕ Nouveau client</button>
-                <button class="btn btn-secondary" id="importClientsBtn" onclick="importClientsFromSheets()">📥 Importer depuis Sheets</button>
-                <button class="btn btn-secondary" id="exportClientsBtn" onclick="exportClientsToSheets()">📤 Exporter vers Sheets</button>
+                <button class="btn btn-primary" id="addClientBtn">➕ Nouveau client</button>
+                <button class="btn btn-secondary" id="importClientsBtn">📥 Importer depuis Sheets</button>
+                <button class="btn btn-secondary" id="exportClientsBtn">📤 Exporter vers Sheets</button>
             </div>
                 
                 <div class="table-wrapper">
@@ -925,21 +925,21 @@ tr:hover {
                 <!-- View Selector -->
                 <div style="margin-bottom: var(--space-16); display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: center; justify-content: space-between;">
                     <div style="display: flex; gap: var(--space-8);">
-                        <button class="btn btn-secondary" id="viewDay" onclick="changeCalendarView('day')">Jour</button>
-                        <button class="btn btn-secondary active" id="viewWeek" onclick="changeCalendarView('week')">Semaine</button>
-                        <button class="btn btn-secondary" id="viewMonth" onclick="changeCalendarView('month')">Mois</button>
+                        <button class="btn btn-secondary" id="viewDay">Jour</button>
+                        <button class="btn btn-secondary active" id="viewWeek">Semaine</button>
+                        <button class="btn btn-secondary" id="viewMonth">Mois</button>
                     </div>
                     <div style="display: flex; gap: var(--space-8);">
-                        <button class="btn btn-primary" onclick="syncToGoogleCalendar()" title="Synchroniser avec Google Calendar">📅 Synchroniser Calendar</button>
+                        <button class="btn btn-primary" id="syncCalendarBtn" title="Synchroniser avec Google Calendar">📅 Synchroniser Calendar</button>
                         <button class="btn btn-primary" id="addTaskBtn">➕ Ajouter une tâche</button>
                     </div>
                 </div>
                 
                 <!-- Date Navigation -->
                 <div style="margin-bottom: var(--space-16); display: flex; gap: var(--space-12); align-items: center; justify-content: center; padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base);">
-                    <button class="btn btn-sm btn-secondary" onclick="navigateCalendar(-1)">← Précédent</button>
-                    <button class="btn btn-sm btn-secondary" onclick="navigateCalendar(0)">Aujourd'hui</button>
-                    <button class="btn btn-sm btn-secondary" onclick="navigateCalendar(1)">Suivant →</button>
+                        <button class="btn btn-sm btn-secondary" id="navPrevBtn">← Précédent</button>
+                        <button class="btn btn-sm btn-secondary" id="navTodayBtn">Aujourd'hui</button>
+                        <button class="btn btn-sm btn-secondary" id="navNextBtn">Suivant →</button>
                 </div>
                 
                 <div id="currentDateDisplay" style="margin-bottom: var(--space-16); text-align: center; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold);"></div>
@@ -992,7 +992,7 @@ tr:hover {
                     <h3 style="font-size: var(--font-size-lg); margin-bottom: 0; font-weight: var(--font-weight-semibold);">Filtres</h3>
                     <div style="display: flex; align-items: center; gap: var(--space-12);">
                         <span id="lastSyncTime" style="font-size: var(--font-size-sm); color: var(--color-text-secondary);"></span>
-                        <button class="btn btn-primary" id="syncButton" onclick="syncToGoogleSheets()">
+                        <button class="btn btn-primary" id="syncButton">
                             🔄 Synchroniser avec Google Sheets
                         </button>
                     </div>
@@ -1101,9 +1101,6 @@ tr:hover {
                             ℹ️
                         </span>
                     </label>
-                    <input type="text" class="form-control" id="logoUrl" placeholder="https://exemple.com/logo.png">
-                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">URL de l'image du logo à afficher sur les factures</small>
-                </div>
                     <input type="text" class="form-control" id="logoUrl" placeholder="https://exemple.com/logo.png">
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">URL de l'image du logo à afficher sur les factures</small>
                 </div>

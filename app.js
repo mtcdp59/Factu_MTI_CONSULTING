@@ -8,6 +8,40 @@ const CONFIG = {
     CALENDAR_ID: 'primary'
 };
 
+// Helper to call the Apps Script backend with better error handling and CORS guidance
+async function callBackend(action, payload = {}) {
+    try {
+        const body = JSON.stringify(Object.assign({ action }, payload));
+        console.debug('Calling backend:', CONFIG.BACKEND_URL, body);
+
+        const resp = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body
+        });
+
+        // If the response is opaque due to CORS misconfiguration, resp.ok will be false or fetch may throw
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => '');
+            const errMsg = `Backend returned status ${resp.status}. ${text}`;
+            console.error('Backend error:', errMsg);
+            throw new Error(errMsg);
+        }
+
+        // Try to parse JSON, fall back to text
+        const txt = await resp.text();
+        try {
+            return JSON.parse(txt);
+        } catch (e) {
+            return { success: true, data: txt };
+        }
+    } catch (err) {
+        console.error('callBackend error (possible CORS or network issue):', err);
+        // Provide actionable error for the user/developer
+        throw new Error('Impossible de contacter le BACKEND. Vérifiez que le script Apps Script est déployé et qu\'il autorise les requêtes CORS (Access-Control-Allow-Origin). Détails: ' + (err.message || err));
+    }
+}
+
 let isEditMode = false;
 let editingInvoiceIndex = -1;
 
@@ -272,6 +306,41 @@ function renderClientsTable() {
     });
 }
 
+// Setup bindings for elements that used inline onclick in HTML
+function setupLegacyBindings() {
+    // Simple button mappings
+    document.getElementById('cancelEditBtn')?.addEventListener('click', cancelEditMode);
+    document.getElementById('newInvoiceBtn')?.addEventListener('click', resetInvoiceForm);
+
+    // Import / Export clients
+    const importBtn = document.getElementById('importClientsBtn');
+    if (importBtn) importBtn.addEventListener('click', () => { if (typeof importClientsFromSheets === 'function') importClientsFromSheets(); });
+    const exportBtn = document.getElementById('exportClientsBtn');
+    if (exportBtn) exportBtn.addEventListener('click', () => { if (typeof exportClientsToSheets === 'function') exportClientsToSheets(); });
+
+    // Calendar view buttons
+    document.getElementById('viewDay')?.addEventListener('click', () => changeCalendarView('day'));
+    document.getElementById('viewWeek')?.addEventListener('click', () => changeCalendarView('week'));
+    document.getElementById('viewMonth')?.addEventListener('click', () => changeCalendarView('month'));
+
+    // Sync calendar
+    const syncCalendarBtn = document.getElementById('syncCalendarBtn');
+    if (syncCalendarBtn) syncCalendarBtn.addEventListener('click', () => { if (typeof syncToGoogleCalendar === 'function') syncToGoogleCalendar(); });
+
+    // Calendar navigation
+    document.getElementById('navPrevBtn')?.addEventListener('click', () => navigateCalendar(-1));
+    document.getElementById('navTodayBtn')?.addEventListener('click', () => navigateCalendar(0));
+    document.getElementById('navNextBtn')?.addEventListener('click', () => navigateCalendar(1));
+
+    // Sync sheet button
+    document.getElementById('syncButton')?.addEventListener('click', () => { if (typeof syncToGoogleSheets === 'function') syncToGoogleSheets(); });
+
+    // Delete task button inside edit modal (search by emoji fallback)
+    const deleteButtons = Array.from(document.querySelectorAll('#editTaskModal button'));
+    const deleteBtn = deleteButtons.find(b => b.textContent && b.textContent.includes('🗑️'));
+    if (deleteBtn) deleteBtn.addEventListener('click', deleteTaskFromEdit);
+}
+
 function populateClientSelects() {
     const clientSelect = document.getElementById('clientSelect');
     const clientFilterSelect = document.getElementById('clientFilterSelect');
@@ -356,6 +425,19 @@ function setupClientFormHandlers() {
             if (form) form.reset();
         });
     }
+    
+        // Backwards-compatible helper for inline onclick in `index.html`
+        function openClientModal() {
+            const card = document.getElementById('clientFormCard');
+            if (card) card.style.display = 'block';
+            const title = document.getElementById('clientFormTitle');
+            if (title) title.textContent = 'Nouveau client';
+            const editIndex = document.getElementById('editClientIndex');
+            if (editIndex) editIndex.value = '-1';
+            const form = document.getElementById('clientForm');
+            if (form) form.reset();
+        }
+        window.openClientModal = openClientModal;
 
     const cancelClient = document.getElementById('cancelClient');
     if (cancelClient) {
@@ -2139,22 +2221,22 @@ async function syncToGoogleSheets() {
             dateReception: inv.dateReception || ''
         }));
 
-        // Use no-cors mode for Apps Script
-        await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                action: 'sync_invoices',
-                invoices: invoiceData
-            })
-        });
-
-        // no-cors doesn't give response, assume success if no error
-        const count = invoiceData.length;
-        showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''} avec Google Sheets`, 'success');
+        // Call backend and surface any errors (avoid using mode: 'no-cors')
+        try {
+            const result = await callBackend('sync_invoices', { invoices: invoiceData });
+            const count = invoiceData.length;
+            if (result && result.success === false) {
+                throw new Error(result.error || 'Erreur serveur lors de la synchronisation');
+            }
+            showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''} avec Google Sheets`, 'success');
+        } catch (err) {
+            console.error('sync invoices failed:', err);
+            showToast('❌ Erreur de synchronisation (voir console). Assurez-vous que le BACKEND retourne Access-Control-Allow-Origin.', 'error');
+            button.innerHTML = originalContent;
+            button.disabled = false;
+            isSyncing = false;
+            return;
+        }
         button.innerHTML = '✅ Synchronisé';
         updateLastSyncTime();
 
@@ -2213,21 +2295,16 @@ async function syncToGoogleCalendar() {
             type: task.type
         }));
 
-        // Use no-cors mode for Apps Script
-        await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                action: 'sync_calendar',
-                tasks: taskData
-            })
-        });
-
-        // no-cors doesn't give response, assume success if no error
-        showToast('✅ Planning synchronisé avec Google Calendar', 'success');
+        try {
+            const result = await callBackend('sync_calendar', { tasks: taskData });
+            if (result && result.success === false) {
+                throw new Error(result.error || 'Erreur serveur lors de la synchronisation Calendar');
+            }
+            showToast('✅ Planning synchronisé avec Google Calendar', 'success');
+        } catch (err) {
+            console.error('Calendar sync failed:', err);
+            showToast('❌ Erreur de synchronisation Calendar (voir console). Assurez-vous que le BACKEND autorise CORS.', 'error');
+        }
     } catch (error) {
         console.error('Calendar sync error:', error);
         showToast('❌ Erreur de synchronisation Calendar', 'error');
@@ -2259,22 +2336,17 @@ async function sendInvoiceWithPDF(invoice) {
             unitPrice: invoice.unitPrice
         };
 
-        // Use no-cors mode for Apps Script
-        await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                action: 'send_invoice',
-                invoice: invoiceData,
-                clientEmail: clientEmail
-            })
-        });
-
-        // no-cors doesn't give response, assume success if no error
-        showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
+        try {
+            const result = await callBackend('send_invoice', { invoice: invoiceData, clientEmail });
+            if (result && result.success === false) {
+                throw new Error(result.error || 'Erreur serveur lors de l\'envoi');
+            }
+            showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
+        } catch (err) {
+            console.error('sendInvoiceWithPDF failed:', err);
+            showToast('❌ Erreur d\'envoi (voir console). Assurez-vous que le BACKEND autorise CORS et renvoie JSON.', 'error');
+            return;
+        }
 
         // Update invoice status to "Envoyée"
         invoice.status = 'Envoyée';
@@ -2635,6 +2707,7 @@ function initApp() {
     setupTaskHandlers();
     setupEmailPreviewHandlers();
     setupFilterListeners();
+    setupLegacyBindings();
 
     setDefaultDates();
     if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput ? invoiceDateInput.value : null);
@@ -2804,6 +2877,7 @@ async function importClientsFromSheets() {
     }
 
     try {
+        console.debug('Import clients payload ->', { action: 'importClients', sheetId: CONFIG.SHEETS_ID });
         const response = await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2822,7 +2896,11 @@ async function importClientsFromSheets() {
 
         alert(`✅ ${clients.length} clients importés`);
     } catch (error) {
-        alert('Erreur import : ' + (error.message || error));
+        console.error('importClientsFromSheets error:', error);
+        const message = (error && error.message && error.message.includes('CORS')) || (error && error.message && error.message.includes('Access')) || (error && error.message && error.message.includes('Failed to fetch'))
+            ? 'Erreur réseau/CORS lors de l\'import. Vérifiez que le BACKEND autorise CORS et que l\'URL est correcte.'
+            : ('Erreur import : ' + (error.message || error));
+        alert(message);
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -2840,6 +2918,7 @@ async function exportClientsToSheets() {
     }
 
     try {
+        console.debug('Export clients payload ->', { action: 'exportClients', sheetId: CONFIG.SHEETS_ID, clientsCount: clients.length });
         const response = await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2855,7 +2934,11 @@ async function exportClientsToSheets() {
         alert(`✅ ${clients.length} clients exportés`);
         window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
     } catch (error) {
-        alert('Erreur export : ' + (error.message || error));
+        console.error('exportClientsToSheets error:', error);
+        const message = (error && error.message && error.message.includes('CORS')) || (error && error.message && error.message.includes('Access')) || (error && error.message && error.message.includes('Failed to fetch'))
+            ? 'Erreur réseau/CORS lors de l\'export. Vérifiez que le BACKEND autorise CORS et que l\'URL est correcte.'
+            : ('Erreur export : ' + (error.message || error));
+        alert(message);
     } finally {
         if (btn) {
             btn.disabled = false;
