@@ -993,11 +993,11 @@ function renderInvoicePreview(inv, showModal) {
             </tbody>
         </table>
 
-        <div class="invoice-total">
+        <div class="invoice-total" style="margin-bottom: 30px;">
             ${tvaEnabled ? `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA (20%): ${tva.toFixed(2)} €</div><div><strong>Total TTC: ${totalTTC.toFixed(2)} €</strong></div>` : `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA non applicable (art. 293 B du CGI)</div><div><strong>Total TTC: ${totalHT.toFixed(2)} €</strong></div>`}
         </div>
 
-        <div class="invoice-legal"><p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p><p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p></div>
+        <div class="invoice-legal" style="margin-top: 30px; clear: both;"><p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p><p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p></div>
     `;
 
     const previewContent = document.getElementById('invoicePreviewContent');
@@ -1442,7 +1442,8 @@ function updateCurrentDateDisplay() {
 }
 
 function renderDayView() {
-    const container = document.getElementById(useAppCalendar ? 'appCalendarContainer' : 'calendarContainer');
+    // Always render to appCalendarContainer (app's own calendar views)
+    const container = document.getElementById('appCalendarContainer');
     if (!container) return;
     const dateStr = formatDate(currentDate);
     const dayTasks = tasks.filter(task => task.date === dateStr);
@@ -1478,7 +1479,8 @@ function renderDayView() {
 }
 
 function renderWeekView() {
-    const container = document.getElementById(useAppCalendar ? 'appCalendarContainer' : 'calendarContainer');
+    // Always render to appCalendarContainer (app's own calendar views)
+    const container = document.getElementById('appCalendarContainer');
     if (!container) return;
     const weekDates = getWeekDates(currentDate);
     const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -1509,7 +1511,8 @@ function renderWeekView() {
 }
 
 function renderMonthView() {
-    const container = document.getElementById(useAppCalendar ? 'appCalendarContainer' : 'calendarContainer');
+    // Always render to appCalendarContainer (app's own calendar views)
+    const container = document.getElementById('appCalendarContainer');
     if (!container) return;
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -3195,24 +3198,8 @@ document.getElementById('confirmAction')?.addEventListener('click', async () => 
     }
 });
 
-// --- Send mode helpers and preview/confirm flow ---
-function getSendMode() {
-    return localStorage.getItem(SEND_MODE_KEY) || 'drive';
-}
-
-function setSendMode(mode) {
-    if (mode !== 'drive' && mode !== 'manual') return;
-    localStorage.setItem(SEND_MODE_KEY, mode);
-    const sel = document.getElementById('sendModeSelect');
-    if (sel) sel.value = mode;
-}
-
-function initSendModeUI() {
-    const sel = document.getElementById('sendModeSelect');
-    if (!sel) return;
-    sel.value = getSendMode();
-    sel.addEventListener('change', (e) => setSendMode(e.target.value));
-}
+// --- Preview/confirm flow (always uses Drive mode) ---
+// Send mode selection removed - app now always uses automatic Drive mode with preview
 
 function openGmailComposePrefilled(to, subject, body) {
     try {
@@ -3355,37 +3342,13 @@ function setupEmailPreviewHandlersForConfirmSend() {
                 total: currentInvoiceData.total
             };
 
-            const mode = getSendMode();
-            if (mode === 'drive') {
-                try {
-                    // Use the same flow as "Liste des Factures": sendInvoiceViaDrive
-                    await sendInvoiceViaDrive(invoice, to);
-                    showToast('✅ Email envoyé avec pièce jointe depuis Drive', 'success');
-                } catch (err) {
-                    console.error('Envoi via Drive failed:', err);
-                    const proceed = confirm('Envoi via serveur échoué. Voulez-vous ouvrir la fenêtre de composition Gmail pour attacher manuellement le PDF ?');
-                    if (proceed) {
-                        const body = generateEmailBody(invoice, client);
-                        openGmailComposePrefilled(to, subject, body);
-                    }
-                }
-            } else {
-                // manual mode: save PDF to Drive first, then open Gmail compose with Drive link
-                try {
-                    showToast('💾 Génération et sauvegarde du PDF sur Drive...', 'info');
-                    const { fileId, fileName, fileUrl } = await saveInvoicePdfToDrive(invoice);
-                    
-                    // Include Drive link in email body so user can easily attach the file
-                    const body = generateEmailBody(invoice, client) + 
-                        `\n\n📎 Votre facture a été sauvegardée sur Drive:\n${fileUrl}\n\n` +
-                        `⚠️ Veuillez attacher manuellement le fichier "${fileName}" depuis votre Drive avant d'envoyer cet email.`;
-                    
-                    openGmailComposePrefilled(to, subject, body);
-                    showToast('✅ PDF sauvegardé sur Drive. Gmail Compose ouvert - attachez manuellement le fichier.', 'success');
-                } catch (err) {
-                    console.error('Mode manuel - sauvegarde Drive failed:', err);
-                    showToast('❌ Erreur lors de la sauvegarde du PDF sur Drive', 'error');
-                }
+            // Always use Drive mode (automatic email with PDF attachment)
+            try {
+                await sendInvoiceViaDrive(invoice, to);
+                showToast('✅ Email envoyé avec pièce jointe depuis Drive', 'success');
+            } catch (err) {
+                console.error('Envoi via Drive failed:', err);
+                showToast('❌ Erreur lors de l\'envoi de l\'email. Vérifiez la console pour plus de détails.', 'error');
             }
             const modal = document.getElementById('emailModal');
             if (modal) modal.classList.remove('show');
@@ -3663,8 +3626,7 @@ function initApp() {
     const testBtn = document.getElementById('testBackendBtn');
     if (testBtn) testBtn.addEventListener('click', testBackend);
 
-    // Initialize send mode UI and preview-confirm button
-    try { initSendModeUI(); } catch (e) { console.warn('initSendModeUI failed', e); }
+    // Initialize preview-confirm button (always uses Drive mode)
     try { initPreviewConfirmButton(); } catch (e) { console.warn('initPreviewConfirmButton failed', e); }
 
     // Calendar view toggle: switch between FullCalendar (Google) and app calendar (day/week/month views)
@@ -3945,9 +3907,9 @@ async function generateInvoicePDFBase64(invoice) {
     // If html2canvas is available, use it for faithful rendering
     if (window.html2canvas && window.jspdf) {
         try {
-            // Render with html2canvas. Use moderate scale for good quality without excessive file size.
-            // Reduced from 2.5 to 1.5 to optimize PDF size (21 Mo → ~200-300 Ko)
-            const canvasScale = 1.5;
+            // Render with html2canvas. Use scale 2.0 for excellent quality while keeping reasonable file size.
+            // Scale 2.0 gives ~150-200 Ko (good balance between quality and size)
+            const canvasScale = 2.0;
             // Compute printable width in px so layout matches A4 printable area
             const { jsPDF } = window.jspdf;
             const pdfForCalc = new jsPDF('p', 'mm', 'a4');
