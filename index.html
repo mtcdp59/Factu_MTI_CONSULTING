@@ -1112,6 +1112,11 @@ tr:hover {
                     </label>
                     <input type="text" class="form-control" id="logoUrl" placeholder="https://exemple.com/logo.png">
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">URL de l'image du logo à afficher sur les factures</small>
+                    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                        <input type="file" id="logoFileInput" accept="image/*" style="display:inline-block;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="convertLogoBtn">Convertir en data-URI</button>
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">(Convertit une image locale en data URI et la colle dans le champ Logo URL)</small>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">SIRET</label>

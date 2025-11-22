@@ -51,6 +51,8 @@ function doPost(e) {
         return exportClients(data.sheetId, data.clients);
       case 'addCalendarEvent':
         return addCalendarEvent(data.event);
+      case 'deleteCalendarEvent':
+        return deleteCalendarEvent(data.eventId, data.calendarId);
       default:
         return createResponse(false, 'Action inconnue: ' + action);
     }
@@ -528,6 +530,58 @@ function addCalendarEvent(event) {
   }
 }
 
+// Supprimer un événement du Calendar par eventId
+function deleteCalendarEvent(eventId, calendarId) {
+  try {
+    if (!eventId) return createResponse(false, 'eventId manquant');
+    var cal = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
+    if (!cal) return createResponse(false, 'Calendrier introuvable: ' + calendarId);
+
+    // getEventById expects the iCal UID; CalendarApp provides getEventById (uses internal id)
+    try {
+      var ev = CalendarApp.getEventById(eventId);
+      if (ev) {
+        ev.deleteEvent();
+        Logger.log('Événement supprimé: ' + eventId);
+        return createResponse(true, { message: 'Événement supprimé', eventId: eventId });
+      } else {
+        return createResponse(false, 'Événement introuvable: ' + eventId);
+      }
+    } catch (e) {
+      // Some calendars may not expose getEventById for returned id formats; try fallback search by scanning nearby events
+      Logger.log('deleteCalendarEvent getEventById failed, attempting fallback search: ' + e.toString());
+      try {
+        var now = new Date();
+        var start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+        var end = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+        var events = cal.getEvents(start, end);
+        for (var i = 0; i < events.length; i++) {
+          var candidate = events[i];
+          var cid = candidate.getId();
+          var title = candidate.getTitle() || '';
+          var desc = candidate.getDescription() || '';
+          // Try matching by id substring (some ids differ by suffix) or by presence in title/description
+          if ((cid && cid.indexOf(eventId) !== -1) || (eventId && eventId.indexOf(cid) !== -1) || (title && title.indexOf(eventId) !== -1) || (desc && desc.indexOf(eventId) !== -1)) {
+            try {
+              candidate.deleteEvent();
+              Logger.log('Événement supprimé par fallback: ' + cid + ' (matched on ' + eventId + ')');
+              return createResponse(true, { message: 'Événement supprimé (fallback)', eventId: cid });
+            } catch (delErr) {
+              Logger.log('Fallback delete failed for ' + cid + ' : ' + delErr.toString());
+            }
+          }
+        }
+        return createResponse(false, 'Événement introuvable via fallback: ' + eventId);
+      } catch (ferr) {
+        Logger.log('deleteCalendarEvent fallback search error: ' + ferr.toString());
+        return createResponse(false, 'Impossible de localiser l\'événement via fallback: ' + ferr.toString());
+      }
+    }
+  } catch (err) {
+    return createResponse(false, 'Erreur deleteCalendarEvent: ' + err.toString());
+  }
+}
+
 // Obtenir la couleur selon le type de tâche
 function getColorForType(type) {
   const colors = {
@@ -568,6 +622,17 @@ function listCalendarEvents(startDate, endDate, maxResults, calendarId) {
     return createResponse(true, { count: out.length, events: out });
   } catch (err) {
     return createResponse(false, 'Erreur listCalendarEvents: ' + err.toString());
+  }
+}
+
+// List calendars available to the Apps Script user
+function listCalendars() {
+  try {
+    var cals = CalendarApp.getAllCalendars();
+    var out = cals.map(function(c) { return { id: c.getId(), name: c.getName() }; });
+    return createResponse(true, { count: out.length, calendars: out });
+  } catch (err) {
+    return createResponse(false, 'Erreur listCalendars: ' + err.toString());
   }
 }
 

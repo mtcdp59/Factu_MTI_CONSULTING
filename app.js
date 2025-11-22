@@ -8,6 +8,10 @@ const CONFIG = {
     CALENDAR_ID: 'primary'
 };
 
+function getConfiguredCalendarId() {
+    return localStorage.getItem('mti_calendar_id') || CONFIG.CALENDAR_ID;
+}
+
 // Send mode storage key: 'drive' or 'manual'
 const SEND_MODE_KEY = 'mti_send_mode';
 
@@ -56,26 +60,36 @@ async function openGmailComposeWithPDF(invoice, toEmail) {
     if (!invoice) throw new Error('Invoice missing');
     const client = clients.find(c => c.name === invoice.client) || {};
     const subject = `Facture ${invoice.number} - MTI CONSULTING`;
-    const body = generateEmailBody(invoice, client || { name: invoice.client });
+    let body = generateEmailBody(invoice, client || { name: invoice.client });
 
-    // Generate PDF base64 and open
-    const pdfBase64 = await generateInvoicePDFBase64(invoice);
-    const blob = base64ToBlob(pdfBase64, 'application/pdf');
-    const blobUrl = URL.createObjectURL(blob);
-
-    // Open PDF in new tab for review
-    window.open(blobUrl, '_blank');
-
-    // Trigger download to make attaching easier
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = `Facture_${invoice.number}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
+    // Generate PDF base64 and save to Drive so user can attach or link
+    try {
+        const pdfBase64 = await generateInvoicePDFBase64(invoice);
+        // Save to Drive (folder 'Factures') so user can attach; include link in body as hint
+        const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: 'Facture_' + (invoice.number || Date.now()) + '.pdf', folderName: 'Factures' });
+        if (saveResp && saveResp.success && saveResp.data && saveResp.data.fileUrl) {
+            body += '\n\n(La pièce jointe a été sauvegardée sur Drive: ' + saveResp.data.fileUrl + ')';
+        }
+        // Also open PDF in new tab for review
+        try {
+            const blob = base64ToBlob(pdfBase64, 'application/pdf');
+            const blobUrl = URL.createObjectURL(blob);
+            window.open(blobUrl, '_blank');
+            // Trigger download to make attaching easier
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = `Facture_${invoice.number}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
+        } catch (e) { /* ignore preview failure */ }
+    } catch (err) {
+        console.warn('Could not generate/save PDF for compose:', err);
+        body += '\n\n(La pièce jointe n\'a pas pu être générée automatiquement)';
+    }
 
     // Open Gmail compose (prefilled). Note: attachments cannot be auto-attached.
-    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail || '')}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(toEmail || '') + '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     window.open(gmailUrl, '_blank');
 
     return true;
@@ -434,6 +448,25 @@ function setupLegacyBindings() {
     if (importCalHeaderBtn) {
         importCalHeaderBtn.addEventListener('click', async () => {
             try {
+                // Offer to choose calendar before import
+                if (!localStorage.getItem('mti_calendar_id')) {
+                    if (confirm('Aucun calendrier configuré. Voulez-vous sélectionner un calendrier maintenant ?')) {
+                        try {
+                            const calsResp = await callBackend('listCalendars');
+                            if (calsResp && calsResp.success && calsResp.data && Array.isArray(calsResp.data.calendars)) {
+                                const list = calsResp.data.calendars;
+                                let pickList = 'Calendriers disponibles:\n';
+                                for (let i = 0; i < list.length; i++) pickList += `${i+1}. ${list[i].name} (${list[i].id})\n`;
+                                const choice = prompt(pickList + '\nEntrez le numéro du calendrier à utiliser:');
+                                const idx = parseInt(choice) - 1;
+                                if (!isNaN(idx) && list[idx]) {
+                                    localStorage.setItem('mti_calendar_id', list[idx].id);
+                                    showToast('Calendrier configuré: ' + list[idx].name, 'success');
+                                }
+                            }
+                        } catch (e) { console.warn('listCalendars failed', e); }
+                    }
+                }
                 const startDate = prompt('Date de début (AAAA-MM-JJ)', formatDate(new Date()));
                 if (!startDate) return;
                 const endDate = prompt('Date de fin (AAAA-MM-JJ)', formatDate(new Date()));
@@ -442,7 +475,7 @@ function setupLegacyBindings() {
                 importCalHeaderBtn.disabled = true;
                 importCalHeaderBtn.textContent = '⏳ Import...';
 
-                const res = await callBackend('importCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: CONFIG.CALENDAR_ID });
+                const res = await callBackend('importCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId() });
                 if (!res || res.success === false) {
                     try { showBackendRawResponse(res); } catch (e) {}
                     throw new Error((res && (res.data || res.error)) || 'Erreur import calendrier');
@@ -1073,25 +1106,10 @@ function showEmailPreview() {
     const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
     const emailTo = hasEmail ? client.email_facturation : '';
 
-    // Build email content
+    // Build email content using shared helper for consistent wording
     const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
-    const body = `Bonjour ${contactName},
-
-Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
-
-Date d'émission : ${formatDateFR(invoiceDate)}
-Date d'échéance : ${formatDateFR(dueDate)}
-Conditions de paiement : 30 jours nets
-
-⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
-
-Pour toute question, n'hésitez pas à me contacter.
-
-Cordialement,
-Mickaël TOURDOT-IGUEDJETAL
-MTI CONSULTING
-Email : mticonsulting59@gmail.com
-Téléphone : 07 77 37 17 39`;
+    // Use generateEmailBody to keep manual and automatic flows consistent
+    const body = generateEmailBody({ number: invoiceNumber, date: invoiceDate, dueDate: dueDate, total: total }, { name: contactName, contact_name: contactName });
 
     // Display preview
     const emailToEl = document.getElementById('emailTo');
@@ -1608,7 +1626,49 @@ function deleteTaskFromEdit() {
     showConfirmation(
         'Supprimer la tâche',
         'Êtes-vous sûr de vouloir supprimer cette tâche ?',
-        () => {
+        async () => {
+            // If this task has a calendar event, attempt to delete it server-side
+            const task = tasks[index];
+            if (task && task.eventId) {
+                try {
+                    // Provide a narrow search window to backend to help locate the event if getEventById fails
+                    const startDate = (() => { const d = new Date(task.date); d.setDate(d.getDate() - 1); return d.toISOString().slice(0,10); })();
+                    const endDate = (() => { const d = new Date(task.date); d.setDate(d.getDate() + 1); return d.toISOString().slice(0,10); })();
+                    const resp = await callBackend('deleteCalendarEvent', { eventId: task.eventId, calendarId: getConfiguredCalendarId(), startDate: startDate, endDate: endDate });
+                    if (!resp || resp.success === false) {
+                        console.warn('deleteCalendarEvent initial failed', resp);
+                        // Fallback: try to locate event by listing nearby events (±1 day) and match by title/description
+                        try {
+                            const startDate = (() => {
+                                const d = new Date(task.date);
+                                d.setDate(d.getDate() - 1);
+                                return d.toISOString().slice(0,10);
+                            })();
+                            const endDate = (() => {
+                                const d = new Date(task.date);
+                                d.setDate(d.getDate() + 1);
+                                return d.toISOString().slice(0,10);
+                            })();
+                            const eventsResp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId() });
+                            if (eventsResp && eventsResp.success && eventsResp.data && eventsResp.data.events) {
+                                const cand = eventsResp.data.events.find(ev => {
+                                    const titleMatch = task.description && ev.title && ev.title.includes(task.description);
+                                    const descMatch = task.description && ev.description && ev.description.includes(task.description);
+                                    return titleMatch || descMatch;
+                                });
+                                if (cand) {
+                                    const del2 = await callBackend('deleteCalendarEvent', { eventId: cand.id, calendarId: getConfiguredCalendarId(), startDate: startDate, endDate: endDate });
+                                    if (!del2 || del2.success === false) console.warn('Fallback delete also failed', del2);
+                                }
+                            }
+                        } catch (e) { console.warn('Fallback search/delete failed', e); }
+                    }
+                } catch (e) {
+                    console.warn('deleteCalendarEvent failed', e);
+                }
+            }
+
+            // Remove locally regardless (we attempted server delete)
             tasks.splice(index, 1);
             renderCalendar();
             document.getElementById('editTaskModal')?.classList.remove('show');
@@ -2162,6 +2222,36 @@ if (document.getElementById('saveSettings')) {
     document.getElementById('cfeAnnuel')?.addEventListener('input', updateCFEMensuel);
 }
 
+// Logo file conversion to data URI
+if (document.getElementById('convertLogoBtn') && document.getElementById('logoFileInput')) {
+    document.getElementById('convertLogoBtn').addEventListener('click', async () => {
+        const fileInput = document.getElementById('logoFileInput');
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            alert('Sélectionnez un fichier image d\'abord');
+            return;
+        }
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const dataUri = evt.target.result;
+            // Set into the logo URL field and companyInfo
+            const logoEl = document.getElementById('logoUrl');
+            if (logoEl) {
+                logoEl.value = dataUri;
+                companyInfo.logoUrl = dataUri;
+            }
+            // Save settings automatically
+            saveSettings();
+            showToast('✅ Logo converti et enregistré (data‑URI)', 'success');
+        };
+        reader.onerror = function(err) {
+            console.error('FileReader error', err);
+            alert('Impossible de lire le fichier image');
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 // Company settings event listeners
 if (document.getElementById('logoUrl')) {
     document.getElementById('logoUrl').addEventListener('input', () => {
@@ -2528,7 +2618,7 @@ async function syncToGoogleCalendar() {
             if (tasksToSync.length === 0) {
                 showToast('📅 Aucun nouvel événement à synchroniser', 'info');
             } else {
-                const result = await callBackend('sync_calendar', { tasks: tasksToSync });
+                const result = await callBackend('sync_calendar', { tasks: tasksToSync, calendarId: getConfiguredCalendarId() });
                 if (!result || result.success === false) {
                     try { showBackendRawResponse(result); } catch (e) {}
                     throw new Error((result && (result.data || result.error)) || 'Erreur serveur lors de la synchronisation Calendar');
@@ -2547,6 +2637,34 @@ async function syncToGoogleCalendar() {
                     await saveToDrive();
                 } catch (persistErr) {
                     console.warn('Impossible de persister eventIds:', persistErr);
+                }
+
+                // Additionally, fetch events from the calendar for the range and remove local tasks whose eventId no longer exists (handle deletions on the calendar)
+                try {
+                    // compute date range from tasks
+                    const dates = tasks.map(t => t.date).filter(Boolean).sort();
+                    const startDate = dates.length ? dates[0] : formatDate(new Date());
+                    const endDate = dates.length ? dates[dates.length - 1] : formatDate(new Date());
+                    const eventsResp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId() });
+                    if (eventsResp && eventsResp.success) {
+                        const remoteIds = new Set((eventsResp.data && eventsResp.data.events || []).map(e => e.id));
+                        // Remove tasks that have an eventId but that event is not present remotely
+                        let removed = 0;
+                        for (let i = tasks.length - 1; i >= 0; i--) {
+                            const t = tasks[i];
+                            if (t && t.eventId && !remoteIds.has(t.eventId)) {
+                                tasks.splice(i, 1);
+                                removed++;
+                            }
+                        }
+                        if (removed > 0) {
+                            await saveToDrive();
+                            renderCalendar();
+                            showToast(`✅ ${removed} tâche(s) supprimée(s) (événements absents du calendrier)`,'info');
+                        }
+                    }
+                } catch (cleanupErr) {
+                    console.warn('Cleanup calendar deletions failed:', cleanupErr);
                 }
 
                 showToast('✅ Planning synchronisé avec Google Calendar', 'success');
@@ -2882,6 +3000,107 @@ function initPreviewConfirmButton() {
 }
 
 // PDF Download functionality using iframe print fallback
+function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled}) {
+    const totalHT = total;
+    const tva = tvaEnabled ? totalHT * 0.20 : 0;
+    const totalTTC = totalHT + tva;
+
+    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
+        ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
+        : '[À compléter dans Paramètres]';
+
+    const logoHTML = companyInfo.logoUrl
+        ? `<img src="${companyInfo.logoUrl}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;">`
+        : '';
+
+    return `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; color: #222; margin: 18px; }
+        .page-container { max-width: 800px; margin: 0 auto; position: relative; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .header-left { max-width: 60%; }
+        .header-right { text-align: right; }
+        .company { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
+        .separator { border: none; border-top: 1px solid #ddd; margin: 10px 0; clear: both; }
+        .invoice-details { margin-top: 20px; margin-bottom: 12px; line-height: 1.5; }
+        .invoice-number { font-size: 18px; font-weight: bold; margin-bottom: 6px; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f5f5f5; font-weight: bold; font-size: 11px; }
+        td { font-size: 11px; height: 25px; }
+        .totals { text-align: right; margin-top: 10px; padding-top: 10px; border-top: 2px solid #5E5240; font-size: 13px; }
+        .legal { position: absolute; bottom: 0; left: 0; right: 0; font-size: 7.5px; color: #666; line-height: 1.3; background: #f9f9f9; padding: 6px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <div class="header">
+            <div class="header-left">
+                ${logoHTML}
+                <div class="company">${companyInfo.name}</div>
+                <div style="font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret || ''}</div>
+            </div>
+            <div class="header-right">
+                <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
+            </div>
+        </div>
+
+        <div class="invoice-details">
+            <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
+            <div style="font-size: 13px;">
+                <div>Date: ${formatDateFR(invoiceDate)}</div>
+                <div>Échéance: ${formatDateFR(dueDate)}</div>
+            </div>
+        </div>
+
+        <hr class="separator">
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th style="text-align: center;">Quantité</th>
+                    <th style="text-align: right;">Prix unitaire</th>
+                    <th style="text-align: right;">Total HT</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>${description}</td>
+                    <td style="text-align: center;">${quantity}</td>
+                    <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
+                    <td style="text-align: right;">${total.toFixed(2)} €</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="totals">
+            ${tvaEnabled ? `
+                <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                <div>TVA (20%): ${tva.toFixed(2)} €</div>
+                <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
+            ` : `
+                <div>Total HT: ${totalHT.toFixed(2)} €</div>
+                <div style="font-size: 11px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
+                <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalHT.toFixed(2)} €</div>
+            `}
+        </div>
+    </div>
+
+    <div class="legal">
+        <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
+        <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
+    </div>
+</body>
+</html>`;
+}
+
 function downloadInvoicePDF() {
     const clientNameEl = document.getElementById('clientName');
     const clientAddressEl = document.getElementById('clientAddress');
@@ -2934,194 +3153,10 @@ function downloadInvoicePDF() {
         `;
     }
 
-    const pdfContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                @page { margin: 15mm; size: A4; }
-                * { box-sizing: border-box; }
-                body { 
-                    font-family: 'Arial', 'Helvetica', 'Trebuchet MS', sans-serif; 
-                    padding: 0;
-                    margin: 0;
-                    color: #134252; 
-                    font-size: 13px;
-                    position: relative;
-                    height: 267mm;
-                    overflow: hidden;
-                }
-                .page-container {
-                    padding: 0;
-                    height: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    page-break-inside: avoid !important;
-                    page-break-after: avoid !important;
-                }
-                .header { 
-                    position: relative; 
-                    min-height: 140px;
-                    max-height: 140px;
-                    margin-bottom: 12px; 
-                    page-break-inside: avoid; 
-                    flex-shrink: 0;
-                }
-                .header-left { 
-                    position: absolute; 
-                    top: 0; 
-                    left: 0; 
-                    max-width: 50%; 
-                    line-height: 1.4;
-                }
-                .header-right { 
-                    position: absolute; 
-                    top: 90px; 
-                    right: 0; 
-                    text-align: right; 
-                    max-width: 45%; 
-                    line-height: 1.4;
-                }
-                .company { 
-                    font-weight: bold; 
-                    font-size: 16px; 
-                    color: #21808D; 
-                    margin-bottom: 4px; 
-                }
-                .separator {
-                    border: none;
-                    border-top: 1px solid #ddd;
-                    margin: 10px 0;
-                    clear: both;
-                    flex-shrink: 0;
-                }
-                .invoice-details {
-                    margin-top: 145px;
-                    margin-bottom: 12px;
-                    line-height: 1.5;
-                    clear: both;
-                    flex-shrink: 0;
-                }
-                .invoice-number { 
-                    font-size: 18px; 
-                    font-weight: bold; 
-                    margin-bottom: 6px;
-                    white-space: nowrap;
-                }
-                table { 
-                    width: 100%; 
-                    border-collapse: collapse; 
-                    margin: 12px 0; 
-                    page-break-inside: avoid; 
-                    flex-shrink: 0;
-                }
-                th, td { 
-                    padding: 6px 10px; 
-                    text-align: left; 
-                    border-bottom: 1px solid #ddd; 
-                }
-                th { 
-                    background-color: #f5f5f5; 
-                    font-weight: bold; 
-                    font-size: 11px; 
-                }
-                td { 
-                    font-size: 11px; 
-                    height: 25px;
-                }
-                .totals { 
-                    text-align: right; 
-                    margin-top: 10px; 
-                    padding-top: 10px; 
-                    border-top: 2px solid #5E5240; 
-                    font-size: 13px; 
-                    page-break-inside: avoid; 
-                    flex-shrink: 0;
-                }
-                .legal { 
-                    position: absolute;
-                    bottom: 0;
-                    left: 0;
-                    right: 0;
-                    font-size: 7.5px; 
-                    color: #666; 
-                    line-height: 1.3; 
-                    background: #f9f9f9;
-                    padding: 6px;
-                    border-radius: 3px;
-                    page-break-before: avoid !important;
-                    page-break-inside: avoid !important;
-                }
-                .legal p { 
-                    margin: 1px 0; 
-                }
-            </style>
-        </head>
-        <body>
-            <div class="page-container">
-                <div class="header">
-                    <div class="header-left">
-                        ${logoHTML}
-                        <div class="company">${companyInfo.name}</div>
-                        <div style="font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
-                        <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret}</div>
-                    </div>
-                    <div class="header-right">
-                        <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
-                        <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
-                    </div>
-                </div>
-
-                <div class="invoice-details">
-                    <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
-                    <div style="font-size: 13px;">
-                        <div>Date: ${formatDateFR(invoiceDate)}</div>
-                        <div>Échéance: ${formatDateFR(dueDate)}</div>
-                    </div>
-                </div>
-
-                <hr class="separator">
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Description</th>
-                            <th style="text-align: center;">Quantité</th>
-                            <th style="text-align: right;">Prix unitaire</th>
-                            <th style="text-align: right;">Total HT</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>${description}</td>
-                            <td style="text-align: center;">${quantity}</td>
-                            <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
-                            <td style="text-align: right;">${total.toFixed(2)} €</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <div class="totals">
-                    ${tvaEnabled ? `
-                        <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                        <div>TVA (20%): ${tva.toFixed(2)} €</div>
-                        <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
-                    ` : `
-                        <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                        <div style="font-size: 11px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
-                        <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalHT.toFixed(2)} €</div>
-                    `}
-                </div>
-            </div>
-
-            <div class="legal">
-                <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
-                <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
-            </div>
-        </body>
-        </html>
-    `;
+    const pdfContent = buildInvoiceHtml({
+        clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled
+    });
+    
 
     // Create a temporary iframe to render the PDF with enhanced rendering
     const iframe = document.createElement('iframe');
@@ -3338,62 +3373,59 @@ function base64ToBlob(base64, mime) {
 
 // Générer PDF en base64 en priorité via html2canvas -> jsPDF pour conserver le rendu HTML, sinon fallback jsPDF legacy
 async function generateInvoicePDFBase64(invoice) {
-    // Build HTML for the invoice (reuse preview rendering logic)
+    // Helper: try to fetch an image URL and convert to data URI (best-effort, may fail due to CORS)
+    async function fetchImageAsDataUri(url) {
+        if (!url) return null;
+        if (url.startsWith('data:')) return url;
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('Image fetch failed');
+            const blob = await resp.blob();
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) {
+            console.warn('fetchImageAsDataUri failed for', url, e);
+            return null;
+        }
+    }
+    // Build HTML for the invoice using the shared builder, trying to inline the logo if possible
     const tempContainer = document.createElement('div');
     tempContainer.style.position = 'fixed';
     tempContainer.style.left = '-9999px';
     tempContainer.style.top = '0';
     tempContainer.style.width = '800px';
     tempContainer.style.padding = '20px';
-    tempContainer.innerHTML = (function(inv) {
-        const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
-            ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
-            : '[À compléter dans Paramètres]';
-        const logoHTML = companyInfo.logoUrl
-            ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width:150px; max-height:80px; object-fit:contain; display:block; margin-bottom:8px;">`
-            : '';
-        const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
-        const totalHT = inv.total || 0;
-        const tva = tvaEnabled ? totalHT * 0.2 : 0;
-        const totalTTC = totalHT + tva;
 
-        return `
-            <div style="font-family: Arial, Helvetica, 'Trebuchet MS', sans-serif; color: #134252; width: 800px;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                    <div style="max-width:50%;">
-                        ${logoHTML}
-                        <div style="font-weight:700; font-size:16px; color:#21808D;">${companyInfo.name}</div>
-                        <div style="white-space:pre-line; font-size:12px; margin-top:4px;">${companyAddressLine}</div>
-                        <div style="font-size:12px; margin-top:4px;">SIRET: ${companyInfo.siret}</div>
-                    </div>
-                    <div style="text-align:right; max-width:45%;">
-                        <div style="font-weight:700; margin-bottom:4px;">${inv.client || ''}</div>
-                        <div style="white-space:pre-line; font-size:12px;">${inv.clientAddress || ''}</div>
-                    </div>
-                </div>
-                <div style="margin-top:16px;">
-                    <h2 style="font-size:18px; margin:8px 0;">FACTURE N° ${inv.number || ''}</h2>
-                    <div style="font-size:13px;">Date: ${formatDateFR(inv.date)}<br>Échéance: ${formatDateFR(inv.dueDate)}</div>
-                </div>
-                <hr style="border:none; border-top:1px solid #ddd; margin:12px 0;">
-                <table style="width:100%; border-collapse:collapse; font-size:12px;">
-                    <thead><tr style="background:#f5f5f5; font-weight:700;"><th style="padding:6px 10px; text-align:left;">Description</th><th style="padding:6px 10px; text-align:center;">Quantité</th><th style="padding:6px 10px; text-align:right;">Prix unitaire</th><th style="padding:6px 10px; text-align:right;">Total HT</th></tr></thead>
-                    <tbody>
-                        <tr>
-                            <td style="padding:6px 10px;">${inv.description || ''}</td>
-                            <td style="padding:6px 10px; text-align:center;">${inv.quantity || 0}</td>
-                            <td style="padding:6px 10px; text-align:right;">${(inv.unitPrice || 0).toFixed(2)} €</td>
-                            <td style="padding:6px 10px; text-align:right;">${(inv.total || 0).toFixed(2)} €</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div style="text-align:right; margin-top:12px; font-size:13px;">
-                    ${tvaEnabled ? `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA (20%): ${tva.toFixed(2)} €</div><div style="font-weight:700; font-size:16px; margin-top:6px;">Total TTC: ${totalTTC.toFixed(2)} €</div>` : `<div>Total HT: ${totalHT.toFixed(2)} €</div><div style="font-size:12px; color:#666;">TVA non applicable (art. 293 B du CGI)</div><div style="font-weight:700; font-size:16px; margin-top:6px;">Total TTC: ${totalHT.toFixed(2)} €</div>`}
-                </div>
-                <div style="margin-top:18px; font-size:8px; color:#666; background:#f9f9f9; padding:6px; border-radius:4px;">Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</div>
-            </div>
-        `;
-    })(invoice);
+    // Try to fetch logo as data URI to avoid CORS issues when rendering canvas
+    let originalLogo = companyInfo.logoUrl;
+    try {
+        const dataUri = await fetchImageAsDataUri(originalLogo);
+        if (dataUri) companyInfo.logoUrl = dataUri;
+    } catch (e) {
+        console.warn('Could not inline logo', e);
+    }
+
+    try {
+        tempContainer.innerHTML = buildInvoiceHtml({
+            clientName: invoice.client || '',
+            clientAddress: invoice.clientAddress || '',
+            invoiceNumber: invoice.number || '',
+            invoiceDate: invoice.date || '',
+            dueDate: invoice.dueDate || '',
+            description: invoice.description || '',
+            quantity: invoice.quantity || 0,
+            unitPrice: invoice.unitPrice || 0,
+            total: invoice.total || 0,
+            tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked
+        });
+    } finally {
+        // restore original logo setting
+        companyInfo.logoUrl = originalLogo;
+    }
 
     document.body.appendChild(tempContainer);
 
@@ -3478,11 +3510,17 @@ async function generateInvoicePDFBase64(invoice) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
-    // Logo
+    // Logo - try to inline as data URI first
     if (companyInfo.logoUrl) {
         try {
-            doc.addImage(companyInfo.logoUrl, 'PNG', 20, 20, 30, 30);
-        } catch(e) {}
+            const dataUri = await (async function(){
+                try { return await fetchImageAsDataUri(companyInfo.logoUrl); } catch(e){ return null; }
+            })();
+            const imgToUse = dataUri || companyInfo.logoUrl;
+            if (imgToUse) {
+                try { doc.addImage(imgToUse, 'PNG', 20, 20, 30, 30); } catch(e) { /* ignore */ }
+            }
+        } catch(e) { /* ignore */ }
     }
 
     // En-tête
