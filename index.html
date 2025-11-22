@@ -702,6 +702,9 @@ tr:hover {
         <div class="header-content">
             <img src="MTI_CONSULTING.png" alt="MTI CONSULTING Logo" class="logo">
             <h1 class="header-title">MTI CONSULTING</h1>
+            <div style="margin-left: auto; display:flex; gap:8px; align-items:center;">
+                <button class="btn btn-secondary" id="importCalendarHeaderBtn" title="Importer depuis Google Calendar">📥 Importer Calendar</button>
+            </div>
         </div>
     </header>
 
@@ -1394,6 +1397,8 @@ tr:hover {
     <!-- jsPDF + autotable for client-side PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <!-- html2canvas for high-fidelity HTML -> canvas rendering (used to unify PDF preview and email attachment) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- Backend raw response modal -->
     <div id="backendModal" class="modal">
         <div class="modal-content" style="max-width:800px;">

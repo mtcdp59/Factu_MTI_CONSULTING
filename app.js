@@ -27,6 +27,8 @@ async function callBackend(action, payload = {}) {
             const text = await resp.text().catch(() => '');
             const errMsg = `Backend returned status ${resp.status}. ${text}`;
             console.error('Backend error:', errMsg);
+            // Show raw backend response to help debugging
+            showBackendRawResponse(`HTTP ${resp.status}\n\n${text}`);
             throw new Error(errMsg);
         }
 
@@ -39,9 +41,41 @@ async function callBackend(action, payload = {}) {
         }
     } catch (err) {
         console.error('callBackend error (possible CORS or network issue):', err);
+        // Show error details in backend tester modal for faster diagnosis
+        try { showBackendRawResponse(String(err.stack || err.message || err)); } catch (e) {}
         // Provide actionable error for the user/developer
         throw new Error('Impossible de contacter le BACKEND. Vérifiez que le script Apps Script est déployé et qu\'il autorise les requêtes CORS (Access-Control-Allow-Origin). Détails: ' + (err.message || err));
     }
+}
+
+// Open Gmail compose in a new tab and provide the generated PDF for review/download
+async function openGmailComposeWithPDF(invoice, toEmail) {
+    if (!invoice) throw new Error('Invoice missing');
+    const client = clients.find(c => c.name === invoice.client) || {};
+    const subject = `Facture ${invoice.number} - MTI CONSULTING`;
+    const body = generateEmailBody(invoice, client || { name: invoice.client });
+
+    // Generate PDF base64 and open
+    const pdfBase64 = await generateInvoicePDFBase64(invoice);
+    const blob = base64ToBlob(pdfBase64, 'application/pdf');
+    const blobUrl = URL.createObjectURL(blob);
+
+    // Open PDF in new tab for review
+    window.open(blobUrl, '_blank');
+
+    // Trigger download to make attaching easier
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `Facture_${invoice.number}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
+
+    // Open Gmail compose (prefilled). Note: attachments cannot be auto-attached.
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail || '')}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(gmailUrl, '_blank');
+
+    return true;
 }
 
 // JSONP fallback for simple GET-based actions to avoid CORS preflight when running from file://
@@ -89,6 +123,18 @@ async function testBackend() {
     }
 }
 
+// Affiche la réponse brute du backend dans la modal de test (utile pour diagnostiquer)
+function showBackendRawResponse(text) {
+    try {
+        const modal = document.getElementById('backendModal');
+        const pre = document.getElementById('backendRawResponse');
+        if (pre) pre.textContent = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+        if (modal) modal.classList.add('show');
+    } catch (e) {
+        console.error('Impossible d\'afficher la réponse brute du backend:', e);
+    }
+}
+
 // Modal handlers for backend tester
 document.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'closeBackendModal') {
@@ -121,6 +167,7 @@ async function saveToDrive() {
         return true;
     } catch (error) {
         console.error('❌ Erreur sauvegarde:', error);
+        try { showBackendRawResponse(error && (error.stack || error.message || JSON.stringify(error))); } catch (e) {}
         return false;
     }
 }
@@ -154,6 +201,7 @@ async function loadFromDrive() {
         return true;
     } catch (error) {
         console.error('❌ Erreur chargement:', error);
+        try { showBackendRawResponse(error && (error.stack || error.message || JSON.stringify(error))); } catch (e) {}
         return false;
     }
 }
@@ -1046,8 +1094,35 @@ function setupInvoiceSaveHandler() {
             // Prompt after save
             setTimeout(() => {
                 if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
-                    const sendBtn = document.getElementById('sendEmailBtn');
-                    if (sendBtn) sendBtn.click();
+                                // Open Gmail compose with generated PDF for manual validation and send
+                                const clientObj = clients.find(c => c.name === invoice.client);
+                                const hasEmail = clientObj && clientObj.email_facturation && clientObj.email_facturation.trim() !== '';
+
+                                if (hasEmail) {
+                                    openGmailComposeWithPDF(invoice, clientObj.email_facturation).catch(err => {
+                                        console.error('Ouverture Gmail échouée:', err);
+                                        showToast('⚠️ Impossible d\'ouvrir Gmail, ouverture de l\'aperçu email.', 'error');
+                                        currentInvoiceData = {
+                                            clientName: invoice.client,
+                                            invoiceNumber: invoice.number,
+                                            invoiceDate: invoice.date,
+                                            dueDate: invoice.dueDate,
+                                            total: invoice.total,
+                                            client: clientObj
+                                        };
+                                        showEmailPreview();
+                                    });
+                                } else {
+                                    currentInvoiceData = {
+                                        clientName: invoice.client,
+                                        invoiceNumber: invoice.number,
+                                        invoiceDate: invoice.date,
+                                        dueDate: invoice.dueDate,
+                                        total: invoice.total,
+                                        client: clientObj || { name: invoice.client }
+                                    };
+                                    showEmailPreview();
+                                }
                 }
             }, 100);
         }
@@ -1909,7 +1984,20 @@ function sendInvoiceEmail(index) {
         'Envoi par Gmail',
         `Envoyer la facture #${invoice.number} à ${contactName} (${client.email_facturation}) ?\n\nLe PDF sera généré et envoyé automatiquement via Gmail.`,
         () => {
-            sendInvoiceWithPDF(invoice);
+            // Open Gmail compose with PDF for manual validation/send
+            openGmailComposeWithPDF(invoice, client.email_facturation).catch(err => {
+                console.error('Ouverture Gmail échouée depuis liste:', err);
+                showToast('⚠️ Impossible d\'ouvrir Gmail automatiquement. Ouverture de l\'aperçu.', 'error');
+                currentInvoiceData = {
+                    clientName: invoice.client,
+                    invoiceNumber: invoice.number,
+                    invoiceDate: invoice.date,
+                    dueDate: invoice.dueDate,
+                    total: invoice.total,
+                    client: client
+                };
+                showEmailPreview();
+            });
         }
     );
 }
@@ -2279,8 +2367,9 @@ async function syncToGoogleSheets() {
         try {
             const result = await callBackend('sync_invoices', { invoices: invoiceData });
             const count = invoiceData.length;
-            if (result && result.success === false) {
-                throw new Error(result.error || 'Erreur serveur lors de la synchronisation');
+            if (!result || result.success === false) {
+                try { showBackendRawResponse(result); } catch (e) {}
+                throw new Error((result && (result.data || result.error)) || 'Erreur serveur lors de la synchronisation');
             }
             showToast(`✅ ${count} facture${count > 1 ? 's' : ''} synchronisée${count > 1 ? 's' : ''} avec Google Sheets`, 'success');
         } catch (err) {
@@ -2350,11 +2439,34 @@ async function syncToGoogleCalendar() {
         }));
 
         try {
-            const result = await callBackend('sync_calendar', { tasks: taskData });
-            if (result && result.success === false) {
-                throw new Error(result.error || 'Erreur serveur lors de la synchronisation Calendar');
+            // Only sync tasks that don't already have an eventId to avoid duplicates
+            const tasksToSync = taskData.filter(t => !t.eventId);
+            if (tasksToSync.length === 0) {
+                showToast('📅 Aucun nouvel événement à synchroniser', 'info');
+            } else {
+                const result = await callBackend('sync_calendar', { tasks: tasksToSync });
+                if (!result || result.success === false) {
+                    try { showBackendRawResponse(result); } catch (e) {}
+                    throw new Error((result && (result.data || result.error)) || 'Erreur serveur lors de la synchronisation Calendar');
+                }
+
+                // Persist returned eventIds into tasks and save
+                try {
+                    const details = (result.data && result.data.details) || [];
+                    details.forEach(d => {
+                        if (d && d.eventId && d.task) {
+                            // find matching task in client tasks by date/startTime/description
+                            const match = tasks.find(t => t.date === d.task.date && (t.startTime || '') === (d.task.startTime || '') && t.description === d.task.description);
+                            if (match) match.eventId = d.eventId;
+                        }
+                    });
+                    await saveToDrive();
+                } catch (persistErr) {
+                    console.warn('Impossible de persister eventIds:', persistErr);
+                }
+
+                showToast('✅ Planning synchronisé avec Google Calendar', 'success');
             }
-            showToast('✅ Planning synchronisé avec Google Calendar', 'success');
         } catch (err) {
             console.error('Calendar sync failed:', err);
             showToast('❌ Erreur de synchronisation Calendar (voir console). Assurez-vous que le BACKEND autorise CORS.', 'error');
@@ -2369,68 +2481,57 @@ async function syncToGoogleCalendar() {
 
 // Send invoice via Gmail with PDF
 async function sendInvoiceWithPDF(invoice) {
+    // New behavior: generate a high-fidelity PDF (html2canvas -> jsPDF) and open Gmail compose in a new tab
     try {
-        showToast('📧 Préparation de l\'email...', 'info');
+        showToast('📧 Préparation de l\'email (ouverture Gmail)...', 'info');
 
-        // Find client data
-        const client = clients.find(c => c.name === invoice.client);
-        const clientEmail = (client && client.email_facturation) ? client.email_facturation : '';
-        const contactName = (client && client.contact_name) ? client.contact_name : invoice.client;
+        const client = clients.find(c => c.name === invoice.client) || {};
+        const clientEmail = client.email_facturation || '';
+        const subject = `Facture ${invoice.number} - MTI CONSULTING`;
+        const body = generateEmailBody(invoice, client || { name: invoice.client });
 
-        // Prepare invoice data for email
-        const invoiceData = {
-            number: invoice.number,
-            client: invoice.client,
-            contactName: contactName,
-            date: invoice.date,
-            dueDate: invoice.dueDate,
-            total: invoice.total,
-            description: invoice.description,
-            quantity: invoice.quantity,
-            unitPrice: invoice.unitPrice
-        };
-
-        // Generate PDF base64 on client (requires jsPDF loaded)
-        let pdfBase64 = null;
+        // Generate PDF base64 (html2canvas -> jsPDF preferred)
+        let pdfBase64;
         try {
             pdfBase64 = await generateInvoicePDFBase64(invoice);
-        } catch (genErr) {
-            console.error('PDF generation error:', genErr);
-            const msg = genErr && genErr.message ? genErr.message : 'Erreur génération PDF';
-            // If it's jsPDF missing, show a helpful alert with steps
-            if (msg.toLowerCase().includes('jspdf')) {
-                alert('La bibliothèque jsPDF n\'est pas disponible.\n\nÉtapes recommandées:\n1) Vérifiez que `index.html` contient les scripts jsPDF (cdn).\n2) Rechargez la page (F5).\n3) Ouvrez la console DevTools pour erreurs réseau liées au chargement des scripts.\n\nSi besoin, copiez ce message et partagez-le pour debug.');
-            } else {
-                alert('Erreur lors de la génération du PDF: ' + msg + '\nVoir la console pour plus de détails.');
-            }
-            showToast('❌ Impossible de générer le PDF (voir alerte/console).', 'error');
-            return;
-        }
-
-        // Prepare subject/body
-        const subject = `Facture ${invoice.number} - MTI CONSULTING`;
-        const body = generateEmailBody(invoice, client || { name: invoice.client, contact_name: contactName });
-
-        try {
-            const result = await callBackend('send_invoice', { invoice: invoiceData, clientEmail, pdfBase64, pdfFilename: `Facture_${invoice.number}.pdf`, subject, body });
-            if (result && result.success === false) {
-                throw new Error(result.error || 'Erreur serveur lors de l\'envoi');
-            }
-            showToast('✅ Email envoyé avec facture PDF via Gmail', 'success');
         } catch (err) {
-            console.error('sendInvoiceWithPDF failed:', err);
-            showToast('❌ Erreur d\'envoi (voir console). Assurez-vous que le BACKEND autorise CORS et renvoie JSON.', 'error');
+            console.error('PDF generation failed:', err);
+            showToast('⚠️ Impossible de générer le PDF automatiquement. L\'aperçu s\'ouvrira.', 'error');
+            // Fallback to preview modal
+            currentInvoiceData = {
+                clientName: invoice.client,
+                invoiceNumber: invoice.number,
+                invoiceDate: invoice.date,
+                dueDate: invoice.dueDate,
+                total: invoice.total,
+                client: client
+            };
+            showEmailPreview();
             return;
         }
 
-        // Update invoice status to "Envoyée"
-        invoice.status = 'Envoyée';
-        renderInvoiceList();
-        applyFilters();
-        saveToDrive();
+        // Convert base64 to blob and open in a new tab so user can review/attach
+        const blob = base64ToBlob(pdfBase64, 'application/pdf');
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank'); // opens the PDF for review
+
+        // Trigger download to facilitate attaching in Gmail (browser may block automatic download)
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `Facture_${invoice.number}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
+
+        // Open Gmail compose in a new tab (prefilled). Attachments cannot be auto-attached via URL,
+        // so user should attach the downloaded PDF (drag/drop is possible from the opened PDF tab).
+        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(clientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(gmailUrl, '_blank');
+
+        showToast('📨 Gmail ouvert en nouvel onglet. Vérifiez la pièce jointe et envoyez manuellement.', 'info');
     } catch (error) {
-        console.error('Email send error:', error);
-        showToast('❌ Erreur d\'envoi', 'error');
+        console.error('sendInvoiceWithPDF (compose) error:', error);
+        showToast('❌ Erreur lors de la préparation du mail', 'error');
     }
 }
 
@@ -2894,7 +2995,10 @@ async function sendInvoiceByEmail(index) {
             pdfBase64: pdfBase64,
             pdfFilename: `Facture_${invoice.number}.pdf`
         });
-        if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
+        if (!result || !result.success) {
+            try { showBackendRawResponse(result); } catch (e) {}
+            throw new Error((result && (result.data || result.error)) || 'Unknown error');
+        }
 
         alert(`✅ Facture envoyée à ${client.email_facturation}`);
     } catch (error) {
@@ -2917,13 +3021,128 @@ Conditions de paiement : 30 jours nets
 
 Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
-MTI CONSULTING`;
+MTI CONSULTING
+Téléphone : +33 7 77 37 17 39
+Mail : mticonsulting59@gmail.com`;
 }
 
-// Générer PDF en base64 (legacy jsPDF approach)
+// Helper: convert base64 (no prefix) to Blob
+function base64ToBlob(base64, mime) {
+    const byteChars = atob(base64);
+    const byteNumbers = new Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+        byteNumbers[i] = byteChars.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mime });
+}
+
+// Générer PDF en base64 en priorité via html2canvas -> jsPDF pour conserver le rendu HTML, sinon fallback jsPDF legacy
 async function generateInvoicePDFBase64(invoice) {
+    // Build HTML for the invoice (reuse preview rendering logic)
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.width = '800px';
+    tempContainer.style.padding = '20px';
+    tempContainer.innerHTML = (function(inv) {
+        const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
+            ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
+            : '[À compléter dans Paramètres]';
+        const logoHTML = companyInfo.logoUrl
+            ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width:150px; max-height:80px; object-fit:contain; display:block; margin-bottom:8px;">`
+            : '';
+        const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
+        const totalHT = inv.total || 0;
+        const tva = tvaEnabled ? totalHT * 0.2 : 0;
+        const totalTTC = totalHT + tva;
+
+        return `
+            <div style="font-family: Arial, Helvetica, 'Trebuchet MS', sans-serif; color: #134252; width: 800px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div style="max-width:50%;">
+                        ${logoHTML}
+                        <div style="font-weight:700; font-size:16px; color:#21808D;">${companyInfo.name}</div>
+                        <div style="white-space:pre-line; font-size:12px; margin-top:4px;">${companyAddressLine}</div>
+                        <div style="font-size:12px; margin-top:4px;">SIRET: ${companyInfo.siret}</div>
+                    </div>
+                    <div style="text-align:right; max-width:45%;">
+                        <div style="font-weight:700; margin-bottom:4px;">${inv.client || ''}</div>
+                        <div style="white-space:pre-line; font-size:12px;">${inv.clientAddress || ''}</div>
+                    </div>
+                </div>
+                <div style="margin-top:16px;">
+                    <h2 style="font-size:18px; margin:8px 0;">FACTURE N° ${inv.number || ''}</h2>
+                    <div style="font-size:13px;">Date: ${formatDateFR(inv.date)}<br>Échéance: ${formatDateFR(inv.dueDate)}</div>
+                </div>
+                <hr style="border:none; border-top:1px solid #ddd; margin:12px 0;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                    <thead><tr style="background:#f5f5f5; font-weight:700;"><th style="padding:6px 10px; text-align:left;">Description</th><th style="padding:6px 10px; text-align:center;">Quantité</th><th style="padding:6px 10px; text-align:right;">Prix unitaire</th><th style="padding:6px 10px; text-align:right;">Total HT</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding:6px 10px;">${inv.description || ''}</td>
+                            <td style="padding:6px 10px; text-align:center;">${inv.quantity || 0}</td>
+                            <td style="padding:6px 10px; text-align:right;">${(inv.unitPrice || 0).toFixed(2)} €</td>
+                            <td style="padding:6px 10px; text-align:right;">${(inv.total || 0).toFixed(2)} €</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div style="text-align:right; margin-top:12px; font-size:13px;">
+                    ${tvaEnabled ? `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA (20%): ${tva.toFixed(2)} €</div><div style="font-weight:700; font-size:16px; margin-top:6px;">Total TTC: ${totalTTC.toFixed(2)} €</div>` : `<div>Total HT: ${totalHT.toFixed(2)} €</div><div style="font-size:12px; color:#666;">TVA non applicable (art. 293 B du CGI)</div><div style="font-weight:700; font-size:16px; margin-top:6px;">Total TTC: ${totalHT.toFixed(2)} €</div>`}
+                </div>
+                <div style="margin-top:18px; font-size:8px; color:#666; background:#f9f9f9; padding:6px; border-radius:4px;">Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</div>
+            </div>
+        `;
+    })(invoice);
+
+    document.body.appendChild(tempContainer);
+
+    // If html2canvas is available, use it for faithful rendering
+    if (window.html2canvas && window.jspdf) {
+        try {
+            const canvas = await html2canvas(tempContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const imgData = canvas.toDataURL('image/png');
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+
+            // Calculate width/height to fit A4 while keeping aspect
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+
+            // canvas dimensions in px
+            const imgProps = { width: canvas.width, height: canvas.height };
+            const pxToMm = (px) => px * 25.4 / (window.devicePixelRatio * 96);
+            const imgWidthMm = pxToMm(imgProps.width);
+            const imgHeightMm = pxToMm(imgProps.height);
+
+            const margin = 10; // mm
+            let renderWidth = pageWidth - margin * 2;
+            let renderHeight = (imgHeightMm * renderWidth) / imgWidthMm;
+
+            if (renderHeight > pageHeight - margin * 2) {
+                // scale down
+                renderHeight = pageHeight - margin * 2;
+                renderWidth = (imgWidthMm * renderHeight) / imgHeightMm;
+            }
+
+            pdf.addImage(imgData, 'PNG', (pageWidth - renderWidth) / 2, margin, renderWidth, renderHeight);
+            const dataUri = pdf.output('datauristring');
+            // Cleanup
+            try { document.body.removeChild(tempContainer); } catch(e) {}
+            return dataUri.split(',')[1];
+        } catch (err) {
+            console.warn('html2canvas/pdf path failed, falling back to legacy jsPDF:', err);
+            try { document.body.removeChild(tempContainer); } catch(e) {}
+            // fall through to legacy below
+        }
+    } else {
+        try { document.body.removeChild(tempContainer); } catch(e) {}
+    }
+
+    // Legacy fallback: use jsPDF autoTable-based generator if available
     if (!window.jspdf) {
-        throw new Error('jsPDF non chargé. Assurez-vous que les scripts jsPDF sont inclus dans `index.html` (cdn) et que la page a été rechargée.');
+        throw new Error('Aucune méthode de génération PDF disponible (html2canvas ou jsPDF manquants).');
     }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();

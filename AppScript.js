@@ -36,7 +36,11 @@ function doPost(e) {
       case 'sync_invoices':
         return syncInvoices(data.sheetId, data.invoices);
       case 'sync_calendar':
-        return syncCalendarAction(data.tasks);
+        return syncCalendarAction(data.tasks, data.calendarId);
+      case 'listCalendarEvents':
+        return listCalendarEvents(data.startDate, data.endDate, data.maxResults, data.calendarId);
+      case 'importCalendarEvents':
+        return importCalendarEvents(data.startDate, data.endDate, data.calendarId);
       case 'importClients':
         return importClients(data.sheetId);
       case 'exportClients':
@@ -195,8 +199,8 @@ function sendEmail(data) {
     );
     
     // Envoyer l'email avec Gmail API
+    // Note: avoid forcing 'from' (alias) to prevent authorization issues; send from the account executing the script.
     GmailApp.sendEmail(to, subject, body, {
-      from: CONFIG.EMAIL_FROM,
       attachments: [pdfBlob],
       name: 'MTI CONSULTING'
     });
@@ -352,6 +356,10 @@ function syncCalendarAction(tasks) {
       return createResponse(false, 'Payload tasks invalide');
     }
 
+    // Allow optional calendarId to target a specific calendar
+    var calendarId = arguments.length > 1 ? arguments[1] : null;
+    var calendar = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
+
     const results = [];
     tasks.forEach(task => {
       try {
@@ -364,10 +372,16 @@ function syncCalendarAction(tasks) {
         const startDateTime = new Date(date + 'T' + time + ':00');
         const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 60 * 1000);
 
-        const calEvent = CalendarApp.getDefaultCalendar().createEvent(description, startDateTime, endDateTime, { description: 'Type: ' + type, location: 'MTI CONSULTING' });
+        var calEvent;
+        if (calendar) {
+          calEvent = calendar.createEvent(description, startDateTime, endDateTime, { description: 'Type: ' + type, location: 'MTI CONSULTING' });
+        } else {
+          calEvent = CalendarApp.getDefaultCalendar().createEvent(description, startDateTime, endDateTime, { description: 'Type: ' + type, location: 'MTI CONSULTING' });
+        }
+
         const colorId = getColorForType(type);
-        if (colorId) {
-          calEvent.setColor(colorId);
+        if (colorId && calEvent.setColor) {
+          try { calEvent.setColor(colorId); } catch (e) {}
         }
 
         results.push({ task: task, eventId: calEvent.getId() });
@@ -417,7 +431,7 @@ function syncInvoices(sheetId, invoices) {
 // Ajouter un événement au Calendar
 function addCalendarEvent(event) {
   try {
-    const { date, time, duration, description, type } = event;
+    const { date, time, duration, description, type, calendarId } = event;
     
     // Créer les dates de début et fin
     const startDateTime = new Date(`${date}T${time}:00`);
@@ -427,7 +441,8 @@ function addCalendarEvent(event) {
     const colorId = getColorForType(type);
     
     // Créer l'événement
-    const calEvent = CalendarApp.getDefaultCalendar().createEvent(
+    var calendar = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
+    const calEvent = (calendar || CalendarApp.getDefaultCalendar()).createEvent(
       description,
       startDateTime,
       endDateTime,
@@ -460,6 +475,121 @@ function getColorForType(type) {
     'Autre': CalendarApp.EventColor.GRAY
   };
   return colors[type] || CalendarApp.EventColor.BLUE;
+}
+
+// Lister les événements d'un calendrier sur une plage donnée
+function listCalendarEvents(startDate, endDate, maxResults, calendarId) {
+  try {
+    if (!startDate || !endDate) {
+      return createResponse(false, 'startDate et endDate requis (format AAAA-MM-JJ)');
+    }
+
+    var start = new Date(startDate + 'T00:00:00');
+    var end = new Date(endDate + 'T23:59:59');
+    var cal = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
+    if (!cal) return createResponse(false, 'Calendrier introuvable: ' + calendarId);
+
+    var events = cal.getEvents(start, end);
+    var out = [];
+    for (var i = 0; i < events.length && (typeof maxResults === 'undefined' || i < maxResults); i++) {
+      var ev = events[i];
+      out.push({
+        id: ev.getId(),
+        title: ev.getTitle(),
+        start: ev.getStartTime().toISOString(),
+        end: ev.getEndTime().toISOString(),
+        description: ev.getDescription(),
+        location: ev.getLocation()
+      });
+    }
+
+    return createResponse(true, { count: out.length, events: out });
+  } catch (err) {
+    return createResponse(false, 'Erreur listCalendarEvents: ' + err.toString());
+  }
+}
+
+// Importer les événements d'un calendrier et les fusionner dans le fichier mti_data.json
+function importCalendarEvents(startDate, endDate, calendarId) {
+  try {
+    if (!startDate || !endDate) {
+      return createResponse(false, 'startDate et endDate requis (format AAAA-MM-JJ)');
+    }
+
+    var start = new Date(startDate + 'T00:00:00');
+    var end = new Date(endDate + 'T23:59:59');
+    var cal = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
+    if (!cal) return createResponse(false, 'Calendrier introuvable: ' + calendarId);
+
+    // Lire ou créer le fichier mti_data.json
+    var folder = getOrCreateFolder(CONFIG.DRIVE_FOLDER);
+    var files = folder.getFilesByName(CONFIG.DATA_FILE);
+    var data = null;
+    if (files.hasNext()) {
+      var file = files.next();
+      try {
+        data = JSON.parse(file.getBlob().getDataAsString());
+      } catch (e) {
+        data = { clients: [], invoices: [], tasks: [], companyInfo: {}, taxSettings: {} };
+      }
+    } else {
+      data = { clients: [], invoices: [], tasks: [], companyInfo: {}, taxSettings: {} };
+      folder.createFile(CONFIG.DATA_FILE, JSON.stringify(data, null, 2), MimeType.PLAIN_TEXT);
+    }
+
+    data.tasks = data.tasks || [];
+
+    // Index existant par eventId pour éviter doublons
+    var existingIds = {};
+    for (var i = 0; i < data.tasks.length; i++) {
+      var t = data.tasks[i];
+      if (t && t.eventId) existingIds[t.eventId] = true;
+    }
+
+    var events = cal.getEvents(start, end);
+    var imported = [];
+    for (var j = 0; j < events.length; j++) {
+      var ev = events[j];
+      var evId = ev.getId();
+      if (existingIds[evId]) continue; // déjà importé
+
+      var s = ev.getStartTime();
+      var eDate = ev.getEndTime();
+      var dateStr = Utilities.formatDate(s, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      var startTime = Utilities.formatDate(s, Session.getScriptTimeZone(), 'HH:mm');
+      // calculer durée en heures (arrondi à 0.5)
+      var durationH = Math.round(((eDate.getTime() - s.getTime()) / (1000 * 60 * 60)) * 2) / 2;
+
+      var task = {
+        date: dateStr,
+        startTime: startTime,
+        duration: durationH,
+        description: ev.getTitle() || ev.getDescription() || 'Événement',
+        type: 'Réunion',
+        eventId: evId
+      };
+
+      data.tasks.push(task);
+      imported.push(task);
+    }
+
+    // Sauvegarder le fichier mis à jour
+    try {
+      var files2 = folder.getFilesByName(CONFIG.DATA_FILE);
+      if (files2.hasNext()) {
+        var f2 = files2.next();
+        f2.setContent(JSON.stringify(data, null, 2));
+      } else {
+        folder.createFile(CONFIG.DATA_FILE, JSON.stringify(data, null, 2), MimeType.PLAIN_TEXT);
+      }
+    } catch (saveErr) {
+      return createResponse(false, 'Import OK mais impossible de sauvegarder le fichier: ' + saveErr.toString());
+    }
+
+    return createResponse(true, { importedCount: imported.length, imported: imported });
+  } catch (err) {
+    return createResponse(false, 'Erreur importCalendarEvents: ' + err.toString());
+  }
 }
 
 // ==========================================
