@@ -54,11 +54,48 @@ function doPost(e) {
 
 // Point d'entrée GET (test)
 function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({
-    success: true,
-    message: 'MTI CONSULTING Backend OK',
-    timestamp: new Date().toISOString()
-  })).setMimeType(ContentService.MimeType.JSON);
+  try {
+    // If an action is provided as a query parameter, route it here.
+    // This supports simple GET/JSONP checks from the frontend to avoid CORS preflight blockers
+    // (useful for quick tests from file:// or static hosts). Only non-sensitive, small actions
+    // should be exposed via GET (we keep POST for heavier operations).
+    if (e && e.parameter && e.parameter.action) {
+      var action = e.parameter.action;
+      var callback = e.parameter.callback;
+      var resultText = '';
+
+      switch (action) {
+        case 'ensureStorage':
+          resultText = ensureStorage().getContent();
+          break;
+        case 'loadFromDrive':
+          resultText = loadFromDrive().getContent();
+          break;
+        case 'importClients':
+          // allow optional sheetId via query param
+          var sheetId = e.parameter.sheetId || CONFIG.SHEETS_ID;
+          resultText = importClients(sheetId).getContent();
+          break;
+        default:
+          resultText = createResponse(false, 'Action inconnue (GET): ' + action).getContent();
+      }
+
+      if (callback) {
+        // Return JSONP (application/javascript) so browsers don't enforce CORS on script tags
+        return ContentService.createTextOutput(callback + '(' + resultText + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+      } else {
+        return ContentService.createTextOutput(resultText).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: 'MTI CONSULTING Backend OK',
+      timestamp: new Date().toISOString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return createResponse(false, 'Erreur doGet: ' + err.toString());
+  }
 }
 
 // ==========================================

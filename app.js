@@ -14,9 +14,11 @@ async function callBackend(action, payload = {}) {
         const body = JSON.stringify(Object.assign({ action }, payload));
         console.debug('Calling backend:', CONFIG.BACKEND_URL, body);
 
+        // Avoid setting 'application/json' Content-Type to prevent CORS preflight.
+        // Sending a plain text body (JSON string) will keep Content-Type as a simple type
+        // (text/plain;charset=UTF-8) and avoid the OPTIONS preflight on most browsers.
         const resp = await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body
         });
 
@@ -40,6 +42,33 @@ async function callBackend(action, payload = {}) {
         // Provide actionable error for the user/developer
         throw new Error('Impossible de contacter le BACKEND. Vérifiez que le script Apps Script est déployé et qu\'il autorise les requêtes CORS (Access-Control-Allow-Origin). Détails: ' + (err.message || err));
     }
+}
+
+// JSONP fallback for simple GET-based actions to avoid CORS preflight when running from file://
+function callBackendJSONP(action, params = {}) {
+    return new Promise((resolve, reject) => {
+        try {
+            const cbName = '__mti_cb_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            window[cbName] = function(res) {
+                try { delete window[cbName]; } catch (e) {}
+                if (script && script.parentNode) script.parentNode.removeChild(script);
+                resolve(res);
+            };
+
+            const query = new URLSearchParams(Object.assign({}, params, { action }));
+            const src = CONFIG.BACKEND_URL + '?' + query.toString() + '&callback=' + cbName;
+            const script = document.createElement('script');
+            script.src = src;
+            script.onerror = function(err) {
+                try { delete window[cbName]; } catch (e) {}
+                if (script && script.parentNode) script.parentNode.removeChild(script);
+                reject(new Error('JSONP load error'));
+            };
+            document.head.appendChild(script);
+        } catch (err) {
+            reject(err);
+        }
+    });
 }
 
 // Quick backend tester (uses GET to call doGet and shows raw response in a modal)
@@ -86,13 +115,8 @@ let editingInvoiceIndex = -1;
 async function saveToDrive() {
     try {
         const data = { clients, invoices, tasks, companyInfo, taxSettings };
-        const response = await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'saveToDrive', data })
-        });
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
+        const result = await callBackend('saveToDrive', { data });
+        if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
         console.log('✅ Sauvegarde Drive OK');
         return true;
     } catch (error) {
@@ -104,12 +128,7 @@ async function saveToDrive() {
 // Charger toutes les données depuis Google Drive
 async function loadFromDrive() {
     try {
-        const response = await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'loadFromDrive' })
-        });
-        const result = await response.json();
+        const result = await callBackend('loadFromDrive');
         if (!result.success) {
             console.log('Pas de données Drive, utilisation données par défaut');
             return false;
@@ -122,6 +141,8 @@ async function loadFromDrive() {
         if (data.companyInfo) companyInfo = data.companyInfo;
         if (data.taxSettings) taxSettings = data.taxSettings;
 
+
+    
         console.log('✅ Données chargées depuis Drive');
 
         // Rafraîchir vues si fonctions définies
@@ -2801,23 +2822,46 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Initialisation MTI CONSULTING v2.0...');
     // Ensure backend storage exists (Drive folder + data file), then load from Drive
     try {
-        const ensure = await callBackend('ensureStorage');
-        if (ensure && ensure.success) {
-            console.log('Drive storage verified:', ensure.data);
-            showToast('✅ Stockage Drive vérifié', 'success');
-        } else {
-            console.warn('ensureStorage returned error:', ensure);
-            showToast('⚠️ Vérification stockage Drive: problème (voir console)', 'info');
+        // First try the standard POST-based call
+        try {
+            const ensure = await callBackend('ensureStorage');
+            if (ensure && ensure.success) {
+                console.log('Drive storage verified (POST):', ensure.data);
+                showToast('✅ Stockage Drive vérifié (backend)', 'success');
+            } else {
+                console.warn('ensureStorage (POST) returned error:', ensure);
+                throw new Error('ensureStorage POST failed');
+            }
+        } catch (postErr) {
+            // Likely CORS / network issue — try JSONP fallback
+            console.warn('POST ensureStorage failed, trying JSONP fallback:', postErr);
+            try {
+                const ensureJsonp = await callBackendJSONP('ensureStorage');
+                if (ensureJsonp && ensureJsonp.success) {
+                    console.log('Drive storage verified (JSONP):', ensureJsonp.data);
+                    const ids = ensureJsonp.data || {};
+                    showToast('✅ Stockage Drive vérifié (JSONP). dossier: ' + (ids.folderId || 'n/a'), 'success');
+                } else {
+                    console.warn('ensureStorage (JSONP) returned error:', ensureJsonp);
+                    showToast('⚠️ Vérification stockage Drive: problème (JSONP)', 'info');
+                }
+            } catch (jsonpErr) {
+                console.error('JSONP ensureStorage failed:', jsonpErr);
+                showToast('⚠️ Impossible de vérifier le stockage Drive (CORS).', 'error');
+            }
         }
-    } catch (err) {
-        console.error('Erreur verify storage:', err);
-        showToast('⚠️ Impossible de vérifier le stockage Drive (voir console)', 'error');
-    }
 
-    // Charger depuis Drive
-    await loadFromDrive();
-    initApp();
-    console.log('✅ Application prête');
+        // Charger depuis Drive
+        await loadFromDrive();
+        initApp();
+        console.log('✅ Application prête');
+    } catch (e) {
+        console.error('Erreur verify storage / init sequence:', e);
+        showToast('Erreur d\'initialisation (voir console)', 'error');
+        // Still attempt to continue initialization
+        try { await loadFromDrive(); } catch (ee) { console.warn('loadFromDrive failed during fallback init:', ee); }
+        try { initApp(); } catch (ee) { console.warn('initApp failed during fallback init:', ee); }
+    }
 });
 
 // ==========================================
@@ -2842,22 +2886,15 @@ async function sendInvoiceByEmail(index) {
         // Générer PDF base64 (requires jsPDF & autotable)
         const pdfBase64 = await generateInvoicePDFBase64(invoice);
 
-        // Envoyer via backend
-        const response = await fetch(CONFIG.BACKEND_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'sendEmail',
-                to: client.email_facturation,
-                subject: `Facture ${invoice.number} - MTI CONSULTING`,
-                body: generateEmailBody(invoice, client),
-                pdfBase64: pdfBase64,
-                pdfFilename: `Facture_${invoice.number}.pdf`
-            })
+        // Envoyer via backend (use callBackend to avoid CORS preflight)
+        const result = await callBackend('sendEmail', {
+            to: client.email_facturation,
+            subject: `Facture ${invoice.number} - MTI CONSULTING`,
+            body: generateEmailBody(invoice, client),
+            pdfBase64: pdfBase64,
+            pdfFilename: `Facture_${invoice.number}.pdf`
         });
-
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
+        if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
 
         alert(`✅ Facture envoyée à ${client.email_facturation}`);
     } catch (error) {
