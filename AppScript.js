@@ -363,6 +363,11 @@ function syncCalendarAction(tasks) {
     const results = [];
     tasks.forEach(task => {
       try {
+        // If the client already provided an eventId, skip creation to avoid duplicates
+        if (task.eventId) {
+          results.push({ task: task, skipped: true, reason: 'eventId présent, création ignorée' });
+          return;
+        }
         const date = task.date;
         const time = task.startTime || task.time || '09:00';
         const duration = task.duration || 1;

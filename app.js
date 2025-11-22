@@ -1094,35 +1094,45 @@ function setupInvoiceSaveHandler() {
             // Prompt after save
             setTimeout(() => {
                 if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
-                                // Open Gmail compose with generated PDF for manual validation and send
-                                const clientObj = clients.find(c => c.name === invoice.client);
-                                const hasEmail = clientObj && clientObj.email_facturation && clientObj.email_facturation.trim() !== '';
+                    // Open Gmail compose with generated PDF for manual validation and send
+                    const clientObj = clients.find(c => c.name === invoice.client);
+                    const hasEmail = clientObj && clientObj.email_facturation && clientObj.email_facturation.trim() !== '';
 
-                                if (hasEmail) {
-                                    openGmailComposeWithPDF(invoice, clientObj.email_facturation).catch(err => {
-                                        console.error('Ouverture Gmail échouée:', err);
-                                        showToast('⚠️ Impossible d\'ouvrir Gmail, ouverture de l\'aperçu email.', 'error');
-                                        currentInvoiceData = {
-                                            clientName: invoice.client,
-                                            invoiceNumber: invoice.number,
-                                            invoiceDate: invoice.date,
-                                            dueDate: invoice.dueDate,
-                                            total: invoice.total,
-                                            client: clientObj
-                                        };
-                                        showEmailPreview();
-                                    });
-                                } else {
-                                    currentInvoiceData = {
-                                        clientName: invoice.client,
-                                        invoiceNumber: invoice.number,
-                                        invoiceDate: invoice.date,
-                                        dueDate: invoice.dueDate,
-                                        total: invoice.total,
-                                        client: clientObj || { name: invoice.client }
-                                    };
-                                    showEmailPreview();
-                                }
+                    if (hasEmail) {
+                        // Mark as sent once compose is opened and persist
+                        openGmailComposeWithPDF(invoice, clientObj.email_facturation)
+                            .then(() => {
+                                try {
+                                    invoice.status = 'Envoyée';
+                                } catch (e) {}
+                                saveToDrive();
+                                renderInvoiceList();
+                                showToast('✅ Facture marquée \"Envoyée\" et sauvegardée');
+                            })
+                            .catch(err => {
+                                console.error('Ouverture Gmail échouée:', err);
+                                showToast('⚠️ Impossible d\'ouvrir Gmail, ouverture de l\'aperçu email.', 'error');
+                                currentInvoiceData = {
+                                    clientName: invoice.client,
+                                    invoiceNumber: invoice.number,
+                                    invoiceDate: invoice.date,
+                                    dueDate: invoice.dueDate,
+                                    total: invoice.total,
+                                    client: clientObj
+                                };
+                                showEmailPreview();
+                            });
+                    } else {
+                        currentInvoiceData = {
+                            clientName: invoice.client,
+                            invoiceNumber: invoice.number,
+                            invoiceDate: invoice.date,
+                            dueDate: invoice.dueDate,
+                            total: invoice.total,
+                            client: clientObj || { name: invoice.client }
+                        };
+                        showEmailPreview();
+                    }
                 }
             }, 100);
         }
@@ -1984,20 +1994,27 @@ function sendInvoiceEmail(index) {
         'Envoi par Gmail',
         `Envoyer la facture #${invoice.number} à ${contactName} (${client.email_facturation}) ?\n\nLe PDF sera généré et envoyé automatiquement via Gmail.`,
         () => {
-            // Open Gmail compose with PDF for manual validation/send
-            openGmailComposeWithPDF(invoice, client.email_facturation).catch(err => {
-                console.error('Ouverture Gmail échouée depuis liste:', err);
-                showToast('⚠️ Impossible d\'ouvrir Gmail automatiquement. Ouverture de l\'aperçu.', 'error');
-                currentInvoiceData = {
-                    clientName: invoice.client,
-                    invoiceNumber: invoice.number,
-                    invoiceDate: invoice.date,
-                    dueDate: invoice.dueDate,
-                    total: invoice.total,
-                    client: client
-                };
-                showEmailPreview();
-            });
+                // Open Gmail compose with PDF for manual validation/send
+                openGmailComposeWithPDF(invoice, client.email_facturation)
+                    .then(() => {
+                        try { invoice.status = 'Envoyée'; } catch(e) {}
+                        saveToDrive();
+                        renderInvoiceList();
+                        showToast('✅ Facture marquée \"Envoyée\" et sauvegardée');
+                    })
+                    .catch(err => {
+                        console.error('Ouverture Gmail échouée depuis liste:', err);
+                        showToast('⚠️ Impossible d\'ouvrir Gmail automatiquement. Ouverture de l\'aperçu.', 'error');
+                        currentInvoiceData = {
+                            clientName: invoice.client,
+                            invoiceNumber: invoice.number,
+                            invoiceDate: invoice.date,
+                            dueDate: invoice.dueDate,
+                            total: invoice.total,
+                            client: client
+                        };
+                        showEmailPreview();
+                    });
         }
     );
 }
@@ -2429,13 +2446,14 @@ async function syncToGoogleCalendar() {
         isSyncing = true;
         showToast('📅 Synchronisation Calendar...', 'info');
 
-        // Prepare task data for sync
+        // Prepare task data for sync - include eventId so we can filter already-synced tasks
         const taskData = tasks.map(task => ({
             date: task.date,
             startTime: task.startTime,
             duration: task.duration,
             description: task.description,
-            type: task.type
+            type: task.type,
+            eventId: task.eventId || null
         }));
 
         try {
