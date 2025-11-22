@@ -53,6 +53,8 @@ function doPost(e) {
         return addCalendarEvent(data.event);
       case 'deleteCalendarEvent':
         return deleteCalendarEvent(data.eventId, data.calendarId);
+      case 'updateCalendarEvent':
+        return updateCalendarEvent(data.event);
       default:
         return createResponse(false, 'Action inconnue: ' + action);
     }
@@ -579,6 +581,62 @@ function deleteCalendarEvent(eventId, calendarId) {
     }
   } catch (err) {
     return createResponse(false, 'Erreur deleteCalendarEvent: ' + err.toString());
+  }
+}
+
+// Mettre à jour un événement existant (si possible)
+function updateCalendarEvent(event) {
+  try {
+    if (!event || !event.eventId) return createResponse(false, 'event.eventId manquant');
+    var calendarId = event.calendarId || null;
+    var cal = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
+    if (!cal) return createResponse(false, 'Calendrier introuvable: ' + calendarId);
+
+    try {
+      var ev = CalendarApp.getEventById(event.eventId);
+      if (!ev) return createResponse(false, 'Événement introuvable par ID: ' + event.eventId);
+
+      // Construire nouvelles dates
+      var start = new Date(event.date + 'T' + event.time + ':00');
+      var end = new Date(start.getTime() + (parseFloat(event.duration || 1) * 60 * 60 * 1000));
+
+      ev.setTitle(event.description || ev.getTitle());
+      ev.setTime(start, end);
+      if (event.type) ev.setDescription('Type: ' + event.type + (event.descriptionDetail ? '\n' + event.descriptionDetail : ''));
+      if (event.location) ev.setLocation(event.location);
+
+      Logger.log('Événement mis à jour: ' + event.eventId);
+      return createResponse(true, { message: 'Événement mis à jour', eventId: event.eventId });
+    } catch (e) {
+      // Fallback: attempt to find event and update
+      Logger.log('updateCalendarEvent getEventById failed, attempting fallback: ' + e.toString());
+      var now = new Date();
+      var startWindow = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      var endWindow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+      var events = cal.getEvents(startWindow, endWindow);
+      for (var i = 0; i < events.length; i++) {
+        var candidate = events[i];
+        var cid = candidate.getId();
+        if (cid && cid.indexOf(event.eventId) !== -1) {
+          // Found candidate - update it
+          var start2 = new Date(event.date + 'T' + event.time + ':00');
+          var end2 = new Date(start2.getTime() + (parseFloat(event.duration || 1) * 60 * 60 * 1000));
+          try {
+            candidate.setTitle(event.description || candidate.getTitle());
+            candidate.setTime(start2, end2);
+            if (event.type) candidate.setDescription('Type: ' + event.type + (event.descriptionDetail ? '\n' + event.descriptionDetail : ''));
+            if (event.location) candidate.setLocation(event.location);
+            Logger.log('Événement mis à jour via fallback: ' + cid);
+            return createResponse(true, { message: 'Événement mis à jour (fallback)', eventId: cid });
+          } catch (uerr) {
+            Logger.log('Fallback update failed for ' + cid + ' : ' + uerr.toString());
+          }
+        }
+      }
+      return createResponse(false, 'Impossible de mettre à jour l\'événement: ' + e.toString());
+    }
+  } catch (err) {
+    return createResponse(false, 'Erreur updateCalendarEvent: ' + err.toString());
   }
 }
 

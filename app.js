@@ -1578,6 +1578,244 @@ window.changeCalendarView = changeCalendarView;
 window.navigateCalendar = navigateCalendar;
 window.showDayTasks = showDayTasks;
 
+// --- Calendar Manager UI & actions ---
+function initCalendarManager() {
+    const container = document.getElementById('calendarEmbedContainer');
+    if (!container) return;
+
+    // Manager panel will be inserted below the iframe
+    let manager = document.getElementById('calendarManager');
+    if (manager) return; // already initialized
+
+    manager = document.createElement('div');
+    manager.id = 'calendarManager';
+    manager.style.marginTop = '12px';
+    manager.innerHTML = `
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+            <label style="font-size:13px; color:var(--color-text-secondary);">Gérer les RDV</label>
+            <input type="date" id="mgrStartDate" class="form-control" style="width:160px;" />
+            <input type="date" id="mgrEndDate" class="form-control" style="width:160px;" />
+            <button class="btn btn-sm btn-primary" id="mgrLoadEvents">Charger</button>
+            <button class="btn btn-sm btn-secondary" id="mgrNewEvent">Nouvel RDV</button>
+        </div>
+        <div id="mgrEventsList" style="max-height:260px; overflow:auto; border:1px solid var(--color-card-border); padding:8px; border-radius:6px; background:#fff;"></div>
+        <div id="mgrEventForm" style="display:none; margin-top:8px; border:1px solid var(--color-card-border); padding:12px; border-radius:6px; background:#fff;">
+            <div style="display:flex; gap:8px; margin-bottom:8px;"><input type="date" id="evtDate" class="form-control" style="width:160px;" /><input type="time" id="evtTime" class="form-control" style="width:120px;" /><input type="number" id="evtDuration" class="form-control" style="width:100px;" value="1" step="0.5" /></div>
+            <input type="text" id="evtDesc" class="form-control" placeholder="Titre / description" style="margin-bottom:8px;" />
+            <select id="evtType" class="form-control" style="margin-bottom:8px;"><option value="Travail">Travail</option><option value="Réunion">Réunion</option><option value="Administratif">Administratif</option></select>
+            <div style="display:flex; gap:8px; justify-content:flex-end;"><button class="btn btn-secondary" id="evtCancel">Annuler</button><button class="btn btn-primary" id="evtSave">Enregistrer</button></div>
+        </div>
+    `;
+
+    container.appendChild(manager);
+
+    // Bind controls
+    document.getElementById('mgrLoadEvents').addEventListener('click', async () => {
+        const sd = document.getElementById('mgrStartDate').value;
+        const ed = document.getElementById('mgrEndDate').value;
+        if (!sd || !ed) { alert('Sélectionnez une plage de dates'); return; }
+        await loadCalendarEvents(sd, ed);
+    });
+
+    document.getElementById('mgrNewEvent').addEventListener('click', () => {
+        openEventForm();
+    });
+
+    document.getElementById('evtCancel').addEventListener('click', () => {
+        closeEventForm();
+    });
+
+    document.getElementById('evtSave').addEventListener('click', async () => {
+        const eid = document.getElementById('evtDate').dataset.eventId || null;
+        const evt = {
+            eventId: eid,
+            date: document.getElementById('evtDate').value,
+            time: document.getElementById('evtTime').value,
+            duration: parseFloat(document.getElementById('evtDuration').value) || 1,
+            description: document.getElementById('evtDesc').value || 'RDV',
+            type: document.getElementById('evtType').value || 'Autre',
+            calendarId: getConfiguredCalendarId()
+        };
+
+        try {
+            if (eid) {
+                const resp = await callBackend('updateCalendarEvent', { event: evt });
+                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur mise à jour event'); return; }
+                showToast('✅ Événement mis à jour');
+            } else {
+                const resp = await callBackend('addCalendarEvent', { event: evt });
+                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur création event'); return; }
+                showToast('✅ Événement créé');
+            }
+            closeEventForm();
+            // reload list if a range present
+            const sd = document.getElementById('mgrStartDate').value;
+            const ed = document.getElementById('mgrEndDate').value;
+            if (sd && ed) await loadCalendarEvents(sd, ed);
+        } catch (e) { console.error('evtSave failed', e); alert('Erreur lors de la sauvegarde'); }
+    });
+}
+
+async function loadCalendarEvents(startDate, endDate) {
+    const listEl = document.getElementById('mgrEventsList');
+    if (!listEl) return;
+    listEl.innerHTML = 'Chargement...';
+    try {
+        const resp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId(), maxResults: 500 });
+        if (!resp || resp.success === false) { listEl.innerHTML = 'Erreur chargement'; showBackendRawResponse(resp); return; }
+        const events = resp.data && resp.data.events ? resp.data.events : [];
+        if (events.length === 0) { listEl.innerHTML = '<div style="padding:8px;">Aucun événement</div>'; return; }
+        listEl.innerHTML = '';
+        events.forEach(ev => {
+            const card = document.createElement('div');
+            card.style.borderBottom = '1px solid var(--color-card-border)';
+            card.style.padding = '8px';
+            const start = new Date(ev.start).toLocaleString('fr-FR');
+            const end = new Date(ev.end).toLocaleString('fr-FR');
+            card.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;"><div><strong>${ev.title}</strong><br><span style='font-size:12px;color:var(--color-text-secondary)'>${start} — ${end}</span></div><div style="display:flex; gap:6px;"><button class='btn btn-sm btn-secondary' data-id='${ev.id}' data-action='edit'>✏️</button><button class='btn btn-sm btn-secondary' data-id='${ev.id}' data-action='delete'>🗑️</button></div></div>`;
+            listEl.appendChild(card);
+            const editBtn = card.querySelector("button[data-action='edit']");
+            const delBtn = card.querySelector("button[data-action='delete']");
+            editBtn.addEventListener('click', () => openEventForm(ev));
+            delBtn.addEventListener('click', async () => {
+                if (!confirm('Supprimer cet événement ?')) return;
+                try {
+                    const dresp = await callBackend('deleteCalendarEvent', { eventId: ev.id, calendarId: getConfiguredCalendarId(), startDate: startDate, endDate: endDate });
+                    if (!dresp || dresp.success === false) { showBackendRawResponse(dresp); alert('Erreur suppression'); return; }
+                    showToast('✅ Événement supprimé');
+                    await loadCalendarEvents(startDate, endDate);
+                } catch (e) { console.error('delete event failed', e); alert('Erreur suppression'); }
+            });
+        });
+    } catch (e) { console.error('loadCalendarEvents failed', e); listEl.innerHTML = 'Erreur'; }
+}
+
+function openEventForm(ev) {
+    const form = document.getElementById('mgrEventForm');
+    if (!form) return;
+    if (!ev) {
+        document.getElementById('evtDate').value = '';
+        document.getElementById('evtTime').value = '';
+        document.getElementById('evtDuration').value = 1;
+        document.getElementById('evtDesc').value = '';
+        document.getElementById('evtType').value = 'Travail';
+        document.getElementById('evtDate').dataset.eventId = '';
+    } else {
+        const start = new Date(ev.start);
+        document.getElementById('evtDate').value = start.toISOString().slice(0,10);
+        document.getElementById('evtTime').value = start.toTimeString().slice(0,5);
+        const end = new Date(ev.end);
+        const duration = (end - start) / (1000*60*60);
+        document.getElementById('evtDuration').value = duration;
+        document.getElementById('evtDesc').value = ev.title || '';
+        // No strong mapping for type; attempt to parse description
+        document.getElementById('evtType').value = (ev.description && ev.description.indexOf('Réunion') !== -1) ? 'Réunion' : 'Travail';
+        document.getElementById('evtDate').dataset.eventId = ev.id;
+    }
+    form.style.display = 'block';
+}
+
+function closeEventForm() {
+    const form = document.getElementById('mgrEventForm');
+    if (!form) return; form.style.display = 'none';
+}
+
+// Initialize FullCalendar inside #calendarContainer and wire backend actions
+function initFullCalendar() {
+    if (!window.FullCalendar) return; // FullCalendar not loaded
+    const container = document.getElementById('calendarContainer');
+    if (!container) return;
+
+    // Replace existing content with the calendar root
+    container.innerHTML = '<div id="fcRoot"></div>';
+    const calendarEl = document.getElementById('fcRoot');
+
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'timeGridWeek',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        },
+        selectable: true,
+        editable: true,
+        navLinks: true,
+        nowIndicator: true,
+        height: 'auto',
+        // Load events via backend
+        events: async function(fetchInfo, successCallback, failureCallback) {
+            try {
+                const startDate = fetchInfo.startStr.slice(0,10);
+                const endDate = fetchInfo.endStr.slice(0,10);
+                const resp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId(), maxResults: 500 });
+                if (!resp || resp.success === false) {
+                    if (resp) showBackendRawResponse(resp);
+                    return successCallback([]);
+                }
+                const events = (resp.data && resp.data.events) ? resp.data.events.map(ev => ({
+                    id: ev.id,
+                    title: ev.title || '(sans titre)',
+                    start: ev.start,
+                    end: ev.end,
+                    extendedProps: { description: ev.description, location: ev.location }
+                })) : [];
+                successCallback(events);
+            } catch (e) { console.error('FullCalendar events load failed', e); failureCallback(e); }
+        },
+        dateClick: function(info) {
+            // open form to create new event for clicked date
+            openEventForm({ start: info.dateStr, end: info.dateStr });
+            // prefill date/time
+            const dateEl = document.getElementById('evtDate');
+            const timeEl = document.getElementById('evtTime');
+            if (dateEl) dateEl.value = info.dateStr.slice(0,10);
+            if (timeEl) timeEl.value = '09:00';
+        },
+        eventClick: function(info) {
+            // open edit form
+            const ev = info.event;
+            openEventForm({ id: ev.id, title: ev.title, start: ev.start.toISOString(), end: ev.end.toISOString(), description: ev.extendedProps && ev.extendedProps.description });
+        },
+        eventDrop: async function(info) {
+            // update moved event
+            try {
+                const ev = info.event;
+                const start = ev.start;
+                const end = ev.end || new Date(start.getTime() + 60*60*1000);
+                const duration = (end - start) / (1000*60*60);
+                const payload = {
+                    event: {
+                        eventId: ev.id,
+                        date: start.toISOString().slice(0,10),
+                        time: start.toTimeString().slice(0,5),
+                        duration: duration,
+                        description: ev.title,
+                        calendarId: getConfiguredCalendarId()
+                    }
+                };
+                const resp = await callBackend('updateCalendarEvent', payload);
+                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur mise à jour événement'); info.revert(); }
+            } catch (e) { console.error('eventDrop update failed', e); info.revert(); }
+        },
+        eventResize: async function(info) {
+            try {
+                const ev = info.event;
+                const start = ev.start;
+                const end = ev.end;
+                const duration = (end - start) / (1000*60*60);
+                const payload = { event: { eventId: ev.id, date: start.toISOString().slice(0,10), time: start.toTimeString().slice(0,5), duration: duration, description: ev.title, calendarId: getConfiguredCalendarId() } };
+                const resp = await callBackend('updateCalendarEvent', payload);
+                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur mise à jour événement'); info.revert(); }
+            } catch (e) { console.error('eventResize update failed', e); info.revert(); }
+        }
+    });
+
+    calendar.render();
+
+    // Expose refresh function to other parts (manager)
+    window.mti_fullCalendar = calendar;
+}
+
 function updateWeeklyStats() {
     let filteredTasks = tasks;
 
@@ -3051,9 +3289,11 @@ async function previewAndConfirmSend(invoice) {
                     const sendResp = await callBackend('sendEmailWithDriveFile', { to: to, subject: subject, body: body, fileId: fileId, fileName: pdfFilename });
                     if (!sendResp || sendResp.success === false) {
                         try { showBackendRawResponse(sendResp); } catch (e) {}
-                        showToast('⚠️ Envoi via serveur échoué, ouverture du compose Gmail en fallback', 'error');
-                        openGmailComposePrefilled(to, subject, body);
-                        return;
+                            // Do not automatically open Gmail with Drive link when server send fails.
+                            // Offer the user to open the compose manually so they can attach the PDF.
+                            const proceed = confirm('Envoi via serveur échoué. Voulez-vous ouvrir la fenêtre de composition Gmail pour attacher manuellement le PDF ?');
+                            if (proceed) openGmailComposePrefilled(to, subject, body);
+                            return;
                     }
 
                     // mark invoice as sent if present
@@ -3353,6 +3593,10 @@ function initApp() {
             });
         }
     } catch (e) { console.warn('calendar embed init failed', e); }
+
+    // Initialize calendar manager (interactive event create/modify/delete)
+    try { initCalendarManager(); } catch (e) { console.warn('initCalendarManager failed', e); }
+    try { initFullCalendar(); } catch (e) { console.warn('initFullCalendar failed', e); }
 
     // Copy/close buttons exist in DOM; handlers attached globally above via event delegation
 
