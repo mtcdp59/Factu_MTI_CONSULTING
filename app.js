@@ -863,11 +863,13 @@ function setupInvoiceFormListeners() {
                 ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
                 : '[À compléter dans Paramètres]';
 
-            const logoHTML = companyInfo.logoUrl
-                ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);">`
-                : '';
-
-            const previewHTML = `
+    // Use local logo file (MTI_CONSULTING.png) or configured data-URI
+    const logoSrc = companyInfo.logoUrl && (companyInfo.logoUrl.startsWith('data:') || !companyInfo.logoUrl.includes('github')) 
+        ? companyInfo.logoUrl 
+        : 'MTI_CONSULTING.png';
+    const logoHTML = logoSrc
+        ? `<img src="${logoSrc}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);" crossorigin="anonymous">`
+        : '';            const previewHTML = `
                 <div class="invoice-header">
                     <div class="invoice-header-left">
                         ${logoHTML}
@@ -940,8 +942,10 @@ function renderInvoicePreview(inv, showModal) {
         ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
 
-    const logoHTML = companyInfo.logoUrl
-        ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);">`
+    // Use local logo file (MTI_CONSULTING.png) or configured URL
+    const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'MTI_CONSULTING.png';
+    const logoHTML = logoSrc
+        ? `<img src="${logoSrc}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);" crossorigin="anonymous">`
         : '';
 
     const tvaEnabled = inv.tvaEnabled;
@@ -3059,6 +3063,32 @@ async function sendInvoiceWithPDF(invoice) {
     }
 }
 
+// Save invoice PDF to Drive (without sending email) - returns { fileId, fileName, fileUrl }
+async function saveInvoicePdfToDrive(invoice) {
+    if (!invoice) throw new Error('Invoice missing');
+    
+    // Generate PDF base64
+    const pdfBase64 = await generateInvoicePDFBase64(invoice);
+    
+    // Save to Drive via backend
+    const saveRes = await callBackend('savePdfToDrive', { 
+        pdfBase64: pdfBase64, 
+        pdfFilename: `Facture_${invoice.number}.pdf`, 
+        folderName: 'Factures' 
+    });
+    
+    if (!saveRes || saveRes.success === false) {
+        try { showBackendRawResponse(saveRes); } catch (e) {}
+        throw new Error((saveRes && (saveRes.data || saveRes.error)) || 'Erreur sauvegarde PDF sur Drive');
+    }
+    
+    const fileId = saveRes.data && saveRes.data.fileId;
+    const fileUrl = saveRes.data && saveRes.data.fileUrl;
+    if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
+    
+    return { fileId, fileName: `Facture_${invoice.number}.pdf`, fileUrl };
+}
+
 // Preferred flow: generate PDF, save to Drive, then send email attaching that Drive file
 async function sendInvoiceViaDrive(invoice, toEmail) {
     if (!invoice) throw new Error('Invoice missing');
@@ -3340,10 +3370,22 @@ function setupEmailPreviewHandlersForConfirmSend() {
                     }
                 }
             } else {
-                // manual mode: open compose Gmail
-                const body = generateEmailBody(invoice, client);
-                openGmailComposePrefilled(to, subject, body);
-                showToast('Compose Gmail ouvert. Vérifiez le corps et attachez le PDF manuellement si nécessaire.', 'info');
+                // manual mode: save PDF to Drive first, then open Gmail compose with Drive link
+                try {
+                    showToast('💾 Génération et sauvegarde du PDF sur Drive...', 'info');
+                    const { fileId, fileName, fileUrl } = await saveInvoicePdfToDrive(invoice);
+                    
+                    // Include Drive link in email body so user can easily attach the file
+                    const body = generateEmailBody(invoice, client) + 
+                        `\n\n📎 Votre facture a été sauvegardée sur Drive:\n${fileUrl}\n\n` +
+                        `⚠️ Veuillez attacher manuellement le fichier "${fileName}" depuis votre Drive avant d'envoyer cet email.`;
+                    
+                    openGmailComposePrefilled(to, subject, body);
+                    showToast('✅ PDF sauvegardé sur Drive. Gmail Compose ouvert - attachez manuellement le fichier.', 'success');
+                } catch (err) {
+                    console.error('Mode manuel - sauvegarde Drive failed:', err);
+                    showToast('❌ Erreur lors de la sauvegarde du PDF sur Drive', 'error');
+                }
             }
             const modal = document.getElementById('emailModal');
             if (modal) modal.classList.remove('show');
@@ -3370,8 +3412,12 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
         ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
 
-    const logoHTML = companyInfo.logoUrl
-        ? `<img src="${companyInfo.logoUrl}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;">`
+    // Use local logo file or data-URI if available
+    const logoSrc = companyInfo.logoUrl && (companyInfo.logoUrl.startsWith('data:') || !companyInfo.logoUrl.includes('github')) 
+        ? companyInfo.logoUrl 
+        : 'MTI_CONSULTING.png';
+    const logoHTML = logoSrc
+        ? `<img src="${logoSrc}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;" crossorigin="anonymous">`
         : '';
 
     return `<!doctype html>
@@ -3625,11 +3671,17 @@ function initApp() {
     try {
         const toggleViewBtn = document.getElementById('toggleCalendarViewBtn');
         if (toggleViewBtn) {
+            console.log('✅ toggleCalendarViewBtn found, attaching listener');
             toggleViewBtn.addEventListener('click', () => {
+                console.log('🔄 Toggle calendar view clicked, current useAppCalendar:', useAppCalendar);
                 const fcContainer = document.getElementById('calendarContainer');
                 const appContainer = document.getElementById('appCalendarContainer');
-                if (!fcContainer || !appContainer) return;
+                if (!fcContainer || !appContainer) {
+                    console.warn('Calendar containers not found:', { fcContainer, appContainer });
+                    return;
+                }
                 useAppCalendar = !useAppCalendar;
+                console.log('🔄 Switching to', useAppCalendar ? 'app calendar' : 'Google calendar');
                 if (useAppCalendar) {
                     // switch to app calendar
                     fcContainer.style.display = 'none';
@@ -3644,6 +3696,8 @@ function initApp() {
                     toggleViewBtn.textContent = '🔄 Afficher calendrier de l\'appli';
                 }
             });
+        } else {
+            console.warn('❌ toggleCalendarViewBtn NOT FOUND in DOM');
         }
     } catch (e) { console.warn('calendar view toggle init failed', e); }
 
@@ -3838,11 +3892,21 @@ async function generateInvoicePDFBase64(invoice) {
 
     // Try to fetch logo as data URI to avoid CORS issues when rendering canvas
     let originalLogo = companyInfo.logoUrl;
+    let logoDataUri = null;
     try {
-        const dataUri = await fetchImageAsDataUri(originalLogo);
-        if (dataUri) companyInfo.logoUrl = dataUri;
+        // Use local logo file instead of GitHub URL
+        const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'MTI_CONSULTING.png';
+        logoDataUri = await fetchImageAsDataUri(logoSrc);
+        if (logoDataUri) companyInfo.logoUrl = logoDataUri;
     } catch (e) {
         console.warn('Could not inline logo', e);
+        // Fallback: try local file
+        try {
+            logoDataUri = await fetchImageAsDataUri('MTI_CONSULTING.png');
+            if (logoDataUri) companyInfo.logoUrl = logoDataUri;
+        } catch (e2) {
+            console.warn('Fallback logo load failed', e2);
+        }
     }
 
     try {
@@ -3881,9 +3945,9 @@ async function generateInvoicePDFBase64(invoice) {
     // If html2canvas is available, use it for faithful rendering
     if (window.html2canvas && window.jspdf) {
         try {
-            // Render with html2canvas. Use PNG to preserve colors and slice into pages if needed.
-            // Increase scale for better fidelity; we'll account for scale when converting px->mm
-            const canvasScale = 2.5;
+            // Render with html2canvas. Use moderate scale for good quality without excessive file size.
+            // Reduced from 2.5 to 1.5 to optimize PDF size (21 Mo → ~200-300 Ko)
+            const canvasScale = 1.5;
             // Compute printable width in px so layout matches A4 printable area
             const { jsPDF } = window.jspdf;
             const pdfForCalc = new jsPDF('p', 'mm', 'a4');
@@ -3897,8 +3961,8 @@ async function generateInvoicePDFBase64(invoice) {
             tempContainer.style.width = printableWidthPx + 'px';
 
             const canvas = await html2canvas(tempContainer, { scale: canvasScale, useCORS: true, backgroundColor: '#ffffff' });
-            // Use PNG to preserve exact colors
-            const imgData = canvas.toDataURL('image/png');
+            // Use JPEG with 0.85 quality for much smaller file size while preserving visual quality
+            const imgData = canvas.toDataURL('image/jpeg', 0.85);
             const pdf = new jsPDF('p', 'mm', 'a4');
 
             // canvas dimensions in px
@@ -3914,7 +3978,7 @@ async function generateInvoicePDFBase64(invoice) {
             let totalHeightMm = imgHeightMm * scale;
 
             // If image is taller than a single page, split into multiple pages
-            const imgDataType = 'PNG';
+            const imgDataType = 'JPEG';
 
             // Create an offscreen canvas to slice the image if necessary
             const tmpCanvas = document.createElement('canvas');
@@ -3933,7 +3997,7 @@ async function generateInvoicePDFBase64(invoice) {
                 sliceCanvas.height = sliceHeightPx;
                 const sc = sliceCanvas.getContext('2d');
                 sc.drawImage(canvas, 0, startPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
-                const sliceData = sliceCanvas.toDataURL('image/png');
+                const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.85);
                 const sliceHeightMm = pxToMm(sliceHeightPx) * scale;
 
                 // center horizontally
