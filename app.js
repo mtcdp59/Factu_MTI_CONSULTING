@@ -5,7 +5,7 @@ const CONFIG = {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyUp4uaDfbrZpziEXI3SRBYm8M_cF32mU17Ji_L3qYnxaQGl-K6KZ19-33yHkCCMD92/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
     SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
-    CALENDAR_ID: 'primary'
+    CALENDAR_ID: 'mticonsulting59@gmail.com'
 };
 
 function getConfiguredCalendarId() {
@@ -3028,7 +3028,7 @@ async function previewAndConfirmSend(invoice) {
     const fileUrl = saveResp.data && saveResp.data.fileUrl;
     const fileId = saveResp.data && saveResp.data.fileId;
 
-    // Open the saved PDF for preview
+    // Open the saved PDF for preview (still useful even when sending via Drive)
     if (fileUrl) window.open(fileUrl, '_blank');
 
     // Ask confirmation using the app modal so the Confirm button triggers the async flow
@@ -3037,7 +3037,9 @@ async function previewAndConfirmSend(invoice) {
     // Resolve client object for a full structured body
     const clientObj = (clients.find(c => c.name === (invoice.client || '')) || { name: invoice.client || '', contact_name: invoice.client || '' });
     let body = generateEmailBody(invoice, clientObj);
-    if (fileUrl) body += '\n\nLien vers la facture : ' + fileUrl + '\n\n(Le PDF est sauvegardé sur Google Drive)';
+    // Only add a Drive link in the email body when user will use manual compose (we cannot attach programmatically in Gmail compose)
+    const currentMode = getSendMode();
+    if (fileUrl && currentMode === 'manual') body += '\n\nLien vers la facture : ' + fileUrl + '\n\n(Le PDF est sauvegardé sur Google Drive)';
 
     showConfirmation(
         'Envoi par Gmail',
@@ -3510,8 +3512,8 @@ async function generateInvoicePDFBase64(invoice) {
     tempContainer.style.position = 'fixed';
     tempContainer.style.left = '-9999px';
     tempContainer.style.top = '0';
-    tempContainer.style.width = '800px';
-    tempContainer.style.padding = '20px';
+    tempContainer.style.width = 'auto';
+    tempContainer.style.padding = '0';
 
     // Try to fetch logo as data URI to avoid CORS issues when rendering canvas
     let originalLogo = companyInfo.logoUrl;
@@ -3558,38 +3560,40 @@ async function generateInvoicePDFBase64(invoice) {
     // If html2canvas is available, use it for faithful rendering
     if (window.html2canvas && window.jspdf) {
         try {
-            // Render with html2canvas. Use JPEG to reduce file size and slice into pages if needed.
+            // Render with html2canvas. Use PNG to preserve colors and slice into pages if needed.
             // Increase scale for better fidelity; we'll account for scale when converting px->mm
             const canvasScale = 2.5;
-            const canvas = await html2canvas(tempContainer, { scale: canvasScale, useCORS: true, backgroundColor: '#ffffff' });
-            // Prefer JPEG to reduce PDF size
-            const imgData = canvas.toDataURL('image/jpeg', 0.85);
+            // Compute printable width in px so layout matches A4 printable area
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfForCalc = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdfForCalc.internal.pageSize.getWidth();
+            const pageHeight = pdfForCalc.internal.pageSize.getHeight();
+            const margin = 8; // mm
+            const printableWidthMm = pageWidth - margin * 2;
+            const effectiveDpi = 96 * canvasScale;
+            const printableWidthPx = Math.round(printableWidthMm * effectiveDpi / 25.4);
+            // Apply printable width to temp container before rendering
+            tempContainer.style.width = printableWidthPx + 'px';
 
-            // Calculate width/height to fit A4 while keeping aspect
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
+            const canvas = await html2canvas(tempContainer, { scale: canvasScale, useCORS: true, backgroundColor: '#ffffff' });
+            // Use PNG to preserve exact colors
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
 
             // canvas dimensions in px
             const imgProps = { width: canvas.width, height: canvas.height };
             // Convert px -> mm taking canvas scale (effective DPI = 96 * scale)
-            const effectiveDpi = 96 * canvasScale;
             const pxToMm = (px) => px * 25.4 / effectiveDpi;
             const imgWidthMm = pxToMm(imgProps.width);
             const imgHeightMm = pxToMm(imgProps.height);
 
-            const margin = 8; // mm (smaller default margin for tighter layout)
-            let renderWidth = pageWidth - margin * 2;
+            let renderWidth = printableWidthMm;
             // scale so width fits the printable area
             let scale = renderWidth / imgWidthMm;
             let totalHeightMm = imgHeightMm * scale;
 
             // If image is taller than a single page, split into multiple pages
-            let remainingHeight = totalHeightMm;
-            const imgRatio = imgProps.width / imgProps.height;
-            const imgDataType = 'JPEG';
-            let yPos = 0; // mm offset for cropping simulation
+            const imgDataType = 'PNG';
 
             // Create an offscreen canvas to slice the image if necessary
             const tmpCanvas = document.createElement('canvas');
@@ -3608,7 +3612,7 @@ async function generateInvoicePDFBase64(invoice) {
                 sliceCanvas.height = sliceHeightPx;
                 const sc = sliceCanvas.getContext('2d');
                 sc.drawImage(canvas, 0, startPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
-                const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.85);
+                const sliceData = sliceCanvas.toDataURL('image/png');
                 const sliceHeightMm = pxToMm(sliceHeightPx) * scale;
 
                 // center horizontally
