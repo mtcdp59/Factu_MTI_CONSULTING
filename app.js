@@ -915,12 +915,91 @@ function setupInvoiceFormListeners() {
                 </div>
             `;
 
-            const previewContent = document.getElementById('invoicePreviewContent');
-            if (previewContent) previewContent.innerHTML = previewHTML;
-            const modal = document.getElementById('invoiceModal');
-            if (modal) modal.classList.add('show');
+            // Render using shared helper so PDF generator can reuse exact DOM
+            renderInvoicePreview({
+                client: clientName,
+                clientAddress: clientAddress,
+                number: invoiceNumber,
+                date: invoiceDate,
+                dueDate: dueDate,
+                description: description,
+                quantity: quantity,
+                unitPrice: unitPrice,
+                total: total,
+                tvaEnabled: tvaEnabled
+            }, true);
         });
     }
+
+// Render the invoice preview into the modal / preview DOM. If `showModal` is true, open modal.
+function renderInvoicePreview(inv, showModal) {
+    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
+        ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
+        : '[À compléter dans Paramètres]';
+
+    const logoHTML = companyInfo.logoUrl
+        ? `<img src="${companyInfo.logoUrl}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);">`
+        : '';
+
+    const tvaEnabled = inv.tvaEnabled;
+    const totalHT = inv.total || 0;
+    const tva = tvaEnabled ? totalHT * 0.20 : 0;
+    const totalTTC = totalHT + tva;
+
+    const previewHTML = `
+        <div class="invoice-header">
+            <div class="invoice-header-left">
+                ${logoHTML}
+                <div class="invoice-company">${companyInfo.name}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret || ''}</div>
+            </div>
+            <div class="invoice-header-right">
+                <div style="font-weight: bold; margin-bottom: 4px;">${inv.client || ''}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${inv.clientAddress || ''}</div>
+            </div>
+        </div>
+
+        <div class="invoice-details">
+            <h2 class="invoice-number">FACTURE N° ${inv.number || ''}</h2>
+            <div style="font-size: 13px;"><div>Date: ${formatDateFR(inv.date)}</div><div>Échéance: ${formatDateFR(inv.dueDate)}</div></div>
+        </div>
+
+        <hr class="separator">
+
+        <table class="invoice-table">
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th style="text-align: center;">Quantité</th>
+                    <th style="text-align: right;">Prix unitaire</th>
+                    <th style="text-align: right;">Total HT</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>${inv.description || ''}</td>
+                    <td style="text-align: center;">${inv.quantity || 0}</td>
+                    <td style="text-align: right;">${parseFloat(inv.unitPrice || 0).toFixed(2)} €</td>
+                    <td style="text-align: right;">${(inv.total || 0).toFixed(2)} €</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="invoice-total">
+            ${tvaEnabled ? `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA (20%): ${tva.toFixed(2)} €</div><div><strong>Total TTC: ${totalTTC.toFixed(2)} €</strong></div>` : `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA non applicable (art. 293 B du CGI)</div><div><strong>Total TTC: ${totalHT.toFixed(2)} €</strong></div>`}
+        </div>
+
+        <div class="invoice-legal"><p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p><p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p></div>
+    `;
+
+    const previewContent = document.getElementById('invoicePreviewContent');
+    if (previewContent) previewContent.innerHTML = previewHTML;
+    if (showModal) {
+        const modal = document.getElementById('invoiceModal');
+        if (modal) modal.classList.add('show');
+    }
+}
 
     const closeModal = document.getElementById('closeModal');
     if (closeModal) {
@@ -2919,6 +2998,13 @@ function getCurrentInvoiceForPreview() {
 async function previewAndConfirmSend(invoice) {
     if (!invoice) throw new Error('Invoice missing');
 
+    // Ensure the preview DOM matches the invoice before generating PDF
+    try {
+        renderInvoicePreview(invoice, false);
+    } catch (e) {
+        console.warn('renderInvoicePreview failed', e);
+    }
+
     // Generate base64 PDF (function returns base64 string)
     let pdfBase64;
     try {
@@ -2948,7 +3034,10 @@ async function previewAndConfirmSend(invoice) {
     // Ask confirmation using the app modal so the Confirm button triggers the async flow
     const to = invoice.clientEmail || '';
     const subject = 'Facture ' + (invoice.number || '');
-    const body = 'Bonjour,\n\nVeuillez trouver ci-joint la facture ' + (invoice.number || '') + '.\n\nCordialement,\n' + (companyInfo && companyInfo.name ? companyInfo.name : 'MTI CONSULTING');
+    // Resolve client object for a full structured body
+    const clientObj = (clients.find(c => c.name === (invoice.client || '')) || { name: invoice.client || '', contact_name: invoice.client || '' });
+    let body = generateEmailBody(invoice, clientObj);
+    if (fileUrl) body += '\n\nLien vers la facture : ' + fileUrl + '\n\n(Le PDF est sauvegardé sur Google Drive)';
 
     showConfirmation(
         'Envoi par Gmail',
@@ -2961,7 +3050,7 @@ async function previewAndConfirmSend(invoice) {
                     if (!sendResp || sendResp.success === false) {
                         try { showBackendRawResponse(sendResp); } catch (e) {}
                         showToast('⚠️ Envoi via serveur échoué, ouverture du compose Gmail en fallback', 'error');
-                        openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+                        openGmailComposePrefilled(to, subject, body);
                         return;
                     }
 
@@ -2975,15 +3064,15 @@ async function previewAndConfirmSend(invoice) {
                     } catch (e) { console.warn('Could not mark invoice sent', e); }
 
                     showToast('✅ Email envoyé (via Drive)', 'success');
-                } catch (err) {
+                    } catch (err) {
                     console.error('Envoi via Drive failed:', err);
                     try { showBackendRawResponse(String(err)); } catch (e) {}
-                    openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+                    openGmailComposePrefilled(to, subject, body);
                 }
             } else {
                 // manual mode: open compose Gmail
-                openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
-                showToast('Compose Gmail ouvert. N\'oubliez pas d\'attacher le PDF enregistré sur Drive avant l\'envoi.', 'info');
+                    openGmailComposePrefilled(to, subject, body);
+                    showToast('Compose Gmail ouvert. Le corps contient un lien vers le PDF Drive. N\'oubliez pas d\'attacher le PDF si nécessaire.', 'info');
             }
         }
     );
@@ -3239,6 +3328,30 @@ function initApp() {
     try { initSendModeUI(); } catch (e) { console.warn('initSendModeUI failed', e); }
     try { initPreviewConfirmButton(); } catch (e) { console.warn('initPreviewConfirmButton failed', e); }
 
+    // Calendar embed toggle init (small widget to show Google Calendar iframe)
+    try {
+        const toggleBtn = document.getElementById('toggleCalendarEmbedBtn');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                const container = document.getElementById('calendarEmbedContainer');
+                if (!container) return;
+                if (container.style.display === 'none' || container.style.display === '') {
+                    // show and set src
+                    const calId = getConfiguredCalendarId() || 'primary';
+                    const iframe = document.getElementById('calendarEmbed');
+                    if (iframe) {
+                        iframe.src = 'https://calendar.google.com/calendar/embed?src=' + encodeURIComponent(calId) + '&ctz=Europe%2FParis';
+                    }
+                    container.style.display = 'block';
+                    toggleBtn.textContent = '🗓️ Masquer calendrier intégré';
+                } else {
+                    container.style.display = 'none';
+                    toggleBtn.textContent = '🗓️ Afficher calendrier intégré';
+                }
+            });
+        }
+    } catch (e) { console.warn('calendar embed init failed', e); }
+
     // Copy/close buttons exist in DOM; handlers attached globally above via event delegation
 
     // Initial persist attempt
@@ -3392,7 +3505,7 @@ async function generateInvoicePDFBase64(invoice) {
             return null;
         }
     }
-    // Build HTML for the invoice using the shared builder, trying to inline the logo if possible
+    // Build HTML for the invoice. Prefer using the on-page preview DOM if present
     const tempContainer = document.createElement('div');
     tempContainer.style.position = 'fixed';
     tempContainer.style.left = '-9999px';
@@ -3410,18 +3523,31 @@ async function generateInvoicePDFBase64(invoice) {
     }
 
     try {
-        tempContainer.innerHTML = buildInvoiceHtml({
-            clientName: invoice.client || '',
-            clientAddress: invoice.clientAddress || '',
-            invoiceNumber: invoice.number || '',
-            invoiceDate: invoice.date || '',
-            dueDate: invoice.dueDate || '',
-            description: invoice.description || '',
-            quantity: invoice.quantity || 0,
-            unitPrice: invoice.unitPrice || 0,
-            total: invoice.total || 0,
-            tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked
-        });
+        const previewNode = document.getElementById('invoicePreviewContent');
+        if (previewNode && previewNode.innerHTML && previewNode.innerHTML.trim().length > 0) {
+            // Clone the existing preview so PDF exactly matches the UI
+            const clone = previewNode.cloneNode(true);
+            // Ensure images in clone reference inlined logo if present
+            if (companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:')) {
+                const imgs = clone.querySelectorAll('img');
+                imgs.forEach(img => { if (img.src && img.src.indexOf('blob:') === -1) img.src = companyInfo.logoUrl; });
+            }
+            tempContainer.appendChild(clone);
+        } else {
+            // Fallback: use shared HTML builder
+            tempContainer.innerHTML = buildInvoiceHtml({
+                clientName: invoice.client || '',
+                clientAddress: invoice.clientAddress || '',
+                invoiceNumber: invoice.number || '',
+                invoiceDate: invoice.date || '',
+                dueDate: invoice.dueDate || '',
+                description: invoice.description || '',
+                quantity: invoice.quantity || 0,
+                unitPrice: invoice.unitPrice || 0,
+                total: invoice.total || 0,
+                tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked
+            });
+        }
     } finally {
         // restore original logo setting
         companyInfo.logoUrl = originalLogo;
@@ -3433,7 +3559,9 @@ async function generateInvoicePDFBase64(invoice) {
     if (window.html2canvas && window.jspdf) {
         try {
             // Render with html2canvas. Use JPEG to reduce file size and slice into pages if needed.
-            const canvas = await html2canvas(tempContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            // Increase scale for better fidelity; we'll account for scale when converting px->mm
+            const canvasScale = 2.5;
+            const canvas = await html2canvas(tempContainer, { scale: canvasScale, useCORS: true, backgroundColor: '#ffffff' });
             // Prefer JPEG to reduce PDF size
             const imgData = canvas.toDataURL('image/jpeg', 0.85);
             const { jsPDF } = window.jspdf;
@@ -3445,14 +3573,15 @@ async function generateInvoicePDFBase64(invoice) {
 
             // canvas dimensions in px
             const imgProps = { width: canvas.width, height: canvas.height };
-            // Convert px -> mm assuming 96 DPI (avoid devicePixelRatio to keep consistent sizing)
-            const pxToMm = (px) => px * 25.4 / 96;
+            // Convert px -> mm taking canvas scale (effective DPI = 96 * scale)
+            const effectiveDpi = 96 * canvasScale;
+            const pxToMm = (px) => px * 25.4 / effectiveDpi;
             const imgWidthMm = pxToMm(imgProps.width);
             const imgHeightMm = pxToMm(imgProps.height);
 
-            const margin = 10; // mm
+            const margin = 8; // mm (smaller default margin for tighter layout)
             let renderWidth = pageWidth - margin * 2;
-            // scale so width fits
+            // scale so width fits the printable area
             let scale = renderWidth / imgWidthMm;
             let totalHeightMm = imgHeightMm * scale;
 
@@ -3469,8 +3598,8 @@ async function generateInvoicePDFBase64(invoice) {
             tmpCanvas.height = canvas.height;
             tmpCtx.drawImage(canvas, 0, 0);
 
-            // Height in source pixels corresponding to one PDF page (in px)
-            const pageHeightPx = Math.round((pageHeight - margin * 2) / scale * (96 / 25.4));
+            // Height in source pixels corresponding to one PDF page (in px). We reverse pxToMm.
+            const pageHeightPx = Math.round((pageHeight - margin * 2) / scale * (effectiveDpi / 25.4));
             let startPx = 0;
             while (startPx < canvas.height) {
                 const sliceHeightPx = Math.min(pageHeightPx, canvas.height - startPx);
