@@ -318,6 +318,7 @@ let tasks = [
 // Calendar state
 let currentView = 'week';
 let currentDate = new Date();
+let useAppCalendar = false; // true = app calendar (day/week/month), false = FullCalendar (Google)
 
 // Company info - now editable via settings
 let companyInfo = {
@@ -392,6 +393,8 @@ function setupNavigation() {
                 renderCharts();
             } else if (targetTab === 'planning') {
                 renderCalendar();
+                // Auto-refresh FullCalendar on tab switch to Planning
+                if (window.mti_fullCalendar) window.mti_fullCalendar.refetchEvents();
             } else if (targetTab === 'tiers') {
                 renderClientsTable();
             } else if (targetTab === 'factures') {
@@ -1385,7 +1388,7 @@ function getWeekDates(date) {
     const monday = new Date(d.setDate(diff));
 
     const dates = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
         const weekDay = new Date(monday);
         weekDay.setDate(monday.getDate() + i);
         dates.push(weekDay);
@@ -1427,7 +1430,7 @@ function updateCurrentDateDisplay() {
     } else if (currentView === 'week') {
         const weekDates = getWeekDates(currentDate);
         const start = weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-        const end = weekDates[4].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+        const end = weekDates[6].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
         display.textContent = `Semaine du ${start} au ${end}`;
     } else if (currentView === 'month') {
         display.textContent = currentDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' });
@@ -1435,7 +1438,7 @@ function updateCurrentDateDisplay() {
 }
 
 function renderDayView() {
-    const container = document.getElementById('calendarContainer');
+    const container = document.getElementById(useAppCalendar ? 'appCalendarContainer' : 'calendarContainer');
     if (!container) return;
     const dateStr = formatDate(currentDate);
     const dayTasks = tasks.filter(task => task.date === dateStr);
@@ -1471,12 +1474,12 @@ function renderDayView() {
 }
 
 function renderWeekView() {
-    const container = document.getElementById('calendarContainer');
+    const container = document.getElementById(useAppCalendar ? 'appCalendarContainer' : 'calendarContainer');
     if (!container) return;
     const weekDates = getWeekDates(currentDate);
-    const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+    const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
-    let html = '<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-8);">';
+    let html = '<div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-8);">';
 
     weekDates.forEach((date, index) => {
         const dateStr = formatDate(date);
@@ -1502,7 +1505,7 @@ function renderWeekView() {
 }
 
 function renderMonthView() {
-    const container = document.getElementById('calendarContainer');
+    const container = document.getElementById(useAppCalendar ? 'appCalendarContainer' : 'calendarContainer');
     if (!container) return;
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -1652,6 +1655,8 @@ function initCalendarManager() {
             const sd = document.getElementById('mgrStartDate').value;
             const ed = document.getElementById('mgrEndDate').value;
             if (sd && ed) await loadCalendarEvents(sd, ed);
+            // Auto-refresh FullCalendar to show new/updated event
+            if (window.mti_fullCalendar) window.mti_fullCalendar.refetchEvents();
         } catch (e) { console.error('evtSave failed', e); alert('Erreur lors de la sauvegarde'); }
     });
 }
@@ -3232,95 +3237,119 @@ function getCurrentInvoiceForPreview() {
     }
 }
 
-// Preview & confirm flow: save PDF to Drive, open preview, then send according to mode
+// Preview & confirm flow: (1) generate and save PDF to Drive (replacing existing), (2) open Drive PDF in new tab for preview, (3) show email modal with unified body for review, (4) on confirm send via backend or open compose
 async function previewAndConfirmSend(invoice) {
     if (!invoice) throw new Error('Invoice missing');
 
-    // Ensure the preview DOM matches the invoice before generating PDF
+    // Ensure the preview DOM matches the invoice
     try {
-        renderInvoicePreview(invoice, false);
+        renderInvoicePreview(invoice, true); // Show modal preview
     } catch (e) {
         console.warn('renderInvoicePreview failed', e);
     }
 
-    // Generate base64 PDF (function returns base64 string)
-    let pdfBase64;
-    try {
-        pdfBase64 = await generateInvoicePDFBase64(invoice);
-    } catch (err) {
-        console.error('generateInvoicePDFBase64 failed', err);
-        alert('Impossible de générer le PDF.');
-        return;
+    // Prepare email preview using the unified body (same as list send)
+    const clientObj = clients.find(c => c.name === invoice.client) || { name: invoice.client, contact_name: invoice.client };
+    const to = clientObj.email_facturation || invoice.clientEmail || '';
+    const subject = `Facture ${invoice.number} - MTI CONSULTING`;
+    const body = generateEmailBody(invoice, clientObj);
+
+    // Store current invoice data for the email confirmation modal
+    // Note: PDF will be generated by sendInvoiceViaDrive when user confirms
+    currentInvoiceData = {
+        clientName: invoice.client,
+        clientSiret: invoice.clientSiret,
+        clientAddress: invoice.clientAddress,
+        invoiceNumber: invoice.number,
+        invoiceDate: invoice.date,
+        dueDate: invoice.dueDate,
+        description: invoice.description,
+        quantity: invoice.quantity,
+        unitPrice: invoice.unitPrice,
+        total: invoice.total,
+        client: clientObj,
+        fileId: null, // Will be generated on send
+        pdfFilename: `Facture_${invoice.number}.pdf`
+    };
+
+    // Show email preview modal (user can review/edit before confirming)
+    showEmailPreviewForConfirmSend(to, subject, body);
+}
+
+function showEmailPreviewForConfirmSend(to, subject, body) {
+    const emailToEl = document.getElementById('emailTo');
+    const emailSubjectEl = document.getElementById('emailSubject');
+    const emailBodyEl = document.getElementById('emailBody');
+    if (emailToEl) emailToEl.textContent = to || '(À compléter manuellement)';
+    if (emailSubjectEl) emailSubjectEl.textContent = subject;
+    if (emailBodyEl) emailBodyEl.textContent = body;
+
+    const hasEmail = to && to.trim() !== '';
+    const warningDiv = document.getElementById('emailWarning');
+    if (warningDiv) {
+        if (!hasEmail) {
+            warningDiv.style.display = 'block';
+            warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>L\'email s\'ouvrira en brouillon sans destinataire. Veuillez ajouter l\'email dans la gestion des tiers ou compléter manuellement.';
+        } else {
+            warningDiv.style.display = 'none';
+        }
     }
 
-    const pdfFilename = 'Facture_' + (invoice.number || Date.now()) + '.pdf';
+    const modal = document.getElementById('emailModal');
+    if (modal) modal.classList.add('show');
+}
 
-    // Save to Drive
-    const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: pdfFilename, folderName: 'Factures' });
-    if (!saveResp || saveResp.success === false) {
-        try { showBackendRawResponse(saveResp); } catch (e) {}
-        alert('Impossible de sauvegarder la facture sur Drive.');
-        return;
-    }
+function setupEmailPreviewHandlersForConfirmSend() {
+    const confirmEmail = document.getElementById('confirmEmail');
+    if (confirmEmail) {
+        // Remove old listener and bind new one
+        const newConfirm = confirmEmail.cloneNode(true);
+        confirmEmail.parentNode.replaceChild(newConfirm, confirmEmail);
+        newConfirm.addEventListener('click', async () => {
+            if (!currentInvoiceData) return;
+            const { client } = currentInvoiceData;
+            const to = client && client.email_facturation ? client.email_facturation : '';
+            const subject = `Facture ${currentInvoiceData.invoiceNumber} - MTI CONSULTING`;
+            
+            // Reconstruct full invoice object for sendInvoiceViaDrive
+            const invoice = {
+                number: currentInvoiceData.invoiceNumber,
+                client: currentInvoiceData.clientName,
+                clientSiret: currentInvoiceData.clientSiret || (client && client.siret),
+                clientAddress: currentInvoiceData.clientAddress || (client && client.address),
+                date: currentInvoiceData.invoiceDate,
+                dueDate: currentInvoiceData.dueDate,
+                description: currentInvoiceData.description,
+                quantity: currentInvoiceData.quantity,
+                unitPrice: currentInvoiceData.unitPrice,
+                total: currentInvoiceData.total
+            };
 
-    const fileUrl = saveResp.data && saveResp.data.fileUrl;
-    const fileId = saveResp.data && saveResp.data.fileId;
-
-    // Open the saved PDF for preview (still useful even when sending via Drive)
-    if (fileUrl) window.open(fileUrl, '_blank');
-
-    // Ask confirmation using the app modal so the Confirm button triggers the async flow
-    const to = invoice.clientEmail || '';
-    const subject = 'Facture ' + (invoice.number || '');
-    // Resolve client object for a full structured body
-    const clientObj = (clients.find(c => c.name === (invoice.client || '')) || { name: invoice.client || '', contact_name: invoice.client || '' });
-    let body = generateEmailBody(invoice, clientObj);
-    // Only add a Drive link in the email body when user will use manual compose (we cannot attach programmatically in Gmail compose)
-    const currentMode = getSendMode();
-    if (fileUrl && currentMode === 'manual') body += '\n\nLien vers la facture : ' + fileUrl + '\n\n(Le PDF est sauvegardé sur Google Drive)';
-
-    showConfirmation(
-        'Envoi par Gmail',
-        'Facture sauvegardée sur Drive. Voulez-vous envoyer l\'email maintenant ?',
-        async () => {
             const mode = getSendMode();
             if (mode === 'drive') {
                 try {
-                    const sendResp = await callBackend('sendEmailWithDriveFile', { to: to, subject: subject, body: body, fileId: fileId, fileName: pdfFilename });
-                    if (!sendResp || sendResp.success === false) {
-                        try { showBackendRawResponse(sendResp); } catch (e) {}
-                            // Do not automatically open Gmail with Drive link when server send fails.
-                            // Offer the user to open the compose manually so they can attach the PDF.
-                            const proceed = confirm('Envoi via serveur échoué. Voulez-vous ouvrir la fenêtre de composition Gmail pour attacher manuellement le PDF ?');
-                            if (proceed) openGmailComposePrefilled(to, subject, body);
-                            return;
-                    }
-
-                    // mark invoice as sent if present
-                    try {
-                        const idx = invoices.findIndex(inv => inv.number === invoice.number && inv.client === invoice.client);
-                        if (idx >= 0) {
-                            invoices[idx].status = 'Envoyée';
-                            await saveInvoicesAndRefreshUI();
-                        }
-                    } catch (e) { console.warn('Could not mark invoice sent', e); }
-
-                    showToast('✅ Email envoyé (via Drive)', 'success');
-                    } catch (err) {
+                    // Use the same flow as "Liste des Factures": sendInvoiceViaDrive
+                    await sendInvoiceViaDrive(invoice, to);
+                    showToast('✅ Email envoyé avec pièce jointe depuis Drive', 'success');
+                } catch (err) {
                     console.error('Envoi via Drive failed:', err);
-                    try { showBackendRawResponse(String(err)); } catch (e) {}
-                    openGmailComposePrefilled(to, subject, body);
+                    const proceed = confirm('Envoi via serveur échoué. Voulez-vous ouvrir la fenêtre de composition Gmail pour attacher manuellement le PDF ?');
+                    if (proceed) {
+                        const body = generateEmailBody(invoice, client);
+                        openGmailComposePrefilled(to, subject, body);
+                    }
                 }
             } else {
                 // manual mode: open compose Gmail
-                    openGmailComposePrefilled(to, subject, body);
-                    showToast('Compose Gmail ouvert. Le corps contient un lien vers le PDF Drive. N\'oubliez pas d\'attacher le PDF si nécessaire.', 'info');
+                const body = generateEmailBody(invoice, client);
+                openGmailComposePrefilled(to, subject, body);
+                showToast('Compose Gmail ouvert. Vérifiez le corps et attachez le PDF manuellement si nécessaire.', 'info');
             }
-        }
-    );
-}
-
-function initPreviewConfirmButton() {
+            const modal = document.getElementById('emailModal');
+            if (modal) modal.classList.remove('show');
+        });
+    }
+}function initPreviewConfirmButton() {
     const btn = document.getElementById('previewConfirmSendBtn');
     if (!btn) return;
     btn.addEventListener('click', async () => {
@@ -3328,6 +3357,7 @@ function initPreviewConfirmButton() {
         if (!invoice) { alert('Aucune facture trouvée pour prévisualisation'); return; }
         try { await previewAndConfirmSend(invoice); } catch (e) { console.error('previewAndConfirmSend failed', e); alert('Erreur lors de la préparation de l\'envoi'); }
     });
+    setupEmailPreviewHandlersForConfirmSend();
 }
 
 // PDF Download functionality using iframe print fallback
@@ -3515,8 +3545,29 @@ function downloadInvoicePDF() {
     }, 500);
 }
 
-// Download PDF button listener
-document.getElementById('downloadPDF')?.addEventListener('click', downloadInvoicePDF);
+// Download PDF button: generate, save to Drive (replacing existing), open Drive PDF for preview
+document.getElementById('downloadPDF')?.addEventListener('click', async () => {
+    const invoice = getCurrentInvoiceForPreview();
+    if (!invoice) { alert('Aucune facture pour téléchargement'); return; }
+    try {
+        renderInvoicePreview(invoice, false);
+    } catch (e) { console.warn('renderInvoicePreview failed', e); }
+    try {
+        const pdfBase64 = await generateInvoicePDFBase64(invoice);
+        const pdfFilename = 'Facture_' + (invoice.number || Date.now()) + '.pdf';
+        const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: pdfFilename, folderName: 'Factures' });
+        if (!saveResp || saveResp.success === false) {
+            try { showBackendRawResponse(saveResp); } catch (e) {}
+            alert('Impossible de sauvegarder la facture sur Drive.');
+            return;
+        }
+        const fileUrl = saveResp.data && saveResp.data.fileUrl;
+        if (fileUrl) {
+            window.open(fileUrl, '_blank');
+            showToast('✅ Facture sauvegardée et ouverte depuis Drive');
+        }
+    } catch (e) { console.error('downloadPDF failed', e); alert('Erreur lors de la génération du PDF'); }
+});
 
 // Initialize app
 function initApp() {
@@ -3569,6 +3620,32 @@ function initApp() {
     // Initialize send mode UI and preview-confirm button
     try { initSendModeUI(); } catch (e) { console.warn('initSendModeUI failed', e); }
     try { initPreviewConfirmButton(); } catch (e) { console.warn('initPreviewConfirmButton failed', e); }
+
+    // Calendar view toggle: switch between FullCalendar (Google) and app calendar (day/week/month views)
+    try {
+        const toggleViewBtn = document.getElementById('toggleCalendarViewBtn');
+        if (toggleViewBtn) {
+            toggleViewBtn.addEventListener('click', () => {
+                const fcContainer = document.getElementById('calendarContainer');
+                const appContainer = document.getElementById('appCalendarContainer');
+                if (!fcContainer || !appContainer) return;
+                useAppCalendar = !useAppCalendar;
+                if (useAppCalendar) {
+                    // switch to app calendar
+                    fcContainer.style.display = 'none';
+                    appContainer.style.display = 'block';
+                    renderCalendar(); // will render into appCalendarContainer (via useAppCalendar flag)
+                    toggleViewBtn.textContent = '🔄 Afficher calendrier Google';
+                } else {
+                    // switch to FullCalendar (Google)
+                    fcContainer.style.display = 'block';
+                    appContainer.style.display = 'none';
+                    if (window.mti_fullCalendar) window.mti_fullCalendar.refetchEvents();
+                    toggleViewBtn.textContent = '🔄 Afficher calendrier de l\'appli';
+                }
+            });
+        }
+    } catch (e) { console.warn('calendar view toggle init failed', e); }
 
     // Calendar embed toggle init (small widget to show Google Calendar iframe)
     try {

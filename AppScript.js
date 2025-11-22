@@ -318,14 +318,14 @@ function exportClients(sheetId, clients) {
   }
 }
 
-// Export invoices to a dedicated sheet (Invoices)
+// Export invoices to the 'Factures' sheet (gid=0)
 function exportInvoices(sheetId, invoices) {
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId);
-    let sheet = spreadsheet.getSheetByName('Invoices');
+    let sheet = spreadsheet.getSheetByName('Factures');
 
     if (!sheet) {
-      sheet = spreadsheet.insertSheet('Invoices');
+      sheet = spreadsheet.insertSheet('Factures');
     }
 
     sheet.clear();
