@@ -2703,6 +2703,28 @@ document.getElementById('cancelConfirm')?.addEventListener('click', () => {
     }
 });
 
+// Confirm action: execute the stored callback (supports async), disable button while running
+document.getElementById('confirmAction')?.addEventListener('click', async () => {
+    const btn = document.getElementById('confirmAction');
+    try {
+        if (btn) { btn.disabled = true; }
+        if (confirmCallback) {
+            // If callback returns a promise, await it
+            const res = confirmCallback();
+            if (res && typeof res.then === 'function') {
+                await res;
+            }
+        }
+    } catch (err) {
+        console.error('Erreur lors de l\'action confirmée:', err);
+        showToast('Erreur lors de l\'action', 'error');
+    } finally {
+        document.getElementById('confirmModal')?.classList.remove('show');
+        confirmCallback = null;
+        if (btn) { btn.disabled = false; btn.style.backgroundColor = ''; btn.style.color = ''; }
+    }
+});
+
 // --- Send mode helpers and preview/confirm flow ---
 function getSendMode() {
     return localStorage.getItem(SEND_MODE_KEY) || 'drive';
@@ -2805,39 +2827,48 @@ async function previewAndConfirmSend(invoice) {
     // Open the saved PDF for preview
     if (fileUrl) window.open(fileUrl, '_blank');
 
-    // Ask confirmation
-    if (!confirm('Facture sauvegardée sur Drive. Voulez-vous envoyer l\'email maintenant ?')) return;
-
+    // Ask confirmation using the app modal so the Confirm button triggers the async flow
     const to = invoice.clientEmail || '';
     const subject = 'Facture ' + (invoice.number || '');
     const body = 'Bonjour,\n\nVeuillez trouver ci-joint la facture ' + (invoice.number || '') + '.\n\nCordialement,\n' + (companyInfo && companyInfo.name ? companyInfo.name : 'MTI CONSULTING');
 
-    const mode = getSendMode();
-    if (mode === 'drive') {
-        // send via Drive file
-        const sendResp = await callBackend('sendEmailWithDriveFile', { to: to, subject: subject, body: body, fileId: fileId, fileName: pdfFilename });
-        if (!sendResp || sendResp.success === false) {
-            try { showBackendRawResponse(sendResp); } catch (e) {}
-            alert('Envoi via serveur échoué. Ouverture du compose Gmail en fallback.');
-            openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
-            return;
-        }
+    showConfirmation(
+        'Envoi par Gmail',
+        'Facture sauvegardée sur Drive. Voulez-vous envoyer l\'email maintenant ?',
+        async () => {
+            const mode = getSendMode();
+            if (mode === 'drive') {
+                try {
+                    const sendResp = await callBackend('sendEmailWithDriveFile', { to: to, subject: subject, body: body, fileId: fileId, fileName: pdfFilename });
+                    if (!sendResp || sendResp.success === false) {
+                        try { showBackendRawResponse(sendResp); } catch (e) {}
+                        showToast('⚠️ Envoi via serveur échoué, ouverture du compose Gmail en fallback', 'error');
+                        openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+                        return;
+                    }
 
-        // mark invoice as sent if present
-        try {
-            const idx = invoices.findIndex(inv => inv.number === invoice.number && inv.client === invoice.client);
-            if (idx >= 0) {
-                invoices[idx].status = 'Envoyée';
-                await saveInvoicesAndRefreshUI();
+                    // mark invoice as sent if present
+                    try {
+                        const idx = invoices.findIndex(inv => inv.number === invoice.number && inv.client === invoice.client);
+                        if (idx >= 0) {
+                            invoices[idx].status = 'Envoyée';
+                            await saveInvoicesAndRefreshUI();
+                        }
+                    } catch (e) { console.warn('Could not mark invoice sent', e); }
+
+                    showToast('✅ Email envoyé (via Drive)', 'success');
+                } catch (err) {
+                    console.error('Envoi via Drive failed:', err);
+                    try { showBackendRawResponse(String(err)); } catch (e) {}
+                    openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+                }
+            } else {
+                // manual mode: open compose Gmail
+                openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+                showToast('Compose Gmail ouvert. N\'oubliez pas d\'attacher le PDF enregistré sur Drive avant l\'envoi.', 'info');
             }
-        } catch (e) { console.warn('Could not mark invoice sent', e); }
-
-        alert('Email envoyé (via Drive).');
-    } else {
-        // manual mode: open compose Gmail
-        openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
-        alert('Compose Gmail ouvert. N\'oubliez pas d\'attacher le PDF enregistré sur Drive avant l\'envoi.');
-    }
+        }
+    );
 }
 
 function initPreviewConfirmButton() {
@@ -3369,8 +3400,10 @@ async function generateInvoicePDFBase64(invoice) {
     // If html2canvas is available, use it for faithful rendering
     if (window.html2canvas && window.jspdf) {
         try {
+            // Render with html2canvas. Use JPEG to reduce file size and slice into pages if needed.
             const canvas = await html2canvas(tempContainer, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-            const imgData = canvas.toDataURL('image/png');
+            // Prefer JPEG to reduce PDF size
+            const imgData = canvas.toDataURL('image/jpeg', 0.85);
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'mm', 'a4');
 
@@ -3380,21 +3413,51 @@ async function generateInvoicePDFBase64(invoice) {
 
             // canvas dimensions in px
             const imgProps = { width: canvas.width, height: canvas.height };
-            const pxToMm = (px) => px * 25.4 / (window.devicePixelRatio * 96);
+            // Convert px -> mm assuming 96 DPI (avoid devicePixelRatio to keep consistent sizing)
+            const pxToMm = (px) => px * 25.4 / 96;
             const imgWidthMm = pxToMm(imgProps.width);
             const imgHeightMm = pxToMm(imgProps.height);
 
             const margin = 10; // mm
             let renderWidth = pageWidth - margin * 2;
-            let renderHeight = (imgHeightMm * renderWidth) / imgWidthMm;
+            // scale so width fits
+            let scale = renderWidth / imgWidthMm;
+            let totalHeightMm = imgHeightMm * scale;
 
-            if (renderHeight > pageHeight - margin * 2) {
-                // scale down
-                renderHeight = pageHeight - margin * 2;
-                renderWidth = (imgWidthMm * renderHeight) / imgHeightMm;
+            // If image is taller than a single page, split into multiple pages
+            let remainingHeight = totalHeightMm;
+            const imgRatio = imgProps.width / imgProps.height;
+            const imgDataType = 'JPEG';
+            let yPos = 0; // mm offset for cropping simulation
+
+            // Create an offscreen canvas to slice the image if necessary
+            const tmpCanvas = document.createElement('canvas');
+            const tmpCtx = tmpCanvas.getContext('2d');
+            tmpCanvas.width = canvas.width;
+            tmpCanvas.height = canvas.height;
+            tmpCtx.drawImage(canvas, 0, 0);
+
+            // Height in source pixels corresponding to one PDF page (in px)
+            const pageHeightPx = Math.round((pageHeight - margin * 2) / scale * (96 / 25.4));
+            let startPx = 0;
+            while (startPx < canvas.height) {
+                const sliceHeightPx = Math.min(pageHeightPx, canvas.height - startPx);
+                const sliceCanvas = document.createElement('canvas');
+                sliceCanvas.width = canvas.width;
+                sliceCanvas.height = sliceHeightPx;
+                const sc = sliceCanvas.getContext('2d');
+                sc.drawImage(canvas, 0, startPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+                const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.85);
+                const sliceHeightMm = pxToMm(sliceHeightPx) * scale;
+
+                // center horizontally
+                const drawX = (pageWidth - renderWidth) / 2;
+                const drawY = margin;
+                pdf.addImage(sliceData, imgDataType, drawX, drawY, renderWidth, sliceHeightMm);
+
+                startPx += sliceHeightPx;
+                if (startPx < canvas.height) pdf.addPage();
             }
-
-            pdf.addImage(imgData, 'PNG', (pageWidth - renderWidth) / 2, margin, renderWidth, renderHeight);
             const dataUri = pdf.output('datauristring');
             // Cleanup
             try { document.body.removeChild(tempContainer); } catch(e) {}

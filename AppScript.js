@@ -436,6 +436,15 @@ function savePdfToDrive(pdfBase64, pdfFilename, folderName) {
     // Ensure parent folder exists
     var parent = getOrCreateFolder(folderName);
 
+    // If a file with same name exists in this folder, remove it to avoid duplicates
+    try {
+      var existing = parent.getFilesByName(pdfFilename || 'facture.pdf');
+      while (existing.hasNext()) {
+        var ef = existing.next();
+        try { ef.setTrashed(true); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+
     // Decode and create blob
     var blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), 'application/pdf', pdfFilename || 'facture.pdf');
 
