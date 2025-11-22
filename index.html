@@ -704,6 +704,11 @@ tr:hover {
             <h1 class="header-title">MTI CONSULTING</h1>
             <div style="margin-left: auto; display:flex; gap:8px; align-items:center;">
                 <button class="btn btn-secondary" id="importCalendarHeaderBtn" title="Importer depuis Google Calendar">📥 Importer Calendar</button>
+                <label for="sendModeSelect" style="margin-left:8px; font-size:13px; color:var(--color-text-secondary);">Mode d'envoi</label>
+                <select id="sendModeSelect" title="Choisir le mode d'envoi par défaut" style="margin-left:6px; padding:6px 8px; border-radius:6px; border:1px solid var(--color-border); background:white;">
+                    <option value="drive">Envoi automatique (Drive → envoi serveur)</option>
+                    <option value="manual">Ouverture compose Gmail (manuel)</option>
+                </select>
             </div>
         </div>
     </header>
@@ -827,6 +832,7 @@ tr:hover {
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;">Annuler</button>
                         <button type="button" class="btn btn-secondary" id="previewInvoice">👁️ Aperçu</button>
+                        <button type="button" class="btn btn-secondary" id="previewConfirmSendBtn">🔎 Prévisualiser et confirmer</button>
                         <button type="button" class="btn btn-secondary" id="downloadPDF">📥 Télécharger PDF</button>
                         <button type="submit" class="btn btn-primary" id="submitInvoiceBtn">💾 Créer facture</button>
                         <button type="button" class="btn btn-primary" id="sendEmailBtn" style="display: none;">📧 Envoyer par email</button>

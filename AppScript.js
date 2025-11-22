@@ -37,6 +37,10 @@ function doPost(e) {
         return syncInvoices(data.sheetId, data.invoices);
       case 'sync_calendar':
         return syncCalendarAction(data.tasks, data.calendarId);
+      case 'savePdfToDrive':
+        return savePdfToDrive(data.pdfBase64, data.pdfFilename, data.folderName);
+      case 'sendEmailWithDriveFile':
+        return sendEmailWithDriveFile(data);
       case 'listCalendarEvents':
         return listCalendarEvents(data.startDate, data.endDate, data.maxResults, data.calendarId);
       case 'importCalendarEvents':
@@ -420,6 +424,50 @@ function sendInvoiceAction(data) {
     return createResponse(false, 'Aucun PDF fourni. Le client doit envoyer le PDF encodé en base64 (pdfBase64) avec l\'appel send_invoice.');
   } catch (error) {
     return createResponse(false, 'Erreur send_invoice: ' + error.toString());
+  }
+}
+
+// Save a PDF (base64 without data: prefix) into Drive under a folder (default 'Factures')
+function savePdfToDrive(pdfBase64, pdfFilename, folderName) {
+  try {
+    if (!pdfBase64) return createResponse(false, 'pdfBase64 manquant');
+    folderName = folderName || 'Factures';
+
+    // Ensure parent folder exists
+    var parent = getOrCreateFolder(folderName);
+
+    // Decode and create blob
+    var blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), 'application/pdf', pdfFilename || 'facture.pdf');
+
+    var file = parent.createFile(blob);
+    Logger.log('PDF sauvegardé sur Drive: ' + file.getId());
+
+    return createResponse(true, { fileId: file.getId(), fileName: file.getName(), fileUrl: file.getUrl() });
+  } catch (err) {
+    return createResponse(false, 'Erreur savePdfToDrive: ' + err.toString());
+  }
+}
+
+// Send email attaching a file that exists in Drive by fileId
+function sendEmailWithDriveFile(data) {
+  try {
+    var to = data.to;
+    var subject = data.subject || 'Facture';
+    var body = data.body || '';
+    var fileId = data.fileId;
+    if (!fileId) return createResponse(false, 'fileId manquant');
+
+    var file = DriveApp.getFileById(fileId);
+    if (!file) return createResponse(false, 'Fichier introuvable: ' + fileId);
+
+    var blob = file.getBlob().setName(data.fileName || file.getName());
+
+    GmailApp.sendEmail(to, subject, body, { attachments: [blob], name: 'MTI CONSULTING' });
+
+    Logger.log('Email envoyé avec pièce jointe Drive: ' + to + ' / ' + fileId);
+    return createResponse(true, { message: 'Email envoyé (Drive PJ)', to: to, fileId: fileId });
+  } catch (err) {
+    return createResponse(false, 'Erreur sendEmailWithDriveFile: ' + err.toString());
   }
 }
 

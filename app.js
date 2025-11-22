@@ -8,6 +8,9 @@ const CONFIG = {
     CALENDAR_ID: 'primary'
 };
 
+// Send mode storage key: 'drive' or 'manual'
+const SEND_MODE_KEY = 'mti_send_mode';
+
 // Helper to call the Apps Script backend with better error handling and CORS guidance
 async function callBackend(action, payload = {}) {
     try {
@@ -324,6 +327,12 @@ let taxSettings = {
     acreInactif: 24.6
 };
 
+// Application-specific settings persisted with Drive data
+let appSettings = {
+    sendMode: 'drive', // 'drive' or 'compose'
+    previewBeforeSend: true // if true, open saved Drive PDF before sending
+};
+
 const defaultSettings = {
     tauxIS: 0,
     versementLiberatoire: 2.2,
@@ -419,6 +428,46 @@ function setupLegacyBindings() {
     if (importBtn) importBtn.addEventListener('click', () => { if (typeof importClientsFromSheets === 'function') importClientsFromSheets(); });
     const exportBtn = document.getElementById('exportClientsBtn');
     if (exportBtn) exportBtn.addEventListener('click', () => { if (typeof exportClientsToSheets === 'function') exportClientsToSheets(); });
+
+    // Header import Calendar button (wire to backend importCalendarEvents)
+    const importCalHeaderBtn = document.getElementById('importCalendarHeaderBtn');
+    if (importCalHeaderBtn) {
+        importCalHeaderBtn.addEventListener('click', async () => {
+            try {
+                const startDate = prompt('Date de début (AAAA-MM-JJ)', formatDate(new Date()));
+                if (!startDate) return;
+                const endDate = prompt('Date de fin (AAAA-MM-JJ)', formatDate(new Date()));
+                if (!endDate) return;
+
+                importCalHeaderBtn.disabled = true;
+                importCalHeaderBtn.textContent = '⏳ Import...';
+
+                const res = await callBackend('importCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: CONFIG.CALENDAR_ID });
+                if (!res || res.success === false) {
+                    try { showBackendRawResponse(res); } catch (e) {}
+                    throw new Error((res && (res.data || res.error)) || 'Erreur import calendrier');
+                }
+
+                // Merge results into client tasks and persist
+                const payload = res.data || {};
+                const imported = payload.imported || [];
+                if (imported.length > 0) {
+                    // Reload from Drive to refresh UI (server already saved file)
+                    await loadFromDrive();
+                    renderCalendar();
+                    showToast(`✅ ${imported.length} événement(s) importé(s)`,'success');
+                } else {
+                    showToast('Aucun événement importé', 'info');
+                }
+            } catch (err) {
+                console.error('importCalendarHeaderBtn error:', err);
+                alert('Erreur import Calendar: ' + (err.message || err));
+            } finally {
+                importCalHeaderBtn.disabled = false;
+                importCalHeaderBtn.textContent = '📥 Importer Calendar';
+            }
+        });
+    }
 
     // Calendar view buttons
     document.getElementById('viewDay')?.addEventListener('click', () => changeCalendarView('day'));
@@ -958,27 +1007,60 @@ MTI CONSULTING
 Email : mticonsulting59@gmail.com
 Téléphone : 07 77 37 17 39`;
 
-        // URL encode
-        const encodedSubject = encodeURIComponent(subject);
-        const encodedBody = encodeURIComponent(body);
+        // Prefer opening Gmail compose with generated PDF so user can attach/review the exact PDF
+        const invoiceObj = {
+            number: invoiceNumber,
+            client: clientName,
+            clientSiret: client && client.siret ? client.siret : '',
+            clientAddress: client && client.address ? client.address : '',
+            date: invoiceDate,
+            dueDate: dueDate,
+            description: '',
+            quantity: 0,
+            unitPrice: 0,
+            total: total
+        };
 
-        // Create mailto link
-        const mailtoLink = `mailto:${emailTo}?subject=${encodedSubject}&body=${encodedBody}`;
+        // Try to open Gmail compose with PDF (this also opens the PDF in a new tab and triggers download)
+        openGmailComposeWithPDF(invoiceObj, emailTo)
+            .then(() => {
+                // Mark invoice as sent if it exists in the invoices array
+                try {
+                    const idx = invoices.findIndex(inv => inv.number === invoiceNumber && inv.client === clientName);
+                    if (idx >= 0) {
+                        invoices[idx].status = 'Envoyée';
+                        saveToDrive();
+                        renderInvoiceList();
+                    }
+                } catch (e) { console.warn('Impossible de marquer la facture envoyée après ouverture compose :', e); }
 
-        // Open in default email client
-        window.location.href = mailtoLink;
+                // Close modal
+                const modal = document.getElementById('emailModal');
+                if (modal) modal.classList.remove('show');
 
-        // Close modal
-        const modal = document.getElementById('emailModal');
-        if (modal) modal.classList.remove('show');
-
-        // Show confirmation and prompt to reset
-        setTimeout(() => {
-            alert('Email préparé et ouvert dans votre client de messagerie. N\'oubliez pas de joindre le PDF de la facture avant l\'envoi !');
-            if (confirm('Voulez-vous créer une nouvelle facture ?')) {
-                resetInvoiceForm();
-            }
-        }, 500);
+                setTimeout(() => {
+                    alert('Gmail ouvert en nouvel onglet. N\'oubliez pas d\'ajouter la pièce jointe PDF si nécessaire, puis envoyer.');
+                    if (confirm('Voulez-vous créer une nouvelle facture ?')) {
+                        resetInvoiceForm();
+                    }
+                }, 300);
+            })
+            .catch(err => {
+                console.error('Erreur ouverture compose Gmail depuis preview:', err);
+                // Fallback to mailto behaviour
+                const encodedSubject = encodeURIComponent(subject);
+                const encodedBody = encodeURIComponent(body);
+                const mailtoLink = `mailto:${emailTo}?subject=${encodedSubject}&body=${encodedBody}`;
+                window.location.href = mailtoLink;
+                const modal = document.getElementById('emailModal');
+                if (modal) modal.classList.remove('show');
+                setTimeout(() => {
+                    alert('Email préparé et ouvert dans votre client de messagerie. N\'oubliez pas de joindre le PDF de la facture avant l\'envoi !');
+                    if (confirm('Voulez-vous créer une nouvelle facture ?')) {
+                        resetInvoiceForm();
+                    }
+                }, 500);
+            });
     });
 }
 
@@ -1094,33 +1176,27 @@ function setupInvoiceSaveHandler() {
             // Prompt after save
             setTimeout(() => {
                 if (confirm('Facture enregistrée ! Voulez-vous envoyer l\'email maintenant ?')) {
-                    // Open Gmail compose with generated PDF for manual validation and send
                     const clientObj = clients.find(c => c.name === invoice.client);
                     const hasEmail = clientObj && clientObj.email_facturation && clientObj.email_facturation.trim() !== '';
 
                     if (hasEmail) {
-                        // Mark as sent once compose is opened and persist
-                        openGmailComposeWithPDF(invoice, clientObj.email_facturation)
-                            .then(() => {
-                                try {
-                                    invoice.status = 'Envoyée';
-                                } catch (e) {}
-                                saveToDrive();
-                                renderInvoiceList();
-                                showToast('✅ Facture marquée \"Envoyée\" et sauvegardée');
-                            })
+                        // Try automatic send via Drive (preferred): generate PDF, save to Drive and send
+                        sendInvoiceViaDrive(invoice, clientObj.email_facturation)
                             .catch(err => {
-                                console.error('Ouverture Gmail échouée:', err);
-                                showToast('⚠️ Impossible d\'ouvrir Gmail, ouverture de l\'aperçu email.', 'error');
-                                currentInvoiceData = {
-                                    clientName: invoice.client,
-                                    invoiceNumber: invoice.number,
-                                    invoiceDate: invoice.date,
-                                    dueDate: invoice.dueDate,
-                                    total: invoice.total,
-                                    client: clientObj
-                                };
-                                showEmailPreview();
+                                console.error('sendInvoiceViaDrive failed:', err);
+                                showToast('⚠️ Envoi via Drive échoué, fallback ouverture compose Gmail', 'error');
+                                openGmailComposeWithPDF(invoice, clientObj.email_facturation).catch(e => {
+                                    console.error('Fallback compose failed:', e);
+                                    currentInvoiceData = {
+                                        clientName: invoice.client,
+                                        invoiceNumber: invoice.number,
+                                        invoiceDate: invoice.date,
+                                        dueDate: invoice.dueDate,
+                                        total: invoice.total,
+                                        client: clientObj
+                                    };
+                                    showEmailPreview();
+                                });
                             });
                     } else {
                         currentInvoiceData = {
@@ -1992,29 +2068,19 @@ function sendInvoiceEmail(index) {
     const contactName = client.contact_name || invoice.client;
     showConfirmation(
         'Envoi par Gmail',
-        `Envoyer la facture #${invoice.number} à ${contactName} (${client.email_facturation}) ?\n\nLe PDF sera généré et envoyé automatiquement via Gmail.`,
+        `Envoyer la facture #${invoice.number} à ${contactName} (${client.email_facturation}) ?\n\nLe PDF sera généré et envoyé automatiquement via Drive.`,
         () => {
-                // Open Gmail compose with PDF for manual validation/send
-                openGmailComposeWithPDF(invoice, client.email_facturation)
-                    .then(() => {
-                        try { invoice.status = 'Envoyée'; } catch(e) {}
-                        saveToDrive();
-                        renderInvoiceList();
-                        showToast('✅ Facture marquée \"Envoyée\" et sauvegardée');
-                    })
-                    .catch(err => {
-                        console.error('Ouverture Gmail échouée depuis liste:', err);
-                        showToast('⚠️ Impossible d\'ouvrir Gmail automatiquement. Ouverture de l\'aperçu.', 'error');
-                        currentInvoiceData = {
-                            clientName: invoice.client,
-                            invoiceNumber: invoice.number,
-                            invoiceDate: invoice.date,
-                            dueDate: invoice.dueDate,
-                            total: invoice.total,
-                            client: client
-                        };
+            // Attempt automatic send via Drive: generate PDF, save to Drive, then send from Drive
+            sendInvoiceViaDrive(invoice, client.email_facturation)
+                .catch(err => {
+                    console.error('Envoi via Drive échoué:', err);
+                    showToast('⚠️ Envoi via Drive échoué, ouverture du compose Gmail en fallback', 'error');
+                    // Fallback to opening Gmail compose with PDF for manual send
+                    openGmailComposeWithPDF(invoice, client.email_facturation).catch(e => {
+                        console.error('Fallback compose failed:', e);
                         showEmailPreview();
                     });
+                });
         }
     );
 }
@@ -2553,6 +2619,47 @@ async function sendInvoiceWithPDF(invoice) {
     }
 }
 
+// Preferred flow: generate PDF, save to Drive, then send email attaching that Drive file
+async function sendInvoiceViaDrive(invoice, toEmail) {
+    if (!invoice) throw new Error('Invoice missing');
+    const client = clients.find(c => c.name === invoice.client) || {};
+    const subject = `Facture ${invoice.number} - MTI CONSULTING`;
+    const body = generateEmailBody(invoice, client || { name: invoice.client });
+
+    // Generate PDF base64
+    const pdfBase64 = await generateInvoicePDFBase64(invoice);
+
+    // Save to Drive via backend
+    const saveRes = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: `Facture_${invoice.number}.pdf`, folderName: 'Factures' });
+    if (!saveRes || saveRes.success === false) {
+        try { showBackendRawResponse(saveRes); } catch (e) {}
+        throw new Error((saveRes && (saveRes.data || saveRes.error)) || 'Erreur sauvegarde PDF sur Drive');
+    }
+
+    const fileId = saveRes.data && saveRes.data.fileId;
+    if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
+
+    // Send email by referencing Drive file
+    const sendRes = await callBackend('sendEmailWithDriveFile', { to: toEmail, subject: subject, body: body, fileId: fileId, fileName: `Facture_${invoice.number}.pdf` });
+    if (!sendRes || sendRes.success === false) {
+        try { showBackendRawResponse(sendRes); } catch (e) {}
+        throw new Error((sendRes && (sendRes.data || sendRes.error)) || 'Erreur envoi email via Drive');
+    }
+
+    // Mark invoice sent and persist
+    try {
+        const idx = invoices.findIndex(inv => inv.number === invoice.number && inv.client === invoice.client);
+        if (idx >= 0) {
+            invoices[idx].status = 'Envoyée';
+            await saveToDrive();
+            renderInvoiceList();
+        }
+    } catch (e) { console.warn('Impossible de marquer/sauver la facture après envoi Drive:', e); }
+
+    showToast('✅ Email envoyé avec pièce jointe depuis Drive', 'success');
+    return sendRes;
+}
+
 // Make sync function global
 window.syncToGoogleSheets = syncToGoogleSheets;
 window.syncToGoogleCalendar = syncToGoogleCalendar;
@@ -2596,20 +2703,152 @@ document.getElementById('cancelConfirm')?.addEventListener('click', () => {
     }
 });
 
-document.getElementById('confirmAction')?.addEventListener('click', () => {
-    if (confirmCallback) {
-        confirmCallback();
-    }
-    document.getElementById('confirmModal')?.classList.remove('show');
-    confirmCallback = null;
+// --- Send mode helpers and preview/confirm flow ---
+function getSendMode() {
+    return localStorage.getItem(SEND_MODE_KEY) || 'drive';
+}
 
-    // Reset button styling
-    const confirmBtn = document.getElementById('confirmAction');
-    if (confirmBtn) {
-        confirmBtn.style.backgroundColor = '';
-        confirmBtn.style.color = '';
+function setSendMode(mode) {
+    if (mode !== 'drive' && mode !== 'manual') return;
+    localStorage.setItem(SEND_MODE_KEY, mode);
+    const sel = document.getElementById('sendModeSelect');
+    if (sel) sel.value = mode;
+}
+
+function initSendModeUI() {
+    const sel = document.getElementById('sendModeSelect');
+    if (!sel) return;
+    sel.value = getSendMode();
+    sel.addEventListener('change', (e) => setSendMode(e.target.value));
+}
+
+function openGmailComposePrefilled(to, subject, body) {
+    try {
+        const url = 'https://mail.google.com/mail/?view=cm&fs=1'
+            + '&to=' + encodeURIComponent(to || '')
+            + '&su=' + encodeURIComponent(subject || '')
+            + '&body=' + encodeURIComponent(body || '');
+        window.open(url, '_blank');
+        return true;
+    } catch (e) {
+        console.error('Impossible d\'ouvrir Gmail compose:', e);
+        return false;
     }
-});
+}
+
+async function saveInvoicesAndRefreshUI() {
+    try {
+        await saveToDrive();
+    } catch (e) { console.warn('saveToDrive failed', e); }
+    try { renderInvoiceList(); } catch (e) {}
+    try { applyFilters(); } catch (e) {}
+    try { renderCharts(); } catch (e) {}
+}
+
+function getCurrentInvoiceForPreview() {
+    // Build an invoice object from the form fields (same structure used elsewhere)
+    try {
+        const clientNameEl = document.getElementById('clientName');
+        const clientAddressEl = document.getElementById('clientAddress');
+        const clientSiretEl = document.getElementById('clientSiret');
+        const serviceDescriptionEl = document.getElementById('serviceDescription');
+        const quantityEl = document.getElementById('quantity');
+        const unitPriceEl = document.getElementById('unitPrice');
+
+        const invoice = {
+            number: invoiceNumberInput ? invoiceNumberInput.value : getNextInvoiceNumber(),
+            client: clientNameEl ? clientNameEl.value : '',
+            clientSiret: clientSiretEl ? clientSiretEl.value : '',
+            clientAddress: clientAddressEl ? clientAddressEl.value : '',
+            date: invoiceDateInput ? invoiceDateInput.value : '',
+            dueDate: dueDateInput ? dueDateInput.value : '',
+            description: serviceDescriptionEl ? serviceDescriptionEl.value : '',
+            quantity: quantityEl ? parseFloat(quantityEl.value) : 0,
+            unitPrice: unitPriceEl ? parseFloat(unitPriceEl.value) : 0,
+            total: calculateTotal(),
+            clientEmail: (clients.find(c => c.name === (clientNameEl ? clientNameEl.value : '')) || {}).email_facturation || ''
+        };
+        return invoice;
+    } catch (e) {
+        console.error('getCurrentInvoiceForPreview error', e);
+        return null;
+    }
+}
+
+// Preview & confirm flow: save PDF to Drive, open preview, then send according to mode
+async function previewAndConfirmSend(invoice) {
+    if (!invoice) throw new Error('Invoice missing');
+
+    // Generate base64 PDF (function returns base64 string)
+    let pdfBase64;
+    try {
+        pdfBase64 = await generateInvoicePDFBase64(invoice);
+    } catch (err) {
+        console.error('generateInvoicePDFBase64 failed', err);
+        alert('Impossible de générer le PDF.');
+        return;
+    }
+
+    const pdfFilename = 'Facture_' + (invoice.number || Date.now()) + '.pdf';
+
+    // Save to Drive
+    const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: pdfFilename, folderName: 'Factures' });
+    if (!saveResp || saveResp.success === false) {
+        try { showBackendRawResponse(saveResp); } catch (e) {}
+        alert('Impossible de sauvegarder la facture sur Drive.');
+        return;
+    }
+
+    const fileUrl = saveResp.data && saveResp.data.fileUrl;
+    const fileId = saveResp.data && saveResp.data.fileId;
+
+    // Open the saved PDF for preview
+    if (fileUrl) window.open(fileUrl, '_blank');
+
+    // Ask confirmation
+    if (!confirm('Facture sauvegardée sur Drive. Voulez-vous envoyer l\'email maintenant ?')) return;
+
+    const to = invoice.clientEmail || '';
+    const subject = 'Facture ' + (invoice.number || '');
+    const body = 'Bonjour,\n\nVeuillez trouver ci-joint la facture ' + (invoice.number || '') + '.\n\nCordialement,\n' + (companyInfo && companyInfo.name ? companyInfo.name : 'MTI CONSULTING');
+
+    const mode = getSendMode();
+    if (mode === 'drive') {
+        // send via Drive file
+        const sendResp = await callBackend('sendEmailWithDriveFile', { to: to, subject: subject, body: body, fileId: fileId, fileName: pdfFilename });
+        if (!sendResp || sendResp.success === false) {
+            try { showBackendRawResponse(sendResp); } catch (e) {}
+            alert('Envoi via serveur échoué. Ouverture du compose Gmail en fallback.');
+            openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+            return;
+        }
+
+        // mark invoice as sent if present
+        try {
+            const idx = invoices.findIndex(inv => inv.number === invoice.number && inv.client === invoice.client);
+            if (idx >= 0) {
+                invoices[idx].status = 'Envoyée';
+                await saveInvoicesAndRefreshUI();
+            }
+        } catch (e) { console.warn('Could not mark invoice sent', e); }
+
+        alert('Email envoyé (via Drive).');
+    } else {
+        // manual mode: open compose Gmail
+        openGmailComposePrefilled(to, subject, 'Bonjour,\n\nVeuillez trouver la facture ' + (invoice.number || '') + ' jointe.\n\nCordialement,');
+        alert('Compose Gmail ouvert. N\'oubliez pas d\'attacher le PDF enregistré sur Drive avant l\'envoi.');
+    }
+}
+
+function initPreviewConfirmButton() {
+    const btn = document.getElementById('previewConfirmSendBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const invoice = getCurrentInvoiceForPreview();
+        if (!invoice) { alert('Aucune facture trouvée pour prévisualisation'); return; }
+        try { await previewAndConfirmSend(invoice); } catch (e) { console.error('previewAndConfirmSend failed', e); alert('Erreur lors de la préparation de l\'envoi'); }
+    });
+}
 
 // PDF Download functionality using iframe print fallback
 function downloadInvoicePDF() {
@@ -2930,6 +3169,10 @@ function initApp() {
     const testBtn = document.getElementById('testBackendBtn');
     if (testBtn) testBtn.addEventListener('click', testBackend);
 
+    // Initialize send mode UI and preview-confirm button
+    try { initSendModeUI(); } catch (e) { console.warn('initSendModeUI failed', e); }
+    try { initPreviewConfirmButton(); } catch (e) { console.warn('initPreviewConfirmButton failed', e); }
+
     // Copy/close buttons exist in DOM; handlers attached globally above via event delegation
 
     // Initial persist attempt
@@ -3017,6 +3260,13 @@ async function sendInvoiceByEmail(index) {
             try { showBackendRawResponse(result); } catch (e) {}
             throw new Error((result && (result.data || result.error)) || 'Unknown error');
         }
+
+        // Mark invoice as sent and persist
+        try {
+            invoices[index].status = 'Envoyée';
+            await saveToDrive();
+            renderInvoiceList();
+        } catch (e) { console.warn('Impossible de marquer/sauver la facture après envoi automatique:', e); }
 
         alert(`✅ Facture envoyée à ${client.email_facturation}`);
     } catch (error) {
