@@ -62,21 +62,16 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 👉 **[Ouvrir l'application](https://mtcdp59.github.io/Factu_MTI_CONSULTING/)**
 
-#### **Configuration rapide (3 méthodes)**
+#### Configuration
 
-**Méthode 1 : Script PowerShell automatique (⚡ Recommandé)**
-```powershell
-.\scripts\deploy-config.ps1
-```
-→ Copie automatiquement votre `config.js` local vers GitHub Pages
+L'application est **pré-configurée** avec les credentials Google API de MTI CONSULTING. Elle fonctionne immédiatement sans configuration supplémentaire !
 
-**Méthode 2 : Interface HTML**
-1. Ouvrez `scripts/deploy-config.html` dans votre navigateur
-2. Cliquez sur "Charger config.js"
-3. Cliquez sur "Déployer la configuration"
+- ✅ Backend Google Apps Script opérationnel
+- ✅ Stockage Google Drive activé
+- ✅ Google Calendar intégré
+- ✅ Toutes les fonctionnalités disponibles
 
-**Méthode 3 : Manuelle**
-- Suivez le **[Guide de démarrage GitHub Pages](docs/DEMARRAGE_GITHUB_PAGES.md)** (5 minutes)
+ℹ️ Les credentials sont hardcodés dans `app.js` (v42 style) et peuvent être modifiés dans l'onglet **Paramètres** si besoin.
 
 ---
 
@@ -94,42 +89,7 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
    cd Factu_MTI_CONSULTING
    ```
 
-2. **Configurer Google Apps Script Backend**
-   - Créer un nouveau projet Google Apps Script
-   - Copier le code de `backend/AppScript.js`
-   - Déployer en tant que Web App
-   - Copier l'URL de déploiement
-
-3. **Configuration (2 fichiers)**
-   
-   📝 **Production vs Développement**
-   
-   - **`config.production.js`** : Committé sur GitHub, utilisé par GitHub Pages ✅
-   - **`config.js`** : Gitignored, remplace la config production en dev local 🔒
-   
-   **Pour le développement local :**
-   ```bash
-   cp config.example.js config.js
-   ```
-   
-   Puis éditez `config.js` avec vos valeurs de test :
-   ```javascript
-   const CONFIG = {
-       GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
-       GOOGLE_CLIENT_SECRET: 'VOTRE_CLIENT_SECRET',
-       BACKEND_URL: 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec'
-   };
-   ```
-   
-   **Obtenir les credentials OAuth2 :**
-   - [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
-   - Créer OAuth 2.0 Client ID (type: Web application)
-   - Ajouter les origines autorisées : `http://localhost:8000`, `http://127.0.0.1:8000`, `https://mtcdp59.github.io`
-   - Copier Client ID et Client Secret
-   
-   ⚠️ `config.js` est dans `.gitignore` et ne sera jamais commité.
-
-4. **Lancer l'application**
+2. **Lancer l'application**
    
    Ouvrir directement `index.html` dans un navigateur, ou utiliser un serveur local :
    ```bash
@@ -141,6 +101,29 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
    ```
    
    Puis ouvrir http://localhost:8000
+
+3. **Configuration (optionnel)**
+   
+   L'application est pré-configurée avec les credentials MTI CONSULTING.
+   
+   Pour utiliser vos propres credentials :
+   - Créer un projet Google Apps Script avec `backend/AppScript.js`
+   - Déployer en tant que Web App (accès: Tout le monde)
+   - Modifier les valeurs dans `app.js` (lignes 4-14) :
+   ```javascript
+   const CONFIG = {
+       BACKEND_URL: 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec',
+       GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
+       GOOGLE_CLIENT_SECRET: 'VOTRE_CLIENT_SECRET',
+       CALENDAR_ID: 'votre.email@gmail.com'
+   };
+   ```
+   
+   **Obtenir les credentials OAuth2 :**
+   - [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+   - Créer OAuth 2.0 Client ID (type: Web application)
+   - Ajouter les origines autorisées : `http://localhost:8000`, `https://mtcdp59.github.io`
+   - Copier Client ID et Client Secret
 
 ## ⚙️ Configuration
 
@@ -301,19 +284,22 @@ Google Drive (persistence cloud)
 
 ## 🔒 Sécurité
 
-⚠️ **Important** :
-- Ne pas committer les vraies credentials Google dans le repo public
-- Utiliser des variables d'environnement ou fichier de config local
-- Le `GOOGLE_CLIENT_SECRET` ne doit jamais être exposé côté client en production
-- Pour un usage réel, utiliser un backend sécurisé avec gestion OAuth server-side
+✅ **Architecture sécurisée** :
+- Backend Google Apps Script avec authentification Google
+- Credentials OAuth2 configurés pour domaines autorisés uniquement
+- Données stockées sur Google Drive (authentification requise)
+- Pas de serveur tiers à maintenir
+- HTTPS natif via GitHub Pages
 
 ## 📊 Statistiques du Projet
 
-- **Lignes de code** : ~5200 (app.js) + ~1500 (index.html)
+- **Lignes de code** : ~5300 (app.js) + ~1500 (index.html) + ~850 (backend)
 - **Fonctionnalités** : 30+
 - **API intégrées** : Google Drive, Gmail, Calendar
 - **Format de données** : JSON
+- **Architecture** : Frontend vanilla JS + Google Apps Script backend (v42 style)
 - **Compatibilité** : Navigateurs modernes (ES6+)
+- **Déploiement** : GitHub Pages (gratuit)
 
 ## 🤝 Contribution
 
@@ -333,7 +319,8 @@ MIT License - Voir LICENSE pour plus de détails
 **MTI CONSULTING**
 - Email : mticonsulting59@gmail.com
 - Téléphone : 07 77 37 17 39
-- SIRET : [Votre SIRET]
+- SIRET : 994 149 904 00017
+- Adresse : 13A rue du Général de Gaulle, 59110 La Madeleine
 
 ## 🙏 Remerciements
 

@@ -1,14 +1,16 @@
 # Copilot Instructions for MTI CONSULTING
 
 ## Project Overview
-This is a browser-based freelance management tool for MTI CONSULTING. The app is built with vanilla JavaScript (`app.js`) and a single HTML file (`index.html`). It stores data in `localStorage` and syncs with a Google Apps Script backend via REST API.
+This is a browser-based freelance management tool for MTI CONSULTING. The app is built with vanilla JavaScript (`app.js`) and a single HTML file (`index.html`). It stores data in Google Drive via a Google Apps Script backend (v42 style - no CORS handling).
 
-## Architecture & Data Flow
+## Architecture & Data Flow (v42 Style)
 - **Frontend only**: No Node.js, no build system, no package manager.
-- **Data Storage**: Uses browser `localStorage` for clients, invoices, tasks, company info, and tax settings.
-- **Sync**: Communicates with Google Apps Script backend (`BACKEND_URL` in `app.js`) for data persistence and remote operations.
-- **Company Info**: Hardcoded defaults for MTI CONSULTING, loaded from `localStorage` if available.
-- **Tax Settings**: Defaults provided, can be customized and saved in `localStorage`.
+- **Data Storage**: Google Drive (`mti_data.json`) via Google Apps Script backend.
+- **Sync**: Communicates with Google Apps Script backend (hardcoded `BACKEND_URL` in `app.js`) for all operations.
+- **Company Info**: Hardcoded defaults for MTI CONSULTING in `app.js` (name, SIRET, address, IBAN, BIC, etc.).
+- **Tax Settings**: Defaults provided in `app.js`, can be customized and saved.
+- **Configuration**: Credentials hardcodés dans `app.js` (v42 style), modifiables via l'onglet Paramètres (sauvegarde dans localStorage).
+- **Backend**: Google Apps Script sans gestion CORS (retours de réponses directs via `ContentService`).
 
 ## Developer Workflows
 - **No build step**: Directly open `index.html` in a browser to run the app.
@@ -46,6 +48,13 @@ function saveClients() {
 // Sync with backend
 fetch(BACKEND_URL, { method: 'POST', body: ... })
 ```
+
+## v42 Style Architecture
+- **No CORS handling**: Backend returns responses directly without `setHeader()` calls
+- **Hardcoded credentials**: All config in `app.js` (lines 4-14), modifiable via UI
+- **Empty initial data**: `clients = []`, `invoices = []`, `tasks = []` (loaded from Drive at startup)
+- **Company info defaults**: Full MTI CONSULTING info hardcoded (SIRET, address, IBAN, BIC)
+- **GitHub Pages ready**: Works immediately without configuration files
 
 ---
 **For AI agents:**

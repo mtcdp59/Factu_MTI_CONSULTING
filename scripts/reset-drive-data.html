@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Drive Data - MTI CONSULTING</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #21808d;
+            margin-bottom: 20px;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+            display: none;
+        }
+        button {
+            background: #21808d;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #1d6e78;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+        }
+        .log-success { color: #28a745; }
+        .log-error { color: #dc3545; }
+        .log-info { color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Reset Drive Data - MTI CONSULTING</h1>
+        
+        <div class="warning">
+            <strong>⚠️ Attention !</strong><br>
+            Cette opération va <strong>supprimer toutes les données de démonstration</strong> (Entreprise ABC, Société XYZ) de votre fichier Google Drive <code>mti_data.json</code> et les remplacer par des tableaux vides avec vos informations par défaut MTI CONSULTING.
+        </div>
+        
+        <p><strong>Cette action va :</strong></p>
+        <ul>
+            <li>✅ Garder vos informations entreprise (MTI CONSULTING, SIRET, adresse, IBAN, BIC)</li>
+            <li>✅ Garder vos paramètres fiscaux (barème IRPP, charges, etc.)</li>
+            <li>❌ Supprimer tous les clients de démo</li>
+            <li>❌ Supprimer toutes les factures de démo</li>
+            <li>❌ Supprimer toutes les tâches de démo</li>
+        </ul>
+        
+        <button id="loadBtn" onclick="loadCurrentData()">📂 Voir les données actuelles Drive</button>
+        <button id="importSheetsBtn" onclick="importFromSheets()">📊 Importer depuis Sheets</button>
+        <button id="resetBtn" onclick="resetDriveData()" style="display:none;">🧹 Nettoyer les données de démo</button>
+        <button onclick="location.reload()">🔄 Annuler</button>
+        
+        <div class="success" id="successMsg">
+            <strong>✅ Succès !</strong><br>
+            Les données de démo ont été supprimées. Rechargez votre application MTI CONSULTING pour voir les changements.
+        </div>
+        
+        <div id="currentData" style="display:none; margin-top: 20px; background: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #dee2e6;">
+            <h3>📊 Données actuelles sur Drive</h3>
+            <p><strong>Clients :</strong> <span id="clientsCount">-</span></p>
+            <p><strong>Factures :</strong> <span id="invoicesCount">-</span></p>
+            <p><strong>Tâches :</strong> <span id="tasksCount">-</span></p>
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; font-weight: bold;">Voir le JSON complet</summary>
+                <pre id="jsonData" style="background: white; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;"></pre>
+            </details>
+        </div>
+        
+        <div id="sheetsData" style="display:none; margin-top: 20px; background: #e7f3ff; padding: 15px; border-radius: 4px; border: 1px solid #007bff;">
+            <h3>📊 Données Google Sheets</h3>
+            <p><strong>Clients importés :</strong> <span id="sheetsClientsCount">-</span></p>
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; font-weight: bold;">Voir les clients</summary>
+                <pre id="sheetsClientsData" style="background: white; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;"></pre>
+            </details>
+            <button onclick="mergeSheetsToCleanData()" style="margin-top: 10px;">✅ Utiliser ces clients + données propres</button>
+        </div>
+        
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec';
+        const SHEETS_ID = '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE';
+        
+        let importedClients = [];
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        async function loadCurrentData() {
+            const btn = document.getElementById('loadBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Chargement...';
+            
+            log('Chargement des données depuis Drive...', 'info');
+            
+            try {
+                const response = await fetch(BACKEND_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    body: JSON.stringify({
+                        action: 'loadFromDrive'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.data;
+                    
+                    document.getElementById('clientsCount').textContent = (data.clients || []).length;
+                    document.getElementById('invoicesCount').textContent = (data.invoices || []).length;
+                    document.getElementById('tasksCount').textContent = (data.tasks || []).length;
+                    document.getElementById('jsonData').textContent = JSON.stringify(data, null, 2);
+                    
+                    document.getElementById('currentData').style.display = 'block';
+                    document.getElementById('resetBtn').style.display = 'inline-block';
+                    
+                    log('✅ Données chargées avec succès', 'success');
+                    log(`Trouvé : ${data.clients.length} clients, ${data.invoices.length} factures, ${data.tasks.length} tâches`, 'info');
+                    
+                    btn.textContent = '📂 Données chargées';
+                } else {
+                    throw new Error(result.data || 'Erreur inconnue');
+                }
+            } catch (error) {
+                log('❌ Erreur : ' + error.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '📂 Réessayer le chargement';
+            }
+        }
+        
+        async function importFromSheets() {
+            const btn = document.getElementById('importSheetsBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Import Sheets...';
+            
+            log('Import des clients depuis Google Sheets...', 'info');
+            
+            try {
+                const response = await fetch(BACKEND_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    body: JSON.stringify({
+                        action: 'importClients',
+                        sheetId: SHEETS_ID
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    importedClients = result.data.clients || [];
+                    
+                    document.getElementById('sheetsClientsCount').textContent = importedClients.length;
+                    document.getElementById('sheetsClientsData').textContent = JSON.stringify(importedClients, null, 2);
+                    
+                    document.getElementById('sheetsData').style.display = 'block';
+                    
+                    log(`✅ ${importedClients.length} clients importés depuis Sheets`, 'success');
+                    
+                    btn.textContent = '📊 Clients importés';
+                } else {
+                    throw new Error(result.data || 'Erreur import Sheets');
+                }
+            } catch (error) {
+                log('❌ Erreur : ' + error.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '📊 Réessayer import Sheets';
+            }
+        }
+        
+        async function mergeSheetsToCleanData() {
+            log('Fusion des clients Sheets avec données propres...', 'info');
+            
+            const cleanData = {
+                clients: importedClients,
+                invoices: [],
+                tasks: [],
+                companyInfo: {
+                    name: 'MTI CONSULTING',
+                    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+                    siret: '994 149 904 00017',
+                    address: '13A rue du Général de Gaulle',
+                    postalCode: '59110',
+                    city: 'La Madeleine',
+                    email: 'mticonsulting59@gmail.com',
+                    phone: '07 77 37 17 39',
+                    iban: 'FR76 4061 8804 9700 0403 3099 557',
+                    bic: 'BOUSFRPPXXX'
+                },
+                taxSettings: {
+                    tauxIS: 0,
+                    versementLiberatoire: 2.2,
+                    prorationMensuelle: 8.33,
+                    cfeAnnuel: 600,
+                    acreActif: 11.6,
+                    acreInactif: 24.6,
+                    irppBareme: [
+                        { min: 0, max: 11497, taux: 0 },
+                        { min: 11498, max: 29315, taux: 11 },
+                        { min: 29316, max: 83823, taux: 30 },
+                        { min: 83824, max: 180294, taux: 41 },
+                        { min: 180295, max: null, taux: 45 }
+                    ],
+                    bncAbattement: 34
+                }
+            };
+            
+            await saveToDrive(cleanData);
+        }
+        
+        async function saveToDrive(data) {
+            log('Sauvegarde vers Drive...', 'info');
+            
+            try {
+                const response = await fetch(BACKEND_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    body: JSON.stringify({
+                        action: 'saveToDrive',
+                        data: data
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    log('✅ Données sauvegardées sur Drive !', 'success');
+                    log(`${data.clients.length} clients, ${data.invoices.length} factures, ${data.tasks.length} tâches`, 'success');
+                    document.getElementById('successMsg').style.display = 'block';
+                } else {
+                    throw new Error(result.data || 'Erreur sauvegarde');
+                }
+            } catch (error) {
+                log('❌ Erreur : ' + error.message, 'error');
+            }
+        }
+        
+        async function resetDriveData() {
+            const btn = document.getElementById('resetBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Nettoyage en cours...';
+            
+            log('Démarrage du nettoyage (tableaux vides)...', 'info');
+            
+            const cleanData = {
+                clients: [],
+                invoices: [],
+                tasks: [],
+                companyInfo: {
+                    name: 'MTI CONSULTING',
+                    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+                    siret: '994 149 904 00017',
+                    address: '13A rue du Général de Gaulle',
+                    postalCode: '59110',
+                    city: 'La Madeleine',
+                    email: 'mticonsulting59@gmail.com',
+                    phone: '07 77 37 17 39',
+                    iban: 'FR76 4061 8804 9700 0403 3099 557',
+                    bic: 'BOUSFRPPXXX'
+                },
+                taxSettings: {
+                    tauxIS: 0,
+                    versementLiberatoire: 2.2,
+                    prorationMensuelle: 8.33,
+                    cfeAnnuel: 600,
+                    acreActif: 11.6,
+                    acreInactif: 24.6,
+                    irppBareme: [
+                        { min: 0, max: 11497, taux: 0 },
+                        { min: 11498, max: 29315, taux: 11 },
+                        { min: 29316, max: 83823, taux: 30 },
+                        { min: 83824, max: 180294, taux: 41 },
+                        { min: 180295, max: null, taux: 45 }
+                    ],
+                    bncAbattement: 34
+                }
+            };
+            
+            await saveToDrive(cleanData);
+            btn.textContent = '✅ Nettoyage terminé';
+        }
+    </script>
+</body>
+</html>

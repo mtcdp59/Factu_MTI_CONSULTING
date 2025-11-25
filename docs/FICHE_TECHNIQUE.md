@@ -35,9 +35,10 @@ Factu_MTI_CONSULTING/
 │   │   └── Scripts externes       # CDN libraries
 │   └── <script src="app.js">      # Logique métier
 │
-├── app.js                          # Logique complète (5159 lignes)
-│   ├── CONFIG (lignes 4-13)       # Backend URL, OAuth2 credentials
-│   ├── Data structures (340-370)  # clients[], invoices[], tasks[], companyInfo, taxSettings
+├── app.js                          # Logique complète (~5300 lignes)
+│   ├── CONFIG (lignes 4-14)       # Backend URL, OAuth2 credentials (hardcodés v42 style)
+│   ├── Data structures (267-280)  # clients[], invoices[], tasks[] (vides par défaut)
+│   ├── Company info (361-371)     # companyInfo avec toutes les valeurs par défaut (SIRET, adresse, IBAN, BIC)
 │   ├── Google APIs (400-800)      # Calendar, Drive, Gmail integration
 │   ├── Invoice management         # CRUD, PDF generation, multi-line items
 │   ├── Tax calculator             # IRPP progressif, BNC, comparaison
@@ -57,71 +58,68 @@ Factu_MTI_CONSULTING/
 
 ## 🔑 Points d'entrée et Configuration
 
-### 1. Configuration Backend (app.js + config.js)
+### 1. Configuration Backend (app.js - v42 style)
 
-**Fichier `config.js` (à créer, non commité)** :
+**Credentials hardcodés dans app.js (lignes 4-14)** :
 ```javascript
 const CONFIG = {
-    GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: 'VOTRE_CLIENT_SECRET',
-    BACKEND_URL: 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec'
-};
-```
-
-**Valeurs par défaut dans app.js** :
-```javascript
-const CONFIG_DEFAULTS = {
-    BACKEND_URL: 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec',
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
-    SHEETS_ID: 'VOTRE_SHEETS_ID',
-    CALENDAR_ID: 'votre-email@gmail.com',
-    GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: 'VOTRE_CLIENT_SECRET',
+    SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
+    CALENDAR_ID: 'mticonsulting59@gmail.com',
+    GOOGLE_CLIENT_ID: '913475747202-dg6rnc0hhu16thk3gckbnqkdcoei2a1n.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: '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',
     GOOGLE_API_KEY: '',
-    GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events'
+    GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events',
+    DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
 };
-
-// Fusion avec config.js
-const CONFIG = typeof window !== 'undefined' && window.CONFIG 
-    ? { ...CONFIG_DEFAULTS, ...window.CONFIG } 
-    : CONFIG_DEFAULTS;
 ```
 
-**Configuration requise** :
-1. Copier `config.example.js` → `config.js`
-2. Remplir avec les vraies valeurs :
-   - `BACKEND_URL` : URL du script Apps Script déployé
-   - `CALENDAR_ID` : Email du calendrier Google
-   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` : Credentials OAuth2 (Google Cloud Console)
-3. Ne JAMAIS commiter `config.js` (déjà dans .gitignore)
+**Architecture v42** :
+- ✅ Pas de fichier `config.js` externe
+- ✅ Credentials hardcodés directement dans `app.js`
+- ✅ Modifiables via l'onglet **Paramètres** (sauvegarde dans localStorage)
+- ✅ GitHub Pages fonctionne immédiatement sans configuration
+- ✅ Backend Google Apps Script sans gestion CORS (retours directs)
 
-### 2. Fonction d'initialisation (app.js ligne 4747)
+### 2. Fonction d'initialisation (app.js ligne ~4900)
 
 ```javascript
 document.addEventListener('DOMContentLoaded', async function() {
-    // 1. Vérification backend storage
-    await callBackend('ensureStorage');
+    console.log('🚀 Initialisation MTI CONSULTING v2.0...');
     
-    // 2. Chargement données depuis Drive
+    // 1. Vérification backend storage
+    const storageCheck = await callBackend('ensureStorage');
+    if (storageCheck.success) {
+        console.log('✅ Drive storage verified:', storageCheck.data);
+    }
+    
+    // 2. Chargement données depuis Drive (écrase les tableaux vides)
     await loadFromDrive();
     
     // 3. Initialisation UI
     initApp();
+    
+    console.log('✅ Application prête');
 });
 ```
 
 **Ordre critique** :
-1. Backend vérifié (`ensureStorage`)
-2. Données chargées (`loadFromDrive`)
-3. UI initialisée (`initApp`)
+1. Backend vérifié (`ensureStorage` - crée le fichier `mti_data.json` sur Drive si absent)
+2. Données chargées (`loadFromDrive` - charge clients, invoices, tasks depuis Drive)
+3. UI initialisée (`initApp` - affiche les données dans les tableaux)
 
 ---
 
 ## 📊 Structures de Données
 
-### Clients (app.js ligne 271)
+### Clients (app.js ligne 267 - vide par défaut)
 
 ```javascript
+// Initialisé vide, chargé depuis Drive au démarrage
+let clients = [];
+
+// Structure après chargement depuis Drive :
 {
     name: "Nom Client",
     siret: "123 456 789 00012",
@@ -133,9 +131,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 }
 ```
 
-### Factures (app.js ligne 279)
+### Factures (app.js ligne 268 - vide par défaut)
 
 ```javascript
+// Initialisé vide, chargé depuis Drive au démarrage
+let invoices = [];
+
+// Structure après chargement depuis Drive :
 {
     number: "2024-001",
     client: "Nom Client",
