@@ -1,15 +1,17 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "proxy/index.js",
-      "use": "@vercel/node"
+  "functions": {
+    "proxy/index.js": {
+      "runtime": "@vercel/node@18"
     }
-  ],
-  "routes": [
+  },
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "proxy/index.js"
+      "source": "/api",
+      "destination": "/proxy/index.js"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/proxy/index.js"
     }
   ]
 }
