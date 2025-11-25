@@ -49,6 +49,21 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### 🔒 Sécurité
 - Validation stricte avant génération PDF (client, items, montant > 0)
 - .gitignore pour credentials et données sensibles
+- **Configuration localStorage** : Secrets OAuth2 externalisés (config.js local + localStorage pour GitHub Pages)
+
+---
+
+## [2.0.1] - 2025-11-25
+
+### 🐛 Correctif
+- **Configuration GitHub Pages** : Interface de configuration technique dans Paramètres
+  - Champs : Backend URL, Client ID, Client Secret, Calendar ID
+  - Sauvegarde dans `localStorage` pour GitHub Pages
+  - Priorité : `config.js` (local) > `localStorage` (GitHub Pages) > defaults
+  - Bouton "🧪 Tester Backend" pour vérifier la connexion
+  - Message d'avertissement si configuration manquante au démarrage
+  - Documentation intégrée dans l'interface
+- **Résout** : Erreur "Impossible de contacter le BACKEND" sur GitHub Pages
 
 ---
 
