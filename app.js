@@ -16,10 +16,47 @@ const CONFIG_DEFAULTS = {
     GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events'
 };
 
-// Fusionner avec les valeurs réelles de config.js (si le fichier existe)
-const CONFIG = typeof window !== 'undefined' && window.CONFIG 
-    ? { ...CONFIG_DEFAULTS, ...window.CONFIG } 
-    : CONFIG_DEFAULTS;
+// Charger la configuration depuis localStorage (pour GitHub Pages) ou window.CONFIG (pour fichier local)
+function loadConfigFromStorage() {
+    const storedConfig = localStorage.getItem('mti_app_config');
+    if (storedConfig) {
+        try {
+            return JSON.parse(storedConfig);
+        } catch (e) {
+            console.warn('Configuration invalide dans localStorage');
+        }
+    }
+    return null;
+}
+
+// Sauvegarder la configuration dans localStorage
+function saveConfigToStorage(config) {
+    try {
+        localStorage.setItem('mti_app_config', JSON.stringify(config));
+        console.log('✅ Configuration sauvegardée dans localStorage');
+    } catch (e) {
+        console.error('Impossible de sauvegarder la configuration:', e);
+    }
+}
+
+// Fusionner avec les valeurs réelles de config.js (si le fichier existe) ou localStorage
+let CONFIG = CONFIG_DEFAULTS;
+if (typeof window !== 'undefined') {
+    // Priorité : config.js (développement local) > localStorage (GitHub Pages) > defaults
+    if (window.CONFIG) {
+        CONFIG = { ...CONFIG_DEFAULTS, ...window.CONFIG };
+        console.log('✅ Configuration chargée depuis config.js');
+    } else {
+        const storedConfig = loadConfigFromStorage();
+        if (storedConfig) {
+            CONFIG = { ...CONFIG_DEFAULTS, ...storedConfig };
+            console.log('✅ Configuration chargée depuis localStorage');
+        } else {
+            console.warn('⚠️ Aucune configuration trouvée - utilisation des valeurs par défaut');
+            console.warn('💡 Configurez l\'application dans l\'onglet Paramètres');
+        }
+    }
+}
 
 function getConfiguredCalendarId() {
     return localStorage.getItem('mti_calendar_id') || CONFIG.CALENDAR_ID;
@@ -3381,7 +3418,58 @@ function setupFilterListeners() {
 }
 
 // PARAMÈTRES - Settings Management
+
+// Charger la configuration technique dans l'UI
+function loadTechnicalConfig() {
+    if (document.getElementById('configBackendURL')) {
+        document.getElementById('configBackendURL').value = CONFIG.BACKEND_URL || '';
+        document.getElementById('configClientID').value = CONFIG.GOOGLE_CLIENT_ID || '';
+        document.getElementById('configClientSecret').value = CONFIG.GOOGLE_CLIENT_SECRET || '';
+        document.getElementById('configCalendarID').value = CONFIG.CALENDAR_ID || '';
+    }
+}
+
+// Sauvegarder la configuration technique
+function saveTechnicalConfig() {
+    if (!document.getElementById('configBackendURL')) return;
+    
+    const newConfig = {
+        BACKEND_URL: document.getElementById('configBackendURL').value.trim(),
+        GOOGLE_CLIENT_ID: document.getElementById('configClientID').value.trim(),
+        GOOGLE_CLIENT_SECRET: document.getElementById('configClientSecret').value.trim(),
+        CALENDAR_ID: document.getElementById('configCalendarID').value.trim(),
+        DRIVE_FILE_NAME: CONFIG.DRIVE_FILE_NAME, // Garder les valeurs fixes
+        SHEETS_ID: CONFIG.SHEETS_ID,
+        GOOGLE_API_KEY: CONFIG.GOOGLE_API_KEY,
+        GOOGLE_SCOPES: CONFIG.GOOGLE_SCOPES
+    };
+    
+    // Validation basique
+    if (!newConfig.BACKEND_URL || !newConfig.BACKEND_URL.startsWith('https://script.google.com')) {
+        alert('❌ Backend URL invalide. Format attendu: https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec');
+        return false;
+    }
+    
+    if (!newConfig.GOOGLE_CLIENT_ID || !newConfig.GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com')) {
+        alert('❌ Client ID invalide. Format attendu: XXXX.apps.googleusercontent.com');
+        return false;
+    }
+    
+    // Sauvegarder dans localStorage
+    saveConfigToStorage(newConfig);
+    
+    // Mettre à jour l'objet CONFIG global
+    Object.assign(CONFIG, newConfig);
+    
+    showToast('✅ Configuration sauvegardée ! Rechargez la page pour appliquer les changements.', 'success');
+    return true;
+}
+
 function loadCompanySettings() {
+    // Charger la config technique
+    loadTechnicalConfig();
+    
+    // Charger les infos entreprise
     if (document.getElementById('logoUrl')) {
         document.getElementById('logoUrl').value = companyInfo.logoUrl || '';
         document.getElementById('companyLegalSiret').value = companyInfo.siret || '[SIRET à venir]';
@@ -3558,6 +3646,49 @@ if (document.getElementById('saveSettings')) {
     document.getElementById('resetSettings').addEventListener('click', resetSettings);
     document.getElementById('cfeAnnuel')?.addEventListener('input', updateCFEMensuel);
     document.getElementById('resetIRPPBareme')?.addEventListener('click', resetIRPPBareme);
+}
+
+// Configuration technique listeners
+if (document.getElementById('saveConfigBtn')) {
+    document.getElementById('saveConfigBtn').addEventListener('click', () => {
+        if (saveTechnicalConfig()) {
+            // Proposer de recharger la page pour appliquer les changements
+            if (confirm('Configuration sauvegardée ! Voulez-vous recharger la page pour appliquer les changements ?')) {
+                window.location.reload();
+            }
+        }
+    });
+}
+
+if (document.getElementById('testConfigBtn')) {
+    document.getElementById('testConfigBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('testConfigBtn');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳ Test en cours...';
+        
+        try {
+            // Tester la connexion au backend
+            const testResult = await fetch(CONFIG.BACKEND_URL + '?action=test', { 
+                method: 'GET',
+                mode: 'cors'
+            });
+            
+            if (testResult.ok) {
+                const text = await testResult.text();
+                showToast('✅ Backend accessible ! Réponse: ' + text.substring(0, 50) + '...', 'success');
+                console.log('Test backend réponse:', text);
+            } else {
+                throw new Error('Status: ' + testResult.status);
+            }
+        } catch (error) {
+            console.error('Test backend failed:', error);
+            showToast('❌ Backend inaccessible. Vérifiez l\'URL et les paramètres CORS.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    });
 }
 
 // Logo file conversion to data URI
@@ -4791,6 +4922,12 @@ function initApp() {
 // Start the app on DOM ready
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Initialisation MTI CONSULTING v2.0...');
+    
+    // Afficher un message si aucune configuration n'est trouvée
+    if (CONFIG.BACKEND_URL === 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec') {
+        showToast('⚠️ Configuration requise : Rendez-vous dans l\'onglet Paramètres pour configurer l\'application', 'info');
+    }
+    
     // Ensure backend storage exists (Drive folder + data file), then load from Drive
     try {
         // First try the standard POST-based call

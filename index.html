@@ -1124,8 +1124,52 @@ tr:hover {
             <div class="card">
                 <h2 class="card-title">⚙️ Paramètres</h2>
                 
+                <!-- SECTION 0: CONFIGURATION TECHNIQUE -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: 0; margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-error); color: var(--color-error);">🔧 Configuration Technique (Requis)</h3>
+                <div class="form-group">
+                    <label class="form-label" style="color: var(--color-error); font-weight: var(--font-weight-semibold);">
+                        Backend URL (Google Apps Script) *
+                        <span style="cursor: pointer; margin-left: 6px; color: var(--color-error);" title="URL de déploiement de votre script Apps Script. Voir docs/FICHE_TECHNIQUE.md pour les instructions.">
+                            ⚠️
+                        </span>
+                    </label>
+                    <input type="text" class="form-control" id="configBackendURL" placeholder="https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Obligatoire pour sauvegarder sur Google Drive</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="color: var(--color-error); font-weight: var(--font-weight-semibold);">
+                        Google Client ID (OAuth2) *
+                        <span style="cursor: pointer; margin-left: 6px; color: var(--color-error);" title="Client ID OAuth2 depuis Google Cloud Console. Requis pour Google Calendar.">
+                            ⚠️
+                        </span>
+                    </label>
+                    <input type="text" class="form-control" id="configClientID" placeholder="VOTRE_CLIENT_ID.apps.googleusercontent.com">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Obligatoire pour Google Calendar</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Google Client Secret (OAuth2)</label>
+                    <input type="password" class="form-control" id="configClientSecret" placeholder="VOTRE_CLIENT_SECRET">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Optionnel, requis pour certaines opérations Calendar</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Calendar ID (Email)</label>
+                    <input type="email" class="form-control" id="configCalendarID" placeholder="votre.email@gmail.com">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Email du calendrier Google à synchroniser (défaut : votre email principal)</small>
+                </div>
+                <div style="margin-top: var(--space-12); padding: var(--space-12); background: rgba(220, 21, 47, 0.1); border-left: 3px solid var(--color-error); border-radius: var(--radius-base);">
+                    <button type="button" class="btn btn-primary" id="saveConfigBtn" style="margin-right: var(--space-8);">💾 Sauvegarder la configuration</button>
+                    <button type="button" class="btn btn-secondary" id="testConfigBtn">🧪 Tester Backend</button>
+                    <p style="margin-top: var(--space-12); font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.5;">
+                        <strong>ℹ️ Où trouver ces valeurs ?</strong><br>
+                        • <strong>Backend URL</strong> : Déployer backend/AppScript.js en tant que Web App<br>
+                        • <strong>Client ID/Secret</strong> : Google Cloud Console → APIs & Services → Credentials<br>
+                        • <strong>Calendar ID</strong> : Paramètres de votre calendrier Google<br>
+                        📖 <a href="docs/FICHE_TECHNIQUE.md" target="_blank" style="color: var(--color-primary);">Voir la documentation complète</a>
+                    </p>
+                </div>
+                
                 <!-- SECTION 1: INFORMATIONS ENTREPRISE -->
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: 0; margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📄 Informations Entreprise</h3>
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📄 Informations Entreprise</h3>
                 <div class="form-group" style="position: relative;">
                     <label class="form-label">
                         Logo URL (optionnel)
