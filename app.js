@@ -67,6 +67,11 @@ const SEND_MODE_KEY = 'mti_send_mode';
 
 // Helper to call the Apps Script backend with better error handling and CORS guidance
 async function callBackend(action, payload = {}) {
+    // Vérifier si le backend est configuré
+    if (!CONFIG.BACKEND_URL || CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID')) {
+        throw new Error('Backend non configuré. Allez dans Paramètres → Configuration Technique');
+    }
+    
     try {
         const body = JSON.stringify(Object.assign({ action }, payload));
         console.debug('Calling backend:', CONFIG.BACKEND_URL, body);
@@ -4571,10 +4576,10 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
         ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
 
-    // Force local logo file - always use MTI_CONSULTING.png unless data-URI is provided
+    // Force local logo file - always use assets/images/MTI_CONSULTING.png unless data-URI is provided
     const logoSrc = companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:') 
         ? companyInfo.logoUrl 
-        : 'MTI_CONSULTING.png';
+        : 'assets/images/MTI_CONSULTING.png';
     const logoHTML = `<img src="${logoSrc}" style="max-width: 180px; max-height: 90px; object-fit: contain; margin-bottom: 8px; display: block;" crossorigin="anonymous">`;
 
     return `<!doctype html>
@@ -4924,51 +4929,65 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Initialisation MTI CONSULTING v2.0...');
     
     // Afficher un message si aucune configuration n'est trouvée
-    if (CONFIG.BACKEND_URL === 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec') {
-        showToast('⚠️ Configuration requise : Rendez-vous dans l\'onglet Paramètres pour configurer l\'application', 'info');
+    if (CONFIG.BACKEND_URL === 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec' || 
+        CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID')) {
+        console.warn('⚠️ Application non configurée - les fonctionnalités Drive/Calendar ne fonctionneront pas');
+        showToast('⚠️ Configuration requise : Rendez-vous dans Paramètres → Configuration Technique', 'info');
+        
+        // Basculer automatiquement sur l'onglet Paramètres après 2 secondes
+        setTimeout(() => {
+            const parametresTab = document.querySelector('[data-tab="parametres"]');
+            if (parametresTab) {
+                parametresTab.click();
+                showToast('👆 Configurez ici votre Backend URL et OAuth2', 'info');
+            }
+        }, 2000);
     }
     
-    // Ensure backend storage exists (Drive folder + data file), then load from Drive
-    try {
-        // First try the standard POST-based call
+    // Si le backend n'est pas configuré, skip les appels Drive et initialiser en mode dégradé
+    const isConfigured = CONFIG.BACKEND_URL && !CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID');
+    
+    if (isConfigured) {
+        // Backend configuré : vérifier le stockage Drive
         try {
-            const ensure = await callBackend('ensureStorage');
-            if (ensure && ensure.success) {
-                console.log('Drive storage verified (POST):', ensure.data);
-                showToast('✅ Stockage Drive vérifié (backend)', 'success');
-            } else {
-                console.warn('ensureStorage (POST) returned error:', ensure);
-                throw new Error('ensureStorage POST failed');
-            }
-        } catch (postErr) {
-            // Likely CORS / network issue — try JSONP fallback
-            console.warn('POST ensureStorage failed, trying JSONP fallback:', postErr);
+            // First try the standard POST-based call
             try {
-                const ensureJsonp = await callBackendJSONP('ensureStorage');
-                if (ensureJsonp && ensureJsonp.success) {
-                    console.log('Drive storage verified (JSONP):', ensureJsonp.data);
-                    const ids = ensureJsonp.data || {};
-                    showToast('✅ Stockage Drive vérifié (JSONP). dossier: ' + (ids.folderId || 'n/a'), 'success');
-                } else {
-                    console.warn('ensureStorage (JSONP) returned error:', ensureJsonp);
-                    showToast('⚠️ Vérification stockage Drive: problème (JSONP)', 'info');
+                const ensure = await callBackend('ensureStorage');
+                if (ensure && ensure.success) {
+                    console.log('✅ Drive storage verified:', ensure.data);
+                    showToast('✅ Stockage Drive vérifié', 'success');
                 }
-            } catch (jsonpErr) {
-                console.error('JSONP ensureStorage failed:', jsonpErr);
-                showToast('⚠️ Impossible de vérifier le stockage Drive (CORS).', 'error');
+            } catch (postErr) {
+                // Likely CORS / network issue — try JSONP fallback
+                console.warn('POST ensureStorage failed, trying JSONP fallback');
+                try {
+                    const ensureJsonp = await callBackendJSONP('ensureStorage');
+                    if (ensureJsonp && ensureJsonp.success) {
+                        console.log('✅ Drive storage verified (JSONP)');
+                        showToast('✅ Stockage Drive vérifié (JSONP)', 'success');
+                    }
+                } catch (jsonpErr) {
+                    console.warn('JSONP ensureStorage failed:', jsonpErr.message);
+                }
             }
-        }
 
-        // Charger depuis Drive
-        await loadFromDrive();
+            // Charger depuis Drive
+            await loadFromDrive();
+        } catch (e) {
+            console.warn('Erreur lors du chargement Drive:', e.message);
+        }
+    } else {
+        // Backend non configuré : mode dégradé (localStorage uniquement)
+        console.log('📴 Mode hors ligne : Backend non configuré');
+    }
+    
+    // Toujours initialiser l'app (même en mode dégradé)
+    try {
         initApp();
-        console.log('✅ Application prête');
+        console.log('✅ Application prête' + (isConfigured ? '' : ' (mode hors ligne)'));
     } catch (e) {
-        console.error('Erreur verify storage / init sequence:', e);
-        showToast('Erreur d\'initialisation (voir console)', 'error');
-        // Still attempt to continue initialization
-        try { await loadFromDrive(); } catch (ee) { console.warn('loadFromDrive failed during fallback init:', ee); }
-        try { initApp(); } catch (ee) { console.warn('initApp failed during fallback init:', ee); }
+        console.error('Erreur initialisation app:', e);
+        showToast('Erreur d\'initialisation', 'error');
     }
 });
 
