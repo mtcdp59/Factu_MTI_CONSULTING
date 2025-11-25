@@ -360,15 +360,15 @@ let useAppCalendar = false; // true = app calendar (day/week/month), false = Ful
 // Company info - now editable via settings
 let companyInfo = {
     name: 'MTI CONSULTING',
-    logoUrl: '',
-    siret: '[SIRET à venir]',
-    address: '[Adresse]',
-    postalCode: '[Code postal]',
-    city: '[Ville]',
+    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+    siret: '994 149 904 00017',
+    address: '13A rue du Général de Gaulle',
+    postalCode: '59110',
+    city: 'La Madeleine',
     email: 'mticonsulting59@gmail.com',
     phone: '07 77 37 17 39',
-    iban: '', // IBAN professionnel affiché en footer de facture
-    bic: ''   // BIC (Code SWIFT) de la banque
+    iban: 'FR76 4061 8804 9700 0403 3099 557', // IBAN professionnel affiché en footer de facture
+    bic: 'BOUSFRPPXXX'   // BIC (Code SWIFT) de la banque
 };
 
 // Tax rates - now stored in memory, editable via settings
