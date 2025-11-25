@@ -1,17 +1,1 @@
-{
-  "functions": {
-    "proxy/index.js": {
-      "runtime": "@vercel/node@18"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api",
-      "destination": "/proxy/index.js"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "/proxy/index.js"
-    }
-  ]
-}
+{}
