@@ -21,46 +21,68 @@ function doPost(e) {
     
     Logger.log('Action: ' + action);
     
+    // Créer la réponse avec headers CORS
+    let response;
+    
     switch(action) {
       case 'saveToDrive':
-        return saveToDrive(data.data);
+        response = saveToDrive(data.data);
+        break;
       case 'loadFromDrive':
-        return loadFromDrive();
+        response = loadFromDrive();
+        break;
       case 'ensureStorage':
-        return ensureStorage();
+        response = ensureStorage();
+        break;
       case 'sendEmail':
-        return sendEmail(data);
+        response = sendEmail(data);
+        break;
       case 'send_invoice':
         // Expect either full pdfBase64 in payload or instruct client to provide it
-        return sendInvoiceAction(data);
+        response = sendInvoiceAction(data);
+        break;
       case 'sync_invoices':
-        return syncInvoices(data.sheetId, data.invoices);
+        response = syncInvoices(data.sheetId, data.invoices);
+        break;
       case 'sync_calendar':
-        return syncCalendarAction(data.tasks, data.calendarId);
+        response = syncCalendarAction(data.tasks, data.calendarId);
+        break;
       case 'savePdfToDrive':
-        return savePdfToDrive(data.pdfBase64, data.pdfFilename, data.folderName);
+        response = savePdfToDrive(data.pdfBase64, data.pdfFilename, data.folderName);
+        break;
       case 'sendEmailWithDriveFile':
-        return sendEmailWithDriveFile(data);
+        response = sendEmailWithDriveFile(data);
+        break;
       case 'listCalendarEvents':
-        return listCalendarEvents(data.startDate, data.endDate, data.maxResults, data.calendarId);
+        response = listCalendarEvents(data.startDate, data.endDate, data.maxResults, data.calendarId);
+        break;
       case 'importCalendarEvents':
-        return importCalendarEvents(data.startDate, data.endDate, data.calendarId);
+        response = importCalendarEvents(data.startDate, data.endDate, data.calendarId);
+        break;
       case 'importClients':
-        return importClients(data.sheetId);
+        response = importClients(data.sheetId);
+        break;
       case 'exportClients':
-        return exportClients(data.sheetId, data.clients);
+        response = exportClients(data.sheetId, data.clients);
+        break;
       case 'addCalendarEvent':
-        return addCalendarEvent(data.event);
+        response = addCalendarEvent(data.event);
+        break;
       case 'deleteCalendarEvent':
-        return deleteCalendarEvent(data.eventId, data.calendarId);
+        response = deleteCalendarEvent(data.eventId, data.calendarId);
+        break;
       case 'updateCalendarEvent':
-        return updateCalendarEvent(data.event);
+        response = updateCalendarEvent(data.event);
+        break;
       default:
-        return createResponse(false, 'Action inconnue: ' + action);
+        response = createResponse(false, 'Action inconnue: ' + action);
     }
+    
+    // Ajouter headers CORS à toutes les réponses
+    return addCorsHeaders(response);
   } catch (error) {
     Logger.log('Erreur: ' + error.toString());
-    return createResponse(false, error.toString());
+    return addCorsHeaders(createResponse(false, error.toString()));
   }
 }
 
@@ -100,14 +122,23 @@ function doGet(e) {
       }
     }
 
-    return ContentService.createTextOutput(JSON.stringify({
+    const defaultResponse = ContentService.createTextOutput(JSON.stringify({
       success: true,
       message: 'MTI CONSULTING Backend OK',
       timestamp: new Date().toISOString()
     })).setMimeType(ContentService.MimeType.JSON);
+    return addCorsHeaders(defaultResponse);
   } catch (err) {
-    return createResponse(false, 'Erreur doGet: ' + err.toString());
+    return addCorsHeaders(createResponse(false, 'Erreur doGet: ' + err.toString()));
   }
+}
+
+// Ajouter les headers CORS aux réponses
+function addCorsHeaders(response) {
+  return response
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
 // ==========================================
