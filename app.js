@@ -264,93 +264,10 @@ const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
 
-let clients = [
-    {
-        name: 'Entreprise ABC',
-        siret: '123 456 789 00012',
-        address: '123 Rue de la République\n75001 Paris',
-        email_facturation: 'facturation@entreprise-abc.fr',
-        contact_name: 'Marie Dupont'
-    },
-    {
-        name: 'Société XYZ',
-        siret: '987 654 321 00034',
-        address: '456 Avenue des Champs\n69002 Lyon',
-        email_facturation: '',
-        contact_name: ''
-    }
-];
-
-let invoices = [
-    {
-        number: '202511-001',
-        client: 'Entreprise ABC',
-        clientSiret: '123 456 789 00012',
-        clientAddress: '123 Rue de la République\n75001 Paris',
-        date: '2025-11-15',
-        dueDate: '2025-12-15',
-        description: 'Prestation de conseil en développement',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Payée',
-        montantRecu: 7200,
-        dateReception: '2025-12-10'
-    },
-    {
-        number: '202512-001',
-        client: 'Société XYZ',
-        clientSiret: '987 654 321 00034',
-        clientAddress: '456 Avenue des Champs\n69002 Lyon',
-        date: '2025-12-01',
-        dueDate: '2025-12-31',
-        description: 'Développement application web',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Envoyée',
-        montantRecu: 0,
-        dateReception: null
-    },
-    {
-        number: '202510-001',
-        client: 'Entreprise ABC',
-        clientSiret: '123 456 789 00012',
-        clientAddress: '123 Rue de la République\n75001 Paris',
-        date: '2025-10-15',
-        dueDate: '2025-11-14',
-        description: 'Conseil stratégique',
-        quantity: 10,
-        unitPrice: 600,
-        total: 6000,
-        status: 'Retard',
-        montantRecu: 0,
-        dateReception: null
-    },
-    {
-        number: '202512-002',
-        client: 'Société XYZ',
-        clientSiret: '987 654 321 00034',
-        clientAddress: '456 Avenue des Champs\n69002 Lyon',
-        date: '2025-12-15',
-        dueDate: '2026-01-14',
-        description: 'Audit technique',
-        quantity: 12,
-        unitPrice: 600,
-        total: 7200,
-        status: 'Brouillon',
-        montantRecu: 0,
-        dateReception: null
-    }
-];
-
-let tasks = [
-    { date: '2025-12-16', startTime: '09:00', duration: 3, description: 'Développement module facturation', type: 'Travail' },
-    { date: '2025-12-16', startTime: '14:00', duration: 2, description: 'Réunion client Entreprise ABC', type: 'Réunion client' },
-    { date: '2025-12-17', startTime: '10:00', duration: 1.5, description: 'Déclaration URSSAF', type: 'Administratif' },
-    { date: '2025-12-18', startTime: '09:30', duration: 4, description: 'Consulting SI Finance', type: 'Travail' },
-    { date: '2025-12-19', startTime: '15:00', duration: 1, description: 'Suivi projet Société XYZ', type: 'Réunion client' }
-];
+// Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
+let clients = [];
+let invoices = [];
+let tasks = [];
 
 // Calendar state
 let currentView = 'week';
