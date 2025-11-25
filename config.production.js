@@ -2,11 +2,14 @@
 // Ce fichier EST committé sur GitHub et utilisé par GitHub Pages
 // Pour le développement local, créez config.js (gitignored) qui remplace ces valeurs
 
-const CONFIG = {
-    GOOGLE_CLIENT_ID: '913475747202-dg6rnc0hhu16thk3gckbnqkdcoei2a1n.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: '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',
-    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec',
-    SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
-    CALENDAR_ID: '',  // Optionnel, sinon calendrier par défaut
-    DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
-};
+// Ne déclarer CONFIG que s'il n'existe pas déjà (config.js peut l'avoir défini)
+if (typeof window.CONFIG === 'undefined') {
+    window.CONFIG = {
+        GOOGLE_CLIENT_ID: '913475747202-dg6rnc0hhu16thk3gckbnqkdcoei2a1n.apps.googleusercontent.com',
+        GOOGLE_CLIENT_SECRET: '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',
+        BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec',
+        SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
+        CALENDAR_ID: '',  // Optionnel, sinon calendrier par défaut
+        DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
+    };
+}
