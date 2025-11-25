@@ -1,19 +1,17 @@
 // MTI CONSULTING - Application de facturation
 // Version v2.0 - Google Drive Storage + Gmail API + Calendar API + FullCalendar
 
-// Configuration par défaut (valeurs d'exemple)
-// IMPORTANT : Créez un fichier config.js à la racine avec vos vraies valeurs
-// Voir config.example.js pour le template
-const CONFIG_DEFAULTS = {
-    BACKEND_URL: 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec',
+// Configuration production (credentials en dur comme en v42)
+const CONFIG = {
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyUp4uaDfbrZpziEXI3SRBYm8M_cF32mU17Ji_L3qYnxaQGl-K6KZ19-33yHkCCMD92/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
-    SHEETS_ID: 'VOTRE_SHEETS_ID',
-    CALENDAR_ID: 'votre-email@gmail.com',
-    // OAuth2 credentials for FullCalendar + Google Calendar API integration
-    GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: 'VOTRE_CLIENT_SECRET',
-    GOOGLE_API_KEY: '', // Optional
-    GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events'
+    SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
+    CALENDAR_ID: '',
+    GOOGLE_CLIENT_ID: '913475747202-dg6rnc0hhu16thk3gckbnqkdcoei2a1n.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: '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',
+    GOOGLE_API_KEY: '',
+    GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events',
+    DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
 };
 
 // Charger la configuration depuis localStorage (pour GitHub Pages) ou window.CONFIG (pour fichier local)
@@ -39,25 +37,8 @@ function saveConfigToStorage(config) {
     }
 }
 
-// Fusionner avec les valeurs réelles de config.js (si le fichier existe) ou localStorage
-// Priorité : window.CONFIG (config.js ou config.production.js) > localStorage (GitHub Pages) > defaults
-let CONFIG;
-if (typeof window !== 'undefined' && window.CONFIG) {
-    // Config déjà définie par config.production.js ou config.js
-    CONFIG = { ...CONFIG_DEFAULTS, ...window.CONFIG };
-    console.log('✅ Configuration chargée depuis config.production.js ou config.js');
-} else {
-    // Essayer localStorage (GitHub Pages avec config manuelle)
-    const storedConfig = loadConfigFromStorage();
-    if (storedConfig) {
-        CONFIG = { ...CONFIG_DEFAULTS, ...storedConfig };
-        console.log('✅ Configuration chargée depuis localStorage');
-    } else {
-        CONFIG = CONFIG_DEFAULTS;
-        console.warn('⚠️ Aucune configuration trouvée - utilisation des valeurs par défaut');
-        console.warn('💡 Configurez l\'application dans l\'onglet Paramètres');
-    }
-}
+// Configuration chargée (credentials en dur dans CONFIG ci-dessus)
+console.log('✅ Configuration chargée depuis app.js (v42 style)');
 
 function getConfiguredCalendarId() {
     return localStorage.getItem('mti_calendar_id') || CONFIG.CALENDAR_ID;
