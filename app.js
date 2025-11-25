@@ -4928,6 +4928,27 @@ function initApp() {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Initialisation MTI CONSULTING v2.0...');
     
+    // Auto-configuration depuis URL (déploiement script)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('autoconfig')) {
+        try {
+            const configData = JSON.parse(decodeURIComponent(urlParams.get('autoconfig')));
+            saveConfigToStorage(configData);
+            CONFIG = { ...CONFIG_DEFAULTS, ...configData };
+            console.log('✅ Configuration automatique appliquée depuis URL');
+            showToast('✅ Configuration importée avec succès ! Rechargez la page.', 'success');
+            
+            // Nettoyer l'URL après 2 secondes et recharger
+            setTimeout(() => {
+                window.history.replaceState({}, document.title, window.location.pathname);
+                window.location.reload();
+            }, 2000);
+            return; // Stop l'initialisation, on recharge
+        } catch (e) {
+            console.error('Erreur auto-config:', e);
+        }
+    }
+    
     // Afficher un message si aucune configuration n'est trouvée
     if (CONFIG.BACKEND_URL === 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec' || 
         CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID')) {

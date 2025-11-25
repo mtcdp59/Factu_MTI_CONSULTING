@@ -62,7 +62,21 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 👉 **[Ouvrir l'application](https://mtcdp59.github.io/Factu_MTI_CONSULTING/)**
 
-📖 **[Guide de démarrage GitHub Pages](docs/DEMARRAGE_GITHUB_PAGES.md)** - Configuration complète en 5 minutes
+#### **Configuration rapide (3 méthodes)**
+
+**Méthode 1 : Script PowerShell automatique (⚡ Recommandé)**
+```powershell
+.\scripts\deploy-config.ps1
+```
+→ Copie automatiquement votre `config.js` local vers GitHub Pages
+
+**Méthode 2 : Interface HTML**
+1. Ouvrez `scripts/deploy-config.html` dans votre navigateur
+2. Cliquez sur "Charger config.js"
+3. Cliquez sur "Déployer la configuration"
+
+**Méthode 3 : Manuelle**
+- Suivez le **[Guide de démarrage GitHub Pages](docs/DEMARRAGE_GITHUB_PAGES.md)** (5 minutes)
 
 ---
 
