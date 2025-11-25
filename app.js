@@ -1,12 +1,25 @@
 // MTI CONSULTING - Application de facturation
-// Version v2.0 - Google Drive Storage + Gmail API + Calendar API
+// Version v2.0 - Google Drive Storage + Gmail API + Calendar API + FullCalendar
 
-const CONFIG = {
-    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyUp4uaDfbrZpziEXI3SRBYm8M_cF32mU17Ji_L3qYnxaQGl-K6KZ19-33yHkCCMD92/exec',
+// Configuration par défaut (valeurs d'exemple)
+// IMPORTANT : Créez un fichier config.js à la racine avec vos vraies valeurs
+// Voir config.example.js pour le template
+const CONFIG_DEFAULTS = {
+    BACKEND_URL: 'https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
-    SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
-    CALENDAR_ID: 'mticonsulting59@gmail.com'
+    SHEETS_ID: 'VOTRE_SHEETS_ID',
+    CALENDAR_ID: 'votre-email@gmail.com',
+    // OAuth2 credentials for FullCalendar + Google Calendar API integration
+    GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: 'VOTRE_CLIENT_SECRET',
+    GOOGLE_API_KEY: '', // Optional
+    GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events'
 };
+
+// Fusionner avec les valeurs réelles de config.js (si le fichier existe)
+const CONFIG = typeof window !== 'undefined' && window.CONFIG 
+    ? { ...CONFIG_DEFAULTS, ...window.CONFIG } 
+    : CONFIG_DEFAULTS;
 
 function getConfiguredCalendarId() {
     return localStorage.getItem('mti_calendar_id') || CONFIG.CALENDAR_ID;
@@ -329,7 +342,9 @@ let companyInfo = {
     postalCode: '[Code postal]',
     city: '[Ville]',
     email: 'mticonsulting59@gmail.com',
-    phone: '07 77 37 17 39'
+    phone: '07 77 37 17 39',
+    iban: '', // IBAN professionnel affiché en footer de facture
+    bic: ''   // BIC (Code SWIFT) de la banque
 };
 
 // Tax rates - now stored in memory, editable via settings
@@ -339,7 +354,18 @@ let taxSettings = {
     prorationMensuelle: 8.33,
     cfeAnnuel: 600,
     acreActif: 11.6,
-    acreInactif: 24.6
+    acreInactif: 24.6,
+    // Barème IRPP progressif 2025 (tranches annuelles - célibataire 1 part)
+    // Source : https://www.service-public.gouv.fr/particuliers/vosdroits/F1419
+    irppBareme: [
+        { min: 0, max: 11497, taux: 0 },
+        { min: 11498, max: 29315, taux: 11 },
+        { min: 29316, max: 83823, taux: 30 },
+        { min: 83824, max: 180294, taux: 41 },
+        { min: 180295, max: Infinity, taux: 45 }
+    ],
+    // BNC (Bénéfices Non Commerciaux) - abattement forfaitaire
+    bncAbattement: 34
 };
 
 // Application-specific settings persisted with Drive data
@@ -354,8 +380,92 @@ const defaultSettings = {
     prorationMensuelle: 8.33,
     cfeAnnuel: 600,
     acreActif: 11.6,
-    acreInactif: 24.6
+    acreInactif: 24.6,
+    irppBareme: [
+        { min: 0, max: 11497, taux: 0 },
+        { min: 11498, max: 29315, taux: 11 },
+        { min: 29316, max: 83823, taux: 30 },
+        { min: 83824, max: 180294, taux: 41 },
+        { min: 180295, max: Infinity, taux: 45 }
+    ],
+    bncAbattement: 34
 };
+
+// ========== CALCUL IRPP PROGRESSIF ==========
+
+/**
+ * Calcule l'IRPP selon le barème progressif
+ * @param {number} revenuImposable - Revenu annuel imposable (après abattement BNC si applicable)
+ * @param {Array} bareme - Barème IRPP (tranches avec min, max, taux)
+ * @returns {number} Montant de l'impôt annuel
+ */
+function calculateIRPPProgressif(revenuImposable, bareme = null) {
+    if (!bareme) bareme = taxSettings.irppBareme;
+    // Sécurité : vérifier que le barème existe et est un tableau
+    if (!bareme || !Array.isArray(bareme) || bareme.length === 0) {
+        console.warn('calculateIRPPProgressif: barème IRPP non disponible, utilisation du barème par défaut');
+        bareme = defaultSettings.irppBareme;
+    }
+    if (revenuImposable <= 0) return 0;
+
+    let impot = 0;
+    for (let i = 0; i < bareme.length; i++) {
+        const tranche = bareme[i];
+        const min = tranche.min;
+        const max = tranche.max === Infinity ? Infinity : tranche.max;
+        const taux = tranche.taux / 100;
+
+        if (revenuImposable <= min) break;
+
+        const trancheMax = Math.min(revenuImposable, max);
+        const montantTranche = trancheMax - min + 1; // +1 car bornes inclusives
+        if (montantTranche > 0) {
+            impot += montantTranche * taux;
+        }
+
+        if (revenuImposable <= max) break;
+    }
+
+    return Math.max(0, impot);
+}
+
+/**
+ * Calcule le revenu imposable BNC (après abattement forfaitaire)
+ * @param {number} caAnnuel - Chiffre d'affaires annuel
+ * @param {number} abattement - Taux d'abattement (défaut 34%)
+ * @returns {number} Revenu imposable
+ */
+function calculateBNCRevenuImposable(caAnnuel, abattement = null) {
+    if (!abattement) abattement = taxSettings.bncAbattement || defaultSettings.bncAbattement || 34;
+    const revenuImposable = caAnnuel * (1 - abattement / 100);
+    return Math.max(0, revenuImposable);
+}
+
+/**
+ * Compare versement libératoire vs IRPP progressif
+ * @param {number} caAnnuel - Chiffre d'affaires annuel
+ * @returns {Object} { versementLib, irppProgressif, difference, meilleurChoix }
+ */
+function compareImpots(caAnnuel) {
+    // Versement libératoire : taux fixe sur CA
+    const versementLib = caAnnuel * (taxSettings.versementLiberatoire / 100);
+
+    // IRPP progressif : appliqué sur revenu imposable BNC
+    const revenuImposable = calculateBNCRevenuImposable(caAnnuel);
+    const irppProgressif = calculateIRPPProgressif(revenuImposable);
+
+    const difference = versementLib - irppProgressif;
+    const meilleurChoix = difference > 0 ? 'progressif' : 'versementLib';
+
+    return {
+        versementLib,
+        irppProgressif,
+        revenuImposable,
+        difference,
+        meilleurChoix,
+        economie: Math.abs(difference)
+    };
+}
 
 // DOM Elements (lazy initialization)
 let navTabs = null;
@@ -942,8 +1052,8 @@ function renderInvoicePreview(inv, showModal) {
         ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
 
-    // Use local logo file (MTI_CONSULTING.png) or configured URL
-    const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'MTI_CONSULTING.png';
+    // Use local logo file (assets/images/MTI_CONSULTING.png) or configured URL
+    const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'assets/images/MTI_CONSULTING.png';
     const logoHTML = logoSrc
         ? `<img src="${logoSrc}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);" crossorigin="anonymous">`
         : '';
@@ -1019,10 +1129,17 @@ function renderInvoicePreview(inv, showModal) {
 
 // Calculate total with optional TVA
 function calculateTotal() {
-    if (!quantityInput || !unitPriceInput) return 0;
-    const quantity = parseFloat(quantityInput.value) || 0;
-    const unitPrice = parseFloat(unitPriceInput.value) || 0;
-    const totalHT = quantity * unitPrice;
+    // Use multi-line items if available
+    let totalHT = 0;
+    
+    if (currentInvoiceItems && currentInvoiceItems.length > 0) {
+        totalHT = currentInvoiceItems.reduce((sum, item) => sum + (item.total || 0), 0);
+    } else if (quantityInput && unitPriceInput) {
+        // Legacy fallback for old single-line logic
+        const quantity = parseFloat(quantityInput.value) || 0;
+        const unitPrice = parseFloat(unitPriceInput.value) || 0;
+        totalHT = quantity * unitPrice;
+    }
 
     const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
 
@@ -1224,11 +1341,144 @@ document.getElementById('cancelEditBtn')?.addEventListener('click', () => {
     cancelEditMode();
 });
 
+// ========== MULTI-LINE INVOICE ITEMS MANAGEMENT ==========
+
+let currentInvoiceItems = [];
+
+function addInvoiceItem() {
+    const item = {
+        description: '',
+        quantity: 1,
+        unitPrice: 0,
+        total: 0
+    };
+    currentInvoiceItems.push(item);
+    renderInvoiceItems();
+}
+
+function removeInvoiceItem(index) {
+    currentInvoiceItems.splice(index, 1);
+    renderInvoiceItems();
+    updateInvoiceTotal();
+}
+
+function updateInvoiceItemField(index, field, value) {
+    if (!currentInvoiceItems[index]) return;
+    
+    currentInvoiceItems[index][field] = value;
+    
+    // Recalculate item total
+    if (field === 'quantity' || field === 'unitPrice') {
+        const qty = parseFloat(currentInvoiceItems[index].quantity) || 0;
+        const price = parseFloat(currentInvoiceItems[index].unitPrice) || 0;
+        currentInvoiceItems[index].total = qty * price;
+    }
+    
+    renderInvoiceItems();
+    updateInvoiceTotal();
+}
+
+function renderInvoiceItems() {
+    const tbody = document.getElementById('invoiceItemsBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (currentInvoiceItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-secondary); font-size: var(--font-size-sm);">Aucune ligne. Cliquez sur "➕ Ajouter une ligne" pour commencer.</td></tr>';
+        return;
+    }
+
+    currentInvoiceItems.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.style.borderTop = '1px solid var(--color-border)';
+        
+        row.innerHTML = `
+            <td style="padding: 8px;">
+                <input type="text" 
+                    value="${item.description || ''}" 
+                    onchange="updateInvoiceItemField(${index}, 'description', this.value)"
+                    placeholder="Description de la prestation"
+                    style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: 4px; font-size: var(--font-size-sm);">
+            </td>
+            <td style="padding: 8px; text-align: center;">
+                <input type="number" 
+                    value="${item.quantity}" 
+                    onchange="updateInvoiceItemField(${index}, 'quantity', this.value)"
+                    min="0.01"
+                    step="0.01"
+                    style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: 4px; font-size: var(--font-size-sm); text-align: center;">
+            </td>
+            <td style="padding: 8px; text-align: right;">
+                <input type="number" 
+                    value="${item.unitPrice}" 
+                    onchange="updateInvoiceItemField(${index}, 'unitPrice', this.value)"
+                    min="0"
+                    step="0.01"
+                    style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: 4px; font-size: var(--font-size-sm); text-align: right;">
+            </td>
+            <td style="padding: 8px; text-align: right; font-weight: 600; font-size: var(--font-size-sm);">
+                ${item.total.toFixed(2)} €
+            </td>
+            <td style="padding: 8px; text-align: center;">
+                <button type="button" 
+                    onclick="removeInvoiceItem(${index})" 
+                    style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: var(--font-size-xs);"
+                    title="Supprimer cette ligne">
+                    🗑️
+                </button>
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
+
+function updateInvoiceTotal() {
+    // Recalculate and update the invoice total display
+    calculateTotal();
+}
+
+function clearInvoiceItems() {
+    currentInvoiceItems = [];
+    renderInvoiceItems();
+    updateInvoiceTotal();
+}
+
+function loadInvoiceItems(items) {
+    currentInvoiceItems = items && items.length > 0 ? [...items] : [];
+    renderInvoiceItems();
+    updateInvoiceTotal();
+}
+
+// Expose functions to global scope for HTML onclick handlers
+window.addInvoiceItem = addInvoiceItem;
+window.removeInvoiceItem = removeInvoiceItem;
+window.updateInvoiceItemField = updateInvoiceItemField;
+
+// ========== END MULTI-LINE INVOICE ITEMS ==========
+
 // Save invoice
 function setupInvoiceSaveHandler() {
     if (!invoiceForm) return;
     invoiceForm.addEventListener('submit', (e) => {
         e.preventDefault();
+
+        // Validate that at least one item exists
+        if (!currentInvoiceItems || currentInvoiceItems.length === 0) {
+            showToast('⚠️ Veuillez ajouter au moins une ligne de facturation', 'error');
+            return;
+        }
+
+        // Validate that all items have descriptions
+        const hasEmptyDescription = currentInvoiceItems.some(item => !item.description || item.description.trim() === '');
+        if (hasEmptyDescription) {
+            showToast('⚠️ Toutes les lignes doivent avoir une description', 'error');
+            return;
+        }
+
+        // Calculate total from items
+        const totalHT = currentInvoiceItems.reduce((sum, item) => sum + (item.total || 0), 0);
 
         const invoiceData = {
             number: invoiceNumberInput ? invoiceNumberInput.value : getNextInvoiceNumber(),
@@ -1237,10 +1487,12 @@ function setupInvoiceSaveHandler() {
             clientAddress: document.getElementById('clientAddress') ? document.getElementById('clientAddress').value : '',
             date: invoiceDateInput ? invoiceDateInput.value : '',
             dueDate: dueDateInput ? dueDateInput.value : '',
-            description: document.getElementById('serviceDescription') ? document.getElementById('serviceDescription').value : '',
-            quantity: quantityInput ? parseFloat(quantityInput.value) : 0,
-            unitPrice: unitPriceInput ? parseFloat(unitPriceInput.value) : 0,
-            total: calculateTotal()
+            items: [...currentInvoiceItems], // Store items array
+            // Keep legacy fields for backward compatibility
+            description: currentInvoiceItems[0]?.description || '',
+            quantity: currentInvoiceItems[0]?.quantity || 0,
+            unitPrice: currentInvoiceItems[0]?.unitPrice || 0,
+            total: totalHT
         };
 
         if (isEditMode && editingInvoiceIndex >= 0) {
@@ -1356,6 +1608,11 @@ function resetInvoiceForm() {
     if (newInvoiceBtn) newInvoiceBtn.style.display = 'none';
     if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber();
     setDefaultDates();
+    
+    // Clear invoice items and add one empty line
+    clearInvoiceItems();
+    addInvoiceItem();
+    
     calculateTotal();
 }
 
@@ -1732,100 +1989,699 @@ function closeEventForm() {
     if (!form) return; form.style.display = 'none';
 }
 
-// Initialize FullCalendar inside #calendarContainer and wire backend actions
-function initFullCalendar() {
-    if (!window.FullCalendar) return; // FullCalendar not loaded
-    const container = document.getElementById('calendarContainer');
-    if (!container) return;
+// ========================================
+// GOOGLE CALENDAR API + FULLCALENDAR INTEGRATION
+// Using Google Identity Services (GIS) - New OAuth2 method
+// ========================================
 
-    // Replace existing content with the calendar root
-    container.innerHTML = '<div id="fcRoot"></div>';
-    const calendarEl = document.getElementById('fcRoot');
+let fullCalendarInstance = null;
+let isGoogleAuthInitialized = false;
+let isGoogleSignedIn = false;
+let accessToken = null;
+let tokenClient = null;
 
-    const calendar = new FullCalendar.Calendar(calendarEl, {
+// Initialize Google Identity Services (GIS) for OAuth2
+function initGoogleAuth() {
+    // Check if running from file:// protocol (not supported by Google OAuth2)
+    if (window.location.protocol === 'file:') {
+        const errorMsg = `
+⚠️ ERREUR : OAuth2 Google nécessite un serveur HTTP
+
+Vous ne pouvez pas utiliser OAuth2 depuis file://
+
+✅ SOLUTION : Servez l'application via HTTP
+
+Option 1 (Python) :
+  python -m http.server 8000
+  Puis : http://localhost:8000/index.html
+
+Option 2 (Node.js) :
+  npx http-server -p 8000
+  Puis : http://localhost:8000/index.html
+
+Option 3 (VS Code) :
+  Extension "Live Server" → Clic droit → "Open with Live Server"
+        `;
+        console.error(errorMsg);
+        showToast('❌ OAuth2 impossible en mode file:// - Utilisez un serveur HTTP local', 'error');
+        
+        // Display alert with instructions
+        const authBtn = document.getElementById('googleAuthBtn');
+        if (authBtn) {
+            authBtn.textContent = '⚠️ Serveur HTTP requis';
+            authBtn.disabled = true;
+            authBtn.style.cursor = 'not-allowed';
+            authBtn.onclick = () => {
+                alert(errorMsg);
+            };
+        }
+        
+        return Promise.reject(new Error('OAuth2 requires HTTP/HTTPS protocol'));
+    }
+
+    return new Promise((resolve, reject) => {
+        // Initialize gapi client for Calendar API
+        gapi.load('client', async () => {
+            try {
+                await gapi.client.init({
+                    apiKey: CONFIG.GOOGLE_API_KEY || '',
+                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest']
+                });
+
+                // Initialize Google Identity Services token client
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CONFIG.GOOGLE_CLIENT_ID,
+                    scope: CONFIG.GOOGLE_SCOPES,
+                    callback: (response) => {
+                        if (response.error !== undefined) {
+                            console.error('❌ Token error:', response);
+                            updateSignInStatus(false);
+                            reject(response);
+                            return;
+                        }
+                        
+                        // Token received successfully
+                        accessToken = response.access_token;
+                        gapi.client.setToken({ access_token: accessToken });
+                        isGoogleSignedIn = true;
+                        updateSignInStatus(true);
+                        console.log('✅ Google Auth token received');
+                        resolve(response);
+                    }
+                });
+
+                isGoogleAuthInitialized = true;
+                console.log('✅ Google Identity Services initialized');
+                resolve(tokenClient);
+            } catch (error) {
+                console.error('❌ Error initializing Google Auth:', error);
+                reject(error);
+            }
+        });
+    });
+}
+
+// Handle sign-in/sign-out button
+function handleAuthClick() {
+    if (!isGoogleAuthInitialized) {
+        showToast('Google Auth non initialisé', 'error');
+        return;
+    }
+
+    if (isGoogleSignedIn) {
+        // Sign out - revoke token
+        google.accounts.oauth2.revoke(accessToken, () => {
+            accessToken = null;
+            gapi.client.setToken(null);
+            isGoogleSignedIn = false;
+            updateSignInStatus(false);
+            console.log('✅ Signed out');
+        });
+    } else {
+        // Sign in - request token
+        if (tokenClient) {
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        }
+    }
+}
+
+// Update UI based on sign-in status
+function updateSignInStatus(signedIn) {
+    isGoogleSignedIn = signedIn;
+    const authBtn = document.getElementById('googleAuthBtn');
+    const calendarContainer = document.getElementById('fullCalendarContainer');
+    const notConnectedMsg = document.getElementById('calendarNotConnected');
+    const calendarEl = document.getElementById('fullCalendar');
+
+    if (authBtn) {
+        if (signedIn) {
+            authBtn.textContent = '✅ Connecté à Google';
+            authBtn.className = 'btn btn-secondary';
+            authBtn.onclick = handleAuthClick;
+            if (calendarContainer) calendarContainer.style.display = 'block';
+            
+            // Hide "not connected" message and show calendar
+            if (notConnectedMsg) notConnectedMsg.style.display = 'none';
+            if (calendarEl) calendarEl.style.display = 'block';
+            
+            // Enable calendar editing
+            if (fullCalendarInstance) {
+                fullCalendarInstance.setOption('editable', true);
+                fullCalendarInstance.setOption('selectable', true);
+                fullCalendarInstance.refetchEvents();
+            }
+            showToast('Connecté à Google Calendar', 'success');
+        } else {
+            authBtn.textContent = '🔐 Se connecter à Google';
+            authBtn.className = 'btn btn-primary';
+            authBtn.onclick = handleAuthClick;
+            
+            // Show "not connected" message and hide calendar
+            if (calendarContainer) calendarContainer.style.display = 'block'; // Keep container visible
+            if (notConnectedMsg) notConnectedMsg.style.display = 'block';
+            if (calendarEl) calendarEl.style.display = 'none';
+            
+            // Disable calendar editing
+            if (fullCalendarInstance) {
+                fullCalendarInstance.setOption('editable', false);
+                fullCalendarInstance.setOption('selectable', false);
+                fullCalendarInstance.refetchEvents();
+            }
+        }
+    }
+}
+
+// Load events from Google Calendar API
+async function loadGoogleCalendarEvents(fetchInfo, successCallback, failureCallback) {
+    if (!isGoogleSignedIn) {
+        // Return empty array instead of error when not connected
+        // This prevents FullCalendar from showing errors on initial load
+        console.log('ℹ️ Not connected to Google - returning empty calendar');
+        successCallback([]);
+        return;
+    }
+
+    try {
+        const calendarId = getConfiguredCalendarId();
+        const response = await gapi.client.calendar.events.list({
+            calendarId: calendarId,
+            timeMin: fetchInfo.startStr,
+            timeMax: fetchInfo.endStr,
+            showDeleted: false,
+            singleEvents: true,
+            orderBy: 'startTime'
+        });
+
+        const events = response.result.items.map(event => ({
+            id: event.id,
+            title: event.summary || '(Sans titre)',
+            start: event.start.dateTime || event.start.date,
+            end: event.end.dateTime || event.end.date,
+            description: event.description || '',
+            backgroundColor: getEventColor(event),
+            borderColor: getEventColor(event),
+            extendedProps: {
+                googleEvent: event
+            }
+        }));
+
+        successCallback(events);
+    } catch (error) {
+        console.error('❌ Error loading calendar events:', error);
+        failureCallback(error);
+    }
+}
+
+// Get event color based on type/category
+function getEventColor(googleEvent) {
+    const summary = (googleEvent.summary || '').toLowerCase();
+    if (summary.includes('travail') || summary.includes('dev')) return '#218c8d'; // Teal
+    if (summary.includes('réunion') || summary.includes('meeting')) return '#3B82F6'; // Blue
+    if (summary.includes('admin') || summary.includes('administratif')) return '#626c71'; // Gray
+    return '#218c8d'; // Default teal
+}
+
+// Create event in Google Calendar
+async function createGoogleCalendarEvent(eventData) {
+    if (!isGoogleSignedIn) {
+        throw new Error('Non connecté à Google');
+    }
+
+    const calendarId = getConfiguredCalendarId();
+    
+    // Détecte si c'est un événement "toute la journée" (pas d'heure dans la date)
+    const isAllDay = !eventData.start.includes('T') || eventData.start.includes('T00:00:00');
+    
+    const event = {
+        summary: eventData.title,
+        description: eventData.description || '',
+        start: isAllDay ? {
+            date: eventData.start.split('T')[0]
+        } : {
+            dateTime: eventData.start,
+            timeZone: 'Europe/Paris'
+        },
+        end: isAllDay ? {
+            date: eventData.end.split('T')[0]
+        } : {
+            dateTime: eventData.end,
+            timeZone: 'Europe/Paris'
+        }
+    };
+
+    try {
+        const response = await gapi.client.calendar.events.insert({
+            calendarId: calendarId,
+            resource: event
+        });
+        console.log('✅ Event created:', response.result);
+        return response.result;
+    } catch (error) {
+        console.error('❌ Error creating event:', error);
+        throw error;
+    }
+}
+
+// Update event in Google Calendar
+async function updateGoogleCalendarEvent(eventId, changes) {
+    if (!isGoogleSignedIn) {
+        throw new Error('Non connecté à Google');
+    }
+
+    const calendarId = getConfiguredCalendarId();
+    const updates = {};
+
+    if (changes.title !== undefined) updates.summary = changes.title;
+    
+    if (changes.start !== undefined) {
+        const isAllDay = !changes.start.includes('T') || changes.start.includes('T00:00:00');
+        updates.start = isAllDay ? 
+            { date: changes.start.split('T')[0] } : 
+            { dateTime: changes.start, timeZone: 'Europe/Paris' };
+    }
+    
+    if (changes.end !== undefined) {
+        const isAllDay = !changes.end.includes('T') || changes.end.includes('T00:00:00');
+        updates.end = isAllDay ? 
+            { date: changes.end.split('T')[0] } : 
+            { dateTime: changes.end, timeZone: 'Europe/Paris' };
+    }
+    
+    if (changes.description !== undefined) updates.description = changes.description;
+
+    try {
+        const response = await gapi.client.calendar.events.patch({
+            calendarId: calendarId,
+            eventId: eventId,
+            resource: updates
+        });
+        console.log('✅ Event updated:', response.result);
+        return response.result;
+    } catch (error) {
+        console.error('❌ Error updating event:', error);
+        throw error;
+    }
+}
+
+// Delete event from Google Calendar
+async function deleteGoogleCalendarEvent(eventId) {
+    if (!isGoogleSignedIn) {
+        throw new Error('Non connecté à Google');
+    }
+
+    const calendarId = getConfiguredCalendarId();
+
+    try {
+        await gapi.client.calendar.events.delete({
+            calendarId: calendarId,
+            eventId: eventId
+        });
+        console.log('✅ Event deleted:', eventId);
+    } catch (error) {
+        console.error('❌ Error deleting event:', error);
+        throw error;
+    }
+}
+
+// Show event edit modal with comprehensive editing options
+function showEventEditModal(event) {
+    // Format dates for input fields (YYYY-MM-DD and HH:MM)
+    const startDate = event.start.toISOString().split('T')[0];
+    const startTime = event.start.toTimeString().slice(0, 5);
+    const endDate = event.end ? event.end.toISOString().split('T')[0] : startDate;
+    const endTime = event.end ? event.end.toTimeString().slice(0, 5) : startTime;
+
+    // Create modal HTML
+    const modalHtml = `
+        <div id="eventEditModal" style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        ">
+            <div style="
+                background: white;
+                border-radius: 8px;
+                padding: 24px;
+                min-width: 400px;
+                max-width: 500px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            ">
+                <h3 style="margin-top: 0; color: #218c8d;">Modifier l'événement</h3>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: 500;">Titre</label>
+                    <input type="text" id="editEventTitle" value="${event.title}" style="
+                        width: 100%;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        font-size: 14px;
+                    ">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Date début</label>
+                        <input type="date" id="editEventStartDate" value="${startDate}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Heure début</label>
+                        <input type="time" id="editEventStartTime" value="${startTime}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Date fin</label>
+                        <input type="date" id="editEventEndDate" value="${endDate}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Heure fin</label>
+                        <input type="time" id="editEventEndTime" value="${endTime}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                    <button id="deleteEventBtn" style="
+                        padding: 8px 16px;
+                        background: #dc2626;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        margin-right: auto;
+                    ">🗑️ Supprimer</button>
+                    <button id="cancelEditBtn" style="
+                        padding: 8px 16px;
+                        background: #6b7280;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">Annuler</button>
+                    <button id="saveEditBtn" style="
+                        padding: 8px 16px;
+                        background: #218c8d;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">💾 Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Insert modal into DOM
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Get modal and buttons
+    const modal = document.getElementById('eventEditModal');
+    const saveBtn = document.getElementById('saveEditBtn');
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    const deleteBtn = document.getElementById('deleteEventBtn');
+
+    if (!cancelBtn || !saveBtn || !deleteBtn) {
+        console.error('Buttons not found in modal');
+        return;
+    }
+
+    // Prevent clicks on the modal content from closing the modal
+    const modalContent = modal.querySelector('div');
+    if (modalContent) {
+        modalContent.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+
+    // Save changes
+    saveBtn.onclick = async () => {
+        const newTitle = document.getElementById('editEventTitle').value.trim();
+        const newStartDate = document.getElementById('editEventStartDate').value;
+        const newStartTime = document.getElementById('editEventStartTime').value;
+        const newEndDate = document.getElementById('editEventEndDate').value;
+        const newEndTime = document.getElementById('editEventEndTime').value;
+
+        // Validation
+        if (!newTitle) {
+            showToast('Le titre est obligatoire', 'error');
+            return;
+        }
+
+        const newStart = `${newStartDate}T${newStartTime}:00`;
+        const newEnd = `${newEndDate}T${newEndTime}:00`;
+
+        if (new Date(newEnd) <= new Date(newStart)) {
+            showToast('La date de fin doit être après la date de début', 'error');
+            return;
+        }
+
+        try {
+            await updateGoogleCalendarEvent(event.id, {
+                title: newTitle,
+                start: newStart,
+                end: newEnd
+            });
+
+            // Update calendar display
+            event.setProp('title', newTitle);
+            event.setStart(newStart);
+            event.setEnd(newEnd);
+
+            showToast('✅ Événement modifié', 'success');
+            modal.remove();
+        } catch (error) {
+            console.error('Error updating event:', error);
+            showToast('❌ Erreur lors de la modification', 'error');
+        }
+    };
+
+    // Cancel - stop propagation to prevent modal background click handler
+    cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modal.remove();
+    });
+
+    // Delete
+    deleteBtn.onclick = async () => {
+        if (confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) {
+            try {
+                await deleteGoogleCalendarEvent(event.id);
+                event.remove();
+                showToast('✅ Événement supprimé', 'success');
+                modal.remove();
+            } catch (error) {
+                console.error('Error deleting event:', error);
+                showToast('❌ Erreur lors de la suppression', 'error');
+            }
+        }
+    };
+
+    // Close on background click
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
+}
+
+// Initialize FullCalendar with Google Calendar API integration
+async function initFullCalendar() {
+    const calendarEl = document.getElementById('fullCalendar');
+    if (!calendarEl) {
+        console.warn('FullCalendar element not found');
+        return;
+    }
+
+    // Check if running from file:// protocol - show warning
+    const warningEl = document.getElementById('fileProtocolWarning');
+    if (window.location.protocol === 'file:') {
+        if (warningEl) warningEl.style.display = 'block';
+        console.warn('⚠️ Calendar cannot be initialized from file:// protocol');
+        return;
+    } else {
+        if (warningEl) warningEl.style.display = 'none';
+    }
+
+    // Initialize Google Auth first
+    try {
+        await initGoogleAuth();
+    } catch (error) {
+        console.error('Failed to initialize Google Auth:', error);
+        showToast('Erreur d\'authentification Google', 'error');
+        return;
+    }
+
+    // Initialize FullCalendar
+    fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
         initialView: 'timeGridWeek',
+        locale: 'fr',
+        firstDay: 1, // Monday
+        slotMinTime: '08:00:00',
+        slotMaxTime: '20:00:00',
+        height: 'auto',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,timeGridDay'
         },
-        selectable: true,
-        editable: true,
-        navLinks: true,
-        nowIndicator: true,
-        height: 'auto',
-        // Load events via backend
-        events: async function(fetchInfo, successCallback, failureCallback) {
-            try {
-                const startDate = fetchInfo.startStr.slice(0,10);
-                const endDate = fetchInfo.endStr.slice(0,10);
-                const resp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId(), maxResults: 500 });
-                if (!resp || resp.success === false) {
-                    if (resp) showBackendRawResponse(resp);
-                    return successCallback([]);
+        buttonText: {
+            today: 'Aujourd\'hui',
+            month: 'Mois',
+            week: 'Semaine',
+            day: 'Jour'
+        },
+        slotLabelFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        },
+        eventTimeFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        },
+        // Enable drag & drop (will be disabled until user signs in)
+        editable: false,
+        selectable: false,
+        selectMirror: true,
+        dayMaxEvents: true,
+        weekends: true,
+        
+        // Event sources
+        events: loadGoogleCalendarEvents,
+
+        // Handle date selection (create new event)
+        select: async function(info) {
+            if (!isGoogleSignedIn) {
+                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
+                fullCalendarInstance.unselect();
+                return;
+            }
+            
+            const title = prompt('Titre de l\'événement:');
+            if (title) {
+                try {
+                    await createGoogleCalendarEvent({
+                        title: title,
+                        start: info.startStr,
+                        end: info.endStr,
+                        description: ''
+                    });
+                    fullCalendarInstance.refetchEvents();
+                    showToast('Événement créé', 'success');
+                } catch (error) {
+                    showToast('Erreur lors de la création', 'error');
                 }
-                const events = (resp.data && resp.data.events) ? resp.data.events.map(ev => ({
-                    id: ev.id,
-                    title: ev.title || '(sans titre)',
-                    start: ev.start,
-                    end: ev.end,
-                    extendedProps: { description: ev.description, location: ev.location }
-                })) : [];
-                successCallback(events);
-            } catch (e) { console.error('FullCalendar events load failed', e); failureCallback(e); }
+            }
+            fullCalendarInstance.unselect();
         },
-        dateClick: function(info) {
-            // open form to create new event for clicked date
-            openEventForm({ start: info.dateStr, end: info.dateStr });
-            // prefill date/time
-            const dateEl = document.getElementById('evtDate');
-            const timeEl = document.getElementById('evtTime');
-            if (dateEl) dateEl.value = info.dateStr.slice(0,10);
-            if (timeEl) timeEl.value = '09:00';
-        },
-        eventClick: function(info) {
-            // open edit form
-            const ev = info.event;
-            openEventForm({ id: ev.id, title: ev.title, start: ev.start.toISOString(), end: ev.end.toISOString(), description: ev.extendedProps && ev.extendedProps.description });
-        },
+
+        // Handle event drop (move)
         eventDrop: async function(info) {
-            // update moved event
+            if (!isGoogleSignedIn) {
+                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
+                info.revert();
+                return;
+            }
+            
             try {
-                const ev = info.event;
-                const start = ev.start;
-                const end = ev.end || new Date(start.getTime() + 60*60*1000);
-                const duration = (end - start) / (1000*60*60);
-                const payload = {
-                    event: {
-                        eventId: ev.id,
-                        date: start.toISOString().slice(0,10),
-                        time: start.toTimeString().slice(0,5),
-                        duration: duration,
-                        description: ev.title,
-                        calendarId: getConfiguredCalendarId()
-                    }
-                };
-                const resp = await callBackend('updateCalendarEvent', payload);
-                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur mise à jour événement'); info.revert(); }
-            } catch (e) { console.error('eventDrop update failed', e); info.revert(); }
+                await updateGoogleCalendarEvent(info.event.id, {
+                    start: info.event.startStr,
+                    end: info.event.endStr
+                });
+                showToast('Événement déplacé', 'success');
+            } catch (error) {
+                showToast('Erreur lors du déplacement', 'error');
+                info.revert();
+            }
         },
+
+        // Handle event resize
         eventResize: async function(info) {
+            if (!isGoogleSignedIn) {
+                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
+                info.revert();
+                return;
+            }
+            
             try {
-                const ev = info.event;
-                const start = ev.start;
-                const end = ev.end;
-                const duration = (end - start) / (1000*60*60);
-                const payload = { event: { eventId: ev.id, date: start.toISOString().slice(0,10), time: start.toTimeString().slice(0,5), duration: duration, description: ev.title, calendarId: getConfiguredCalendarId() } };
-                const resp = await callBackend('updateCalendarEvent', payload);
-                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur mise à jour événement'); info.revert(); }
-            } catch (e) { console.error('eventResize update failed', e); info.revert(); }
+                await updateGoogleCalendarEvent(info.event.id, {
+                    start: info.event.startStr,
+                    end: info.event.endStr
+                });
+                showToast('Durée modifiée', 'success');
+            } catch (error) {
+                showToast('Erreur lors de la modification', 'error');
+                info.revert();
+            }
+        },
+
+        // Handle event click (edit/delete)
+        eventClick: function(info) {
+            if (!isGoogleSignedIn) {
+                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
+                return;
+            }
+            
+            const event = info.event;
+            showEventEditModal(event);
         }
     });
 
-    calendar.render();
+    fullCalendarInstance.render();
+    console.log('✅ FullCalendar initialized with 8h-20h range, Monday-first week, French locale');
+    
+    // Show initial state (not connected)
+    updateSignInStatus(false);
+    
+    // Auto-refresh calendar every 5 minutes to sync with external changes
+    // Consommation estimée: ~2000 appels/mois (bien sous la limite Google)
+    setInterval(() => {
+        if (isGoogleSignedIn && fullCalendarInstance) {
+            console.log('🔄 Auto-refresh calendar...');
+            fullCalendarInstance.refetchEvents();
+        }
+    }, 300000); // 5 minutes (300 000 ms)
+}
 
-    // Expose refresh function to other parts (manager)
-    window.mti_fullCalendar = calendar;
+// Legacy function kept for compatibility (redirects to FullCalendar)
+function initGoogleCalendarEmbed() {
+    initFullCalendar();
 }
 
 function updateWeeklyStats() {
@@ -1887,24 +2743,43 @@ function setupTaskHandlers() {
 
     const taskForm = document.getElementById('taskForm');
     if (taskForm) {
-        taskForm.addEventListener('submit', (e) => {
+        taskForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const task = {
-                date: document.getElementById('taskDate').value,
-                startTime: document.getElementById('taskTime').value,
-                duration: parseFloat(document.getElementById('taskDuration').value) || 0,
-                type: document.getElementById('taskType').value,
-                description: document.getElementById('taskDescription').value
-            };
+            const date = document.getElementById('taskDate').value;
+            const startTime = document.getElementById('taskTime').value;
+            const duration = parseFloat(document.getElementById('taskDuration').value) || 1;
+            const type = document.getElementById('taskType').value;
+            const description = document.getElementById('taskDescription').value;
 
-            tasks.push(task);
-            renderCalendar();
-            const card = document.getElementById('taskFormCard');
-            if (card) card.style.display = 'none';
-            taskForm.reset();
-            showToast('Tâche ajoutée avec succès');
-            saveToDrive();
+            // Calculate start and end datetime
+            const startDateTime = new Date(`${date}T${startTime}:00`);
+            const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 60 * 1000);
+
+            const title = `${type}: ${description}`;
+
+            try {
+                // Create event via Google Calendar API
+                await createGoogleCalendarEvent({
+                    title: title,
+                    start: startDateTime.toISOString(),
+                    end: endDateTime.toISOString(),
+                    description: description
+                });
+
+                // Refresh FullCalendar
+                if (fullCalendarInstance) {
+                    fullCalendarInstance.refetchEvents();
+                }
+
+                const card = document.getElementById('taskFormCard');
+                if (card) card.style.display = 'none';
+                taskForm.reset();
+                showToast('Rendez-vous créé avec succès', 'success');
+            } catch (error) {
+                console.error('Error creating task:', error);
+                showToast('Erreur lors de la création du rendez-vous', 'error');
+            }
         });
     }
 }
@@ -2188,10 +3063,25 @@ function editInvoiceInForm(index) {
     if (clientAddressEl) clientAddressEl.value = invoice.clientAddress || '';
     if (invoiceDateInput) invoiceDateInput.value = invoice.date;
     if (dueDateInput) dueDateInput.value = invoice.dueDate;
-    const serviceDescriptionEl = document.getElementById('serviceDescription');
-    if (serviceDescriptionEl) serviceDescriptionEl.value = invoice.description;
-    if (quantityInput) quantityInput.value = invoice.quantity;
-    if (unitPriceInput) unitPriceInput.value = invoice.unitPrice;
+
+    // Load invoice items (multi-line support)
+    if (invoice.items && invoice.items.length > 0) {
+        loadInvoiceItems(invoice.items);
+    } else {
+        // Legacy: single-line invoice
+        const serviceDescriptionEl = document.getElementById('serviceDescription');
+        if (serviceDescriptionEl) serviceDescriptionEl.value = invoice.description;
+        if (quantityInput) quantityInput.value = invoice.quantity;
+        if (unitPriceInput) unitPriceInput.value = invoice.unitPrice;
+        
+        // Convert legacy to items array
+        loadInvoiceItems([{
+            description: invoice.description || '',
+            quantity: invoice.quantity || 0,
+            unitPrice: invoice.unitPrice || 0,
+            total: invoice.total || 0
+        }]);
+    }
 
     // Reset client select to manual mode
     const clientSelect = document.getElementById('clientSelect');
@@ -2236,6 +3126,11 @@ function cancelEditMode() {
     if (clientAddressEl) clientAddressEl.readOnly = false;
     setDefaultDates();
     if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput ? invoiceDateInput.value : null);
+    
+    // Clear invoice items and add one empty line
+    clearInvoiceItems();
+    addInvoiceItem();
+    
     calculateTotal();
 }
 
@@ -2493,6 +3388,8 @@ function loadCompanySettings() {
         document.getElementById('companyAddress').value = companyInfo.address || '[Adresse]';
         document.getElementById('companyPostal').value = companyInfo.postalCode || '[Code postal]';
         document.getElementById('companyCity').value = companyInfo.city || '[Ville]';
+        document.getElementById('companyIBAN').value = companyInfo.iban || '';
+        document.getElementById('companyBIC').value = companyInfo.bic || '';
     }
 }
 
@@ -2504,6 +3401,8 @@ function saveSettings() {
         companyInfo.address = document.getElementById('companyAddress').value || '[Adresse]';
         companyInfo.postalCode = document.getElementById('companyPostal').value || '[Code postal]';
         companyInfo.city = document.getElementById('companyCity').value || '[Ville]';
+        companyInfo.iban = document.getElementById('companyIBAN').value || '';
+        companyInfo.bic = document.getElementById('companyBIC').value || '';
     }
     taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS')?.value) || 0;
     taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib')?.value) || 2.2;
@@ -2511,6 +3410,7 @@ function saveSettings() {
     taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
     taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif')?.value) || 11.6;
     taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif')?.value) || 24.6;
+    // Le barème IRPP est déjà dans taxSettings.irppBareme (mis à jour par updateIRPPTranche)
 
     // Show confirmation
     const confirmation = document.getElementById('saveConfirmation');
@@ -2533,6 +3433,11 @@ function resetSettings() {
     document.getElementById('cfeAnnuel').value = defaultSettings.cfeAnnuel;
     document.getElementById('tauxAcreActif').value = defaultSettings.acreActif;
     document.getElementById('tauxAcreInactif').value = defaultSettings.acreInactif;
+    
+    // Réinitialiser le barème IRPP
+    taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
+    taxSettings.bncAbattement = defaultSettings.bncAbattement;
+    renderIRPPBareme();
 
     updateCFEMensuel();
 }
@@ -2544,11 +3449,115 @@ function updateCFEMensuel() {
     if (el) el.textContent = cfeMensuel.toFixed(2);
 }
 
+// ========== GESTION UI BARÈME IRPP ==========
+
+function renderIRPPBareme() {
+    const container = document.getElementById('irppBaremeContainer');
+    if (!container) return;
+
+    // Sécurité : initialiser le barème si absent
+    if (!taxSettings.irppBareme || !Array.isArray(taxSettings.irppBareme) || taxSettings.irppBareme.length === 0) {
+        taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
+    }
+
+    const bareme = taxSettings.irppBareme;
+    container.innerHTML = '';
+
+    bareme.forEach((tranche, index) => {
+        // Sécurité : vérifier que tranche existe et a les propriétés nécessaires
+        if (!tranche || typeof tranche.min === 'undefined' || typeof tranche.taux === 'undefined') {
+            console.warn('renderIRPPBareme: tranche invalide ignorée', tranche);
+            return;
+        }
+
+        const div = document.createElement('div');
+        div.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: center; padding: 8px; background: var(--color-bg-1); border-radius: var(--radius-base);';
+
+        const maxDisplay = tranche.max === Infinity ? '∞' : (tranche.max || 0).toLocaleString('fr-FR');
+
+        // Préparer les valeurs pour éviter null/undefined dans les inputs
+        const minValue = tranche.min !== null && tranche.min !== undefined ? tranche.min : 0;
+        const maxValue = tranche.max === Infinity ? '' : (tranche.max !== null && tranche.max !== undefined ? tranche.max : '');
+        const tauxValue = tranche.taux !== null && tranche.taux !== undefined ? tranche.taux : 0;
+
+        div.innerHTML = `
+            <input type="number" class="form-control" value="${minValue}" 
+                   onchange="updateIRPPTranche(${index}, 'min', this.value)" 
+                   placeholder="Min" style="font-size: 13px;">
+            <input type="number" class="form-control" value="${maxValue}" 
+                   onchange="updateIRPPTranche(${index}, 'max', this.value)" 
+                   placeholder="Max (∞ si vide)" style="font-size: 13px;">
+            <input type="number" class="form-control" value="${tauxValue}" step="0.1" 
+                   onchange="updateIRPPTranche(${index}, 'taux', this.value)" 
+                   placeholder="Taux %" style="font-size: 13px;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="removeIRPPTranche(${index})" 
+                    style="padding: 4px 8px; min-width: auto;">🗑️</button>
+        `;
+
+        container.appendChild(div);
+    });
+
+    // Bouton pour ajouter une tranche
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-secondary btn-sm';
+    addBtn.textContent = '➕ Ajouter une tranche';
+    addBtn.onclick = addIRPPTranche;
+    addBtn.style.marginTop = '8px';
+    container.appendChild(addBtn);
+}
+
+function updateIRPPTranche(index, field, value) {
+    if (!taxSettings.irppBareme[index]) return;
+
+    if (field === 'min' || field === 'max') {
+        const numValue = value === '' || value === null ? (field === 'max' ? Infinity : 0) : parseFloat(value);
+        taxSettings.irppBareme[index][field] = numValue;
+    } else if (field === 'taux') {
+        taxSettings.irppBareme[index][field] = parseFloat(value) || 0;
+    }
+
+    // Trier les tranches par min croissant
+    taxSettings.irppBareme.sort((a, b) => a.min - b.min);
+    renderIRPPBareme();
+}
+
+function addIRPPTranche() {
+    const lastTranche = taxSettings.irppBareme[taxSettings.irppBareme.length - 1];
+    const newMin = lastTranche && lastTranche.max !== Infinity ? lastTranche.max + 1 : 0;
+    taxSettings.irppBareme.push({ min: newMin, max: Infinity, taux: 0 });
+    renderIRPPBareme();
+}
+
+function removeIRPPTranche(index) {
+    if (taxSettings.irppBareme.length <= 1) {
+        alert('⚠️ Vous devez conserver au moins une tranche');
+        return;
+    }
+    taxSettings.irppBareme.splice(index, 1);
+    renderIRPPBareme();
+}
+
+function resetIRPPBareme() {
+    if (confirm('Réinitialiser le barème IRPP aux valeurs par défaut 2025 ?')) {
+        taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
+        taxSettings.bncAbattement = defaultSettings.bncAbattement;
+        renderIRPPBareme();
+        showToast('✅ Barème IRPP réinitialisé');
+    }
+}
+
+// Exposer les fonctions au global scope pour les onclick
+window.updateIRPPTranche = updateIRPPTranche;
+window.addIRPPTranche = addIRPPTranche;
+window.removeIRPPTranche = removeIRPPTranche;
+
 // Settings event listeners
 if (document.getElementById('saveSettings')) {
     document.getElementById('saveSettings').addEventListener('click', saveSettings);
     document.getElementById('resetSettings').addEventListener('click', resetSettings);
     document.getElementById('cfeAnnuel')?.addEventListener('input', updateCFEMensuel);
+    document.getElementById('resetIRPPBareme')?.addEventListener('click', resetIRPPBareme);
 }
 
 // Logo file conversion to data URI
@@ -2606,6 +3615,14 @@ const acreToggle = document.getElementById('acreToggle');
 const versementToggle = document.getElementById('versementToggle');
 
 function calculateTaxes() {
+    // Sécurité : initialiser le barème IRPP si absent
+    if (!taxSettings.irppBareme || !Array.isArray(taxSettings.irppBareme) || taxSettings.irppBareme.length === 0) {
+        taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
+    }
+    if (!taxSettings.bncAbattement) {
+        taxSettings.bncAbattement = defaultSettings.bncAbattement;
+    }
+
     const ca = parseFloat(caInput?.value) || 0;
     const acreActive = acreToggle ? acreToggle.checked : false;
     const versementLib = versementToggle ? versementToggle.checked : false;
@@ -2619,26 +3636,16 @@ function calculateTaxes() {
     let impotLabel = '';
 
     if (versementLib) {
-        // Versement libératoire: 2.2% flat rate on CA
+        // Versement libératoire: taux fixe sur CA
         impot = ca * (taxSettings.versementLiberatoire / 100);
         impotLabel = `${impot.toFixed(2)} € (Versement libératoire ${taxSettings.versementLiberatoire}%)`;
     } else {
-        // IRPP barème progressif with 34% abattement
-        const baseImposable = ca * 0.66; // After 34% abattement
-
-        // Apply progressive tax brackets (monthly amounts)
-        const tranche1 = 11294 / 12; // 941.17€ at 0%
-        const tranche2 = 28797 / 12; // 2399.75€ at 11%
-
-        if (baseImposable <= tranche1) {
-            impot = 0;
-        } else if (baseImposable <= tranche2) {
-            impot = (baseImposable - tranche1) * 0.11;
-        } else {
-            impot = (tranche2 - tranche1) * 0.11 + (baseImposable - tranche2) * 0.30;
-        }
-
-        impotLabel = `${impot.toFixed(2)} € (IRPP barème progressif)`;
+        // IRPP barème progressif avec abattement BNC
+        const caAnnuel = ca * 12;
+        const revenuImposable = calculateBNCRevenuImposable(caAnnuel);
+        const impotAnnuel = calculateIRPPProgressif(revenuImposable);
+        impot = impotAnnuel / 12; // Ramené au mensuel
+        impotLabel = `${impot.toFixed(2)} € (IRPP progressif)`;
     }
 
     // Calculate CFE monthly
@@ -2651,6 +3658,59 @@ function calculateTaxes() {
     document.getElementById('calcImpot') && (document.getElementById('calcImpot').textContent = impotLabel);
     document.getElementById('calcCFE') && (document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)');
     document.getElementById('calcNet') && (document.getElementById('calcNet').textContent = net.toFixed(2) + ' €');
+
+    // Mise à jour de la comparaison (si élément présent)
+    updateComparaison(ca);
+}
+
+function updateComparaison(caMensuel) {
+    const compContainer = document.getElementById('comparaisonContainer');
+    if (!compContainer) return;
+
+    // Sécurité : vérifier que le barème est initialisé
+    if (!taxSettings.irppBareme || taxSettings.irppBareme.length === 0) {
+        compContainer.innerHTML = '<p style="color: var(--color-text-secondary);">⏳ Chargement du barème IRPP...</p>';
+        return;
+    }
+
+    const caAnnuel = caMensuel * 12;
+    const comp = compareImpots(caAnnuel);
+
+    const versementLibMensuel = comp.versementLib / 12;
+    const irppProgressifMensuel = comp.irppProgressif / 12;
+    const economieMensuelle = comp.economie / 12;
+
+    const meilleurLabel = comp.meilleurChoix === 'versementLib' ? 'Versement libératoire' : 'IRPP progressif';
+    const meilleurColor = comp.meilleurChoix === 'versementLib' ? 'var(--color-primary)' : 'var(--color-success)';
+
+    compContainer.innerHTML = `
+        <h3 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-12);">
+            📊 Comparaison des modes d'imposition (CA annuel : ${caAnnuel.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €)
+        </h3>
+        <div style="display: grid; gap: var(--space-8); margin-bottom: var(--space-12);">
+            <div style="display: flex; justify-content: space-between; padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base);">
+                <span><strong>Versement libératoire (${taxSettings.versementLiberatoire}%)</strong></span>
+                <span><strong>${versementLibMensuel.toFixed(2)} €/mois</strong> (${comp.versementLib.toFixed(2)} €/an)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base);">
+                <span><strong>IRPP progressif</strong> <small style="color: var(--color-text-secondary);">(après abattement BNC ${taxSettings.bncAbattement}%)</small></span>
+                <span><strong>${irppProgressifMensuel.toFixed(2)} €/mois</strong> (${comp.irppProgressif.toFixed(2)} €/an)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base);">
+                <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">Revenu imposable annuel (après abattement BNC)</span>
+                <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">${comp.revenuImposable.toFixed(2)} €</span>
+            </div>
+        </div>
+        <div style="padding: var(--space-12); background: ${meilleurColor}15; border: 2px solid ${meilleurColor}; border-radius: var(--radius-base); text-align: center;">
+            <strong style="color: ${meilleurColor}; font-size: var(--font-size-base);">
+                ✅ Meilleur choix : ${meilleurLabel}
+            </strong>
+            <br>
+            <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">
+                Économie : ${economieMensuelle.toFixed(2)} €/mois (${comp.economie.toFixed(2)} €/an)
+            </span>
+        </div>
+    `;
 }
 
 if (caInput) {
@@ -3225,14 +4285,11 @@ async function saveInvoicesAndRefreshUI() {
 }
 
 function getCurrentInvoiceForPreview() {
-    // Build an invoice object from the form fields (same structure used elsewhere)
+    // Build an invoice object from the form fields (with multi-line items support)
     try {
         const clientNameEl = document.getElementById('clientName');
         const clientAddressEl = document.getElementById('clientAddress');
         const clientSiretEl = document.getElementById('clientSiret');
-        const serviceDescriptionEl = document.getElementById('serviceDescription');
-        const quantityEl = document.getElementById('quantity');
-        const unitPriceEl = document.getElementById('unitPrice');
 
         const invoice = {
             number: invoiceNumberInput ? invoiceNumberInput.value : getNextInvoiceNumber(),
@@ -3241,12 +4298,15 @@ function getCurrentInvoiceForPreview() {
             clientAddress: clientAddressEl ? clientAddressEl.value : '',
             date: invoiceDateInput ? invoiceDateInput.value : '',
             dueDate: dueDateInput ? dueDateInput.value : '',
-            description: serviceDescriptionEl ? serviceDescriptionEl.value : '',
-            quantity: quantityEl ? parseFloat(quantityEl.value) : 0,
-            unitPrice: unitPriceEl ? parseFloat(unitPriceEl.value) : 0,
+            items: currentInvoiceItems && currentInvoiceItems.length > 0 ? [...currentInvoiceItems] : [],
+            // Legacy fields for backward compatibility (use first item)
+            description: currentInvoiceItems[0]?.description || '',
+            quantity: currentInvoiceItems[0]?.quantity || 0,
+            unitPrice: currentInvoiceItems[0]?.unitPrice || 0,
             total: calculateTotal(),
             clientEmail: (clients.find(c => c.name === (clientNameEl ? clientNameEl.value : '')) || {}).email_facturation || ''
         };
+        
         return invoice;
     } catch (e) {
         console.error('getCurrentInvoiceForPreview error', e);
@@ -3366,8 +4426,13 @@ function setupEmailPreviewHandlersForConfirmSend() {
 }
 
 // PDF Download functionality using iframe print fallback
-function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled}) {
-    const totalHT = total;
+function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled, items}) {
+    // Support multi-line items or legacy single-line
+    const invoiceItems = items && items.length > 0 ? items : [
+        { description: description || '', quantity: quantity || 0, unitPrice: unitPrice || 0, total: total || 0 }
+    ];
+    
+    const totalHT = invoiceItems.reduce((sum, item) => sum + (item.total || 0), 0);
     const tva = tvaEnabled ? totalHT * 0.20 : 0;
     const totalTTC = totalHT + tva;
 
@@ -3375,13 +4440,11 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
         ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
 
-    // Use local logo file or data-URI if available
-    const logoSrc = companyInfo.logoUrl && (companyInfo.logoUrl.startsWith('data:') || !companyInfo.logoUrl.includes('github')) 
+    // Force local logo file - always use MTI_CONSULTING.png unless data-URI is provided
+    const logoSrc = companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:') 
         ? companyInfo.logoUrl 
         : 'MTI_CONSULTING.png';
-    const logoHTML = logoSrc
-        ? `<img src="${logoSrc}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;" crossorigin="anonymous">`
-        : '';
+    const logoHTML = `<img src="${logoSrc}" style="max-width: 180px; max-height: 90px; object-fit: contain; margin-bottom: 8px; display: block;" crossorigin="anonymous">`;
 
     return `<!doctype html>
 <html>
@@ -3389,83 +4452,121 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial, Helvetica, sans-serif; color: #222; margin: 18px; }
-        .page-container { max-width: 800px; margin: 0 auto; position: relative; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; }
-        .header-left { max-width: 60%; }
-        .header-right { text-align: right; }
-        .company { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
-        .separator { border: none; border-top: 1px solid #ddd; margin: 10px 0; clear: both; }
-        .invoice-details { margin-top: 20px; margin-bottom: 12px; line-height: 1.5; }
-        .invoice-number { font-size: 18px; font-weight: bold; margin-bottom: 6px; }
-        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-        th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background-color: #f5f5f5; font-weight: bold; font-size: 11px; }
-        td { font-size: 11px; height: 25px; }
-        .totals { text-align: right; margin-top: 10px; padding-top: 10px; border-top: 2px solid #5E5240; font-size: 13px; }
-        .legal { position: absolute; bottom: 0; left: 0; right: 0; font-size: 7.5px; color: #666; line-height: 1.3; background: #f9f9f9; padding: 6px; border-radius: 3px; }
+        @page { 
+            size: A4 portrait; 
+            margin: 0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: Arial, Helvetica, sans-serif; 
+            color: #1a1a1a; 
+            margin: 0; 
+            padding: 0; 
+            background: white;
+            width: 794px;
+            height: 1123px;
+        }
+        .page-container { 
+            width: 794px;
+            height: 1123px;
+            margin: 0; 
+            padding: 60px 50px 100px 50px;
+            position: relative; 
+            background: white;
+            box-sizing: border-box;
+        }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 35px; }
+        .header-left { max-width: 48%; }
+        .header-right { max-width: 45%; margin-top: 85px; }
+        .company { font-weight: bold; font-size: 20px; color: #21808D; margin-bottom: 10px; line-height: 1.2; }
+        .separator { border: none; border-top: 2px solid #e0e0e0; margin: 20px 0; clear: both; }
+        .invoice-details { margin-top: 30px; margin-bottom: 25px; line-height: 1.7; }
+        .invoice-number { font-size: 24px; font-weight: bold; margin-bottom: 12px; color: #21808D; }
+        table { width: 100%; border-collapse: collapse; margin: 25px 0; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+        th { background-color: rgba(33, 128, 141, 0.12); font-weight: bold; font-size: 13px; color: #1a1a1a; }
+        td { font-size: 14px; color: #333; }
+        .totals { text-align: right; margin-top: 30px; padding-top: 20px; border-top: 3px solid #21808D; font-size: 15px; line-height: 1.8; }
+        .legal { 
+            position: absolute; 
+            bottom: 40px; 
+            left: 50px; 
+            right: 50px; 
+            font-size: 9px; 
+            color: #666; 
+            line-height: 1.4; 
+            background: #f9f9f9; 
+            padding: 10px 12px; 
+            border-radius: 3px; 
+            border-left: 3px solid #21808D; 
+        }
+        .legal p { margin: 3px 0; }
     </style>
 </head>
 <body>
     <div class="page-container">
         <div class="header">
-            <div class="header-left">
-                ${logoHTML}
-                <div class="company">${companyInfo.name}</div>
-                <div style="font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
-                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret || ''}</div>
+                <div class="header-left">
+                    ${logoHTML}
+                    <div class="company">${companyInfo.name}</div>
+                    <div style="font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                    <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret || ''}</div>
+                </div>
+                <div class="header-right">
+                    <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
+                    <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
+                </div>
             </div>
-            <div class="header-right">
-                <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
+
+            <div class="invoice-details">
+                <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
+                <div style="font-size: 13px;">
+                    <div>Date: ${formatDateFR(invoiceDate)}</div>
+                    <div>Échéance: ${formatDateFR(dueDate)}</div>
+                </div>
             </div>
-        </div>
 
-        <div class="invoice-details">
-            <h2 class="invoice-number">FACTURE N° ${invoiceNumber}</h2>
-            <div style="font-size: 13px;">
-                <div>Date: ${formatDateFR(invoiceDate)}</div>
-                <div>Échéance: ${formatDateFR(dueDate)}</div>
+            <hr class="separator">
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th style="text-align: center;">Quantité</th>
+                        <th style="text-align: right;">Prix unitaire</th>
+                        <th style="text-align: right;">Total HT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${invoiceItems.map(item => `
+                        <tr>
+                            <td>${item.description || ''}</td>
+                            <td style="text-align: center;">${item.quantity || 0}</td>
+                            <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
+                            <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+
+            <div class="totals">
+                ${tvaEnabled ? `
+                    <div style="margin-bottom: 6px;">Total HT: ${totalHT.toFixed(2)} €</div>
+                    <div style="margin-bottom: 6px;">TVA (20%): ${tva.toFixed(2)} €</div>
+                    <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${totalTTC.toFixed(2)} €</div>
+                ` : `
+                    <div style="margin-bottom: 6px;">Total HT: ${totalHT.toFixed(2)} €</div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 6px;">TVA non applicable (art. 293 B du CGI)</div>
+                    <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${totalHT.toFixed(2)} €</div>
+                `}
             </div>
+
+        <div class="legal">
+            <p><strong>Conditions de paiement:</strong> 30 jours nets à réception | <strong>Escompte:</strong> néant</p>
+            <p><strong>Pénalités de retard:</strong> 3 fois le taux d'intérêt légal en vigueur | <strong>Indemnité forfaitaire pour frais de recouvrement:</strong> 40€ (art. D.441-5 du Code de commerce)</p>
+            <p><strong>TVA non applicable, art. 293 B du CGI</strong> (franchise en base) | Dispensé d'immatriculation au RCS et au RM (micro-entreprise)</p>
+            ${(companyInfo.iban || companyInfo.bic) ? `<p style="margin-top: 6px;">${companyInfo.iban ? `<strong>IBAN:</strong> ${companyInfo.iban}` : ''}${companyInfo.iban && companyInfo.bic ? ' | ' : ''}${companyInfo.bic ? `<strong>BIC:</strong> ${companyInfo.bic}` : ''}</p>` : ''}
         </div>
-
-        <hr class="separator">
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Description</th>
-                    <th style="text-align: center;">Quantité</th>
-                    <th style="text-align: right;">Prix unitaire</th>
-                    <th style="text-align: right;">Total HT</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>${description}</td>
-                    <td style="text-align: center;">${quantity}</td>
-                    <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
-                    <td style="text-align: right;">${total.toFixed(2)} €</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div class="totals">
-            ${tvaEnabled ? `
-                <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                <div>TVA (20%): ${tva.toFixed(2)} €</div>
-                <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
-            ` : `
-                <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                <div style="font-size: 11px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
-                <div style="font-weight: bold; font-size: 16px; margin-top: 8px;">Total TTC: ${totalHT.toFixed(2)} €</div>
-            `}
-        </div>
-    </div>
-
-    <div class="legal">
-        <p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p>
-        <p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p>
     </div>
 </body>
 </html>`;
@@ -3474,10 +4575,22 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
 function downloadInvoicePDF() {
     const clientNameEl = document.getElementById('clientName');
     const clientAddressEl = document.getElementById('clientAddress');
-    const serviceDescriptionEl = document.getElementById('serviceDescription');
 
-    if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput || !serviceDescriptionEl || !quantityInput || !unitPriceInput) {
+    // Validation: check required fields
+    if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput) {
         alert('Veuillez remplir tous les champs obligatoires avant de télécharger le PDF');
+        return;
+    }
+
+    // Validate that we have at least one item with description
+    if (!currentInvoiceItems || currentInvoiceItems.length === 0) {
+        alert('Veuillez ajouter au moins une ligne de facturation');
+        return;
+    }
+
+    const hasEmptyDescription = currentInvoiceItems.some(item => !item.description || item.description.trim() === '');
+    if (hasEmptyDescription) {
+        alert('Toutes les lignes doivent avoir une description');
         return;
     }
 
@@ -3486,45 +4599,24 @@ function downloadInvoicePDF() {
     const invoiceNumber = invoiceNumberInput.value;
     const invoiceDate = invoiceDateInput.value;
     const dueDate = dueDateInput.value;
-    const description = serviceDescriptionEl.value;
-    const quantity = quantityInput.value;
-    const unitPrice = unitPriceInput.value;
     const total = calculateTotal();
 
     const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
-    const totalHT = total;
-    const tva = tvaEnabled ? totalHT * 0.20 : 0;
-    const totalTTC = totalHT + tva;
 
-    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
-        ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
-        : '[À compléter dans Paramètres]';
-
-    const logoHTML = companyInfo.logoUrl
-        ? `<img src="${companyInfo.logoUrl}" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: 10px;">`
-        : '';
-
-    let tvaSection = '';
-    if (tvaEnabled) {
-        tvaSection = `
-            <div style="text-align: right; margin-top: 20px; font-size: 14px;">
-                <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                <div>TVA (20%): ${tva.toFixed(2)} €</div>
-                <div style="font-weight: bold; font-size: 16px; margin-top: 5px;">Total TTC: ${totalTTC.toFixed(2)} €</div>
-            </div>
-        `;
-    } else {
-        tvaSection = `
-            <div style="text-align: right; margin-top: 20px; font-size: 14px;">
-                <div>Total HT: ${totalHT.toFixed(2)} €</div>
-                <div style="font-size: 12px; color: #666;">TVA non applicable (art. 293 B du CGI)</div>
-                <div style="font-weight: bold; font-size: 16px; margin-top: 5px;">Total TTC: ${totalHT.toFixed(2)} €</div>
-            </div>
-        `;
-    }
-
+    // Use buildInvoiceHtml with items array
     const pdfContent = buildInvoiceHtml({
-        clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled
+        clientName, 
+        clientAddress, 
+        invoiceNumber, 
+        invoiceDate, 
+        dueDate, 
+        total, 
+        tvaEnabled,
+        items: currentInvoiceItems,
+        // Legacy fields for backward compatibility (use first item)
+        description: currentInvoiceItems[0]?.description || '',
+        quantity: currentInvoiceItems[0]?.quantity || 0,
+        unitPrice: currentInvoiceItems[0]?.unitPrice || 0
     });
     
 
@@ -3557,7 +4649,46 @@ function downloadInvoicePDF() {
 // Download PDF button: generate, save to Drive (replacing existing), open Drive PDF for preview
 document.getElementById('downloadPDF')?.addEventListener('click', async () => {
     const invoice = getCurrentInvoiceForPreview();
-    if (!invoice) { alert('Aucune facture pour téléchargement'); return; }
+    if (!invoice) { 
+        alert('❌ Aucune facture pour téléchargement'); 
+        return; 
+    }
+
+    // ========== VALIDATIONS STRICTES ==========
+    
+    // 1. Vérifier que le client est renseigné
+    if (!invoice.client || invoice.client.trim() === '') {
+        alert('❌ Veuillez renseigner le nom du client avant de générer le PDF');
+        return;
+    }
+
+    // 2. Vérifier qu'il y a au moins une ligne de facturation
+    if (!invoice.items || invoice.items.length === 0) {
+        alert('❌ Veuillez ajouter au moins une ligne de facturation');
+        return;
+    }
+
+    // 3. Vérifier que toutes les lignes ont une description
+    const hasEmptyDescription = invoice.items.some(item => !item.description || item.description.trim() === '');
+    if (hasEmptyDescription) {
+        alert('❌ Toutes les lignes de facturation doivent avoir une description');
+        return;
+    }
+
+    // 4. Vérifier que le montant total n'est pas nul
+    if (!invoice.total || invoice.total <= 0) {
+        alert('❌ Le montant total de la facture doit être supérieur à 0 €\nVeuillez renseigner les quantités et prix unitaires');
+        return;
+    }
+
+    // 5. Vérifier que l'adresse client est renseignée
+    if (!invoice.clientAddress || invoice.clientAddress.trim() === '') {
+        alert('❌ Veuillez renseigner l\'adresse du client avant de générer le PDF');
+        return;
+    }
+
+    // ========== FIN VALIDATIONS ==========
+
     try {
         renderInvoicePreview(invoice, false);
     } catch (e) { console.warn('renderInvoicePreview failed', e); }
@@ -3601,6 +4732,12 @@ function initApp() {
 
     setDefaultDates();
     if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput ? invoiceDateInput.value : null);
+    
+    // Initialize invoice items with one empty line
+    if (currentInvoiceItems.length === 0) {
+        addInvoiceItem();
+    }
+    
     calculateTotal();
     renderCalendar();
     renderClientsTable();
@@ -3612,6 +4749,7 @@ function initApp() {
     calculateTaxes();
     updateCFEMensuel();
     loadCompanySettings();
+    renderIRPPBareme(); // Initialiser l'UI du barème IRPP
 
     // Show jsPDF warning if missing
     const pdfWarnEl = document.getElementById('pdfWarning');
@@ -3629,67 +4767,20 @@ function initApp() {
     // Initialize preview-confirm button (always uses Drive mode)
     try { initPreviewConfirmButton(); } catch (e) { console.warn('initPreviewConfirmButton failed', e); }
 
-    // Calendar view toggle: switch between FullCalendar (Google) and app calendar (day/week/month views)
-    try {
-        const toggleViewBtn = document.getElementById('toggleCalendarViewBtn');
-        if (toggleViewBtn) {
-            console.log('✅ toggleCalendarViewBtn found, attaching listener');
-            toggleViewBtn.addEventListener('click', () => {
-                console.log('🔄 Toggle calendar view clicked, current useAppCalendar:', useAppCalendar);
-                const fcContainer = document.getElementById('calendarContainer');
-                const appContainer = document.getElementById('appCalendarContainer');
-                if (!fcContainer || !appContainer) {
-                    console.warn('Calendar containers not found:', { fcContainer, appContainer });
-                    return;
-                }
-                useAppCalendar = !useAppCalendar;
-                console.log('🔄 Switching to', useAppCalendar ? 'app calendar' : 'Google calendar');
-                if (useAppCalendar) {
-                    // switch to app calendar
-                    fcContainer.style.display = 'none';
-                    appContainer.style.display = 'block';
-                    renderCalendar(); // will render into appCalendarContainer (via useAppCalendar flag)
-                    toggleViewBtn.textContent = '🔄 Afficher calendrier Google';
-                } else {
-                    // switch to FullCalendar (Google)
-                    fcContainer.style.display = 'block';
-                    appContainer.style.display = 'none';
-                    if (window.mti_fullCalendar) window.mti_fullCalendar.refetchEvents();
-                    toggleViewBtn.textContent = '🔄 Afficher calendrier de l\'appli';
-                }
-            });
-        } else {
-            console.warn('❌ toggleCalendarViewBtn NOT FOUND in DOM');
-        }
-    } catch (e) { console.warn('calendar view toggle init failed', e); }
-
-    // Calendar embed toggle init (small widget to show Google Calendar iframe)
-    try {
-        const toggleBtn = document.getElementById('toggleCalendarEmbedBtn');
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                const container = document.getElementById('calendarEmbedContainer');
-                if (!container) return;
-                if (container.style.display === 'none' || container.style.display === '') {
-                    // show and set src
-                    const calId = getConfiguredCalendarId() || 'primary';
-                    const iframe = document.getElementById('calendarEmbed');
-                    if (iframe) {
-                        iframe.src = 'https://calendar.google.com/calendar/embed?src=' + encodeURIComponent(calId) + '&ctz=Europe%2FParis';
-                    }
-                    container.style.display = 'block';
-                    toggleBtn.textContent = '🗓️ Masquer calendrier intégré';
-                } else {
-                    container.style.display = 'none';
-                    toggleBtn.textContent = '🗓️ Afficher calendrier intégré';
-                }
-            });
-        }
-    } catch (e) { console.warn('calendar embed init failed', e); }
-
-    // Initialize calendar manager (interactive event create/modify/delete)
+    // Initialize Google Calendar with FullCalendar + OAuth2
+    try { initGoogleCalendarEmbed(); } catch (e) { console.warn('initGoogleCalendarEmbed failed', e); }
+    
+    // Initialize calendar manager (interactive event create/modify/delete via backend)
     try { initCalendarManager(); } catch (e) { console.warn('initCalendarManager failed', e); }
-    try { initFullCalendar(); } catch (e) { console.warn('initFullCalendar failed', e); }
+    
+    // Setup "Ouvrir dans Google Calendar" button
+    const openCalendarBtn = document.getElementById('openGoogleCalendarBtn');
+    if (openCalendarBtn) {
+        openCalendarBtn.addEventListener('click', () => {
+            const calId = getConfiguredCalendarId();
+            window.open(`https://calendar.google.com/calendar/u/0/r?cid=${encodeURIComponent(calId)}`, '_blank');
+        });
+    }
 
     // Copy/close buttons exist in DOM; handlers attached globally above via event delegation
 
@@ -3857,14 +4948,14 @@ async function generateInvoicePDFBase64(invoice) {
     let logoDataUri = null;
     try {
         // Use local logo file instead of GitHub URL
-        const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'MTI_CONSULTING.png';
+        const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'assets/images/MTI_CONSULTING.png';
         logoDataUri = await fetchImageAsDataUri(logoSrc);
         if (logoDataUri) companyInfo.logoUrl = logoDataUri;
     } catch (e) {
         console.warn('Could not inline logo', e);
         // Fallback: try local file
         try {
-            logoDataUri = await fetchImageAsDataUri('MTI_CONSULTING.png');
+            logoDataUri = await fetchImageAsDataUri('assets/images/MTI_CONSULTING.png');
             if (logoDataUri) companyInfo.logoUrl = logoDataUri;
         } catch (e2) {
             console.warn('Fallback logo load failed', e2);
@@ -3894,7 +4985,8 @@ async function generateInvoicePDFBase64(invoice) {
                 quantity: invoice.quantity || 0,
                 unitPrice: invoice.unitPrice || 0,
                 total: invoice.total || 0,
-                tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked
+                tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked,
+                items: invoice.items || null
             });
         }
     } finally {
@@ -3910,67 +5002,31 @@ async function generateInvoicePDFBase64(invoice) {
             // Render with html2canvas. Use scale 2.0 for excellent quality while keeping reasonable file size.
             // Scale 2.0 gives ~150-200 Ko (good balance between quality and size)
             const canvasScale = 2.0;
-            // Compute printable width in px so layout matches A4 printable area
+            // Use exact A4 dimensions in pixels (at 96 DPI: 210mm = 794px, 297mm = 1123px)
             const { jsPDF } = window.jspdf;
-            const pdfForCalc = new jsPDF('p', 'mm', 'a4');
-            const pageWidth = pdfForCalc.internal.pageSize.getWidth();
-            const pageHeight = pdfForCalc.internal.pageSize.getHeight();
-            const margin = 8; // mm
-            const printableWidthMm = pageWidth - margin * 2;
-            const effectiveDpi = 96 * canvasScale;
-            const printableWidthPx = Math.round(printableWidthMm * effectiveDpi / 25.4);
-            // Apply printable width to temp container before rendering
-            tempContainer.style.width = printableWidthPx + 'px';
+            const pdfDoc = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdfDoc.internal.pageSize.getWidth(); // 210mm
+            const pageHeight = pdfDoc.internal.pageSize.getHeight(); // 297mm
+            
+            // A4 at 96 DPI = 794x1123px, scale up for quality
+            const a4WidthPx = 794;
+            const a4HeightPx = 1123;
+            tempContainer.style.width = a4WidthPx + 'px';
+            tempContainer.style.height = a4HeightPx + 'px';
 
             const canvas = await html2canvas(tempContainer, { scale: canvasScale, useCORS: true, backgroundColor: '#ffffff' });
             // Use JPEG with 0.85 quality for much smaller file size while preserving visual quality
             const imgData = canvas.toDataURL('image/jpeg', 0.85);
-            const pdf = new jsPDF('p', 'mm', 'a4');
 
             // canvas dimensions in px
             const imgProps = { width: canvas.width, height: canvas.height };
             // Convert px -> mm taking canvas scale (effective DPI = 96 * scale)
             const pxToMm = (px) => px * 25.4 / effectiveDpi;
-            const imgWidthMm = pxToMm(imgProps.width);
-            const imgHeightMm = pxToMm(imgProps.height);
-
-            let renderWidth = printableWidthMm;
-            // scale so width fits the printable area
-            let scale = renderWidth / imgWidthMm;
-            let totalHeightMm = imgHeightMm * scale;
-
-            // If image is taller than a single page, split into multiple pages
-            const imgDataType = 'JPEG';
-
-            // Create an offscreen canvas to slice the image if necessary
-            const tmpCanvas = document.createElement('canvas');
-            const tmpCtx = tmpCanvas.getContext('2d');
-            tmpCanvas.width = canvas.width;
-            tmpCanvas.height = canvas.height;
-            tmpCtx.drawImage(canvas, 0, 0);
-
-            // Height in source pixels corresponding to one PDF page (in px). We reverse pxToMm.
-            const pageHeightPx = Math.round((pageHeight - margin * 2) / scale * (effectiveDpi / 25.4));
-            let startPx = 0;
-            while (startPx < canvas.height) {
-                const sliceHeightPx = Math.min(pageHeightPx, canvas.height - startPx);
-                const sliceCanvas = document.createElement('canvas');
-                sliceCanvas.width = canvas.width;
-                sliceCanvas.height = sliceHeightPx;
-                const sc = sliceCanvas.getContext('2d');
-                sc.drawImage(canvas, 0, startPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
-                const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.85);
-                const sliceHeightMm = pxToMm(sliceHeightPx) * scale;
-
-                // center horizontally
-                const drawX = (pageWidth - renderWidth) / 2;
-                const drawY = margin;
-                pdf.addImage(sliceData, imgDataType, drawX, drawY, renderWidth, sliceHeightMm);
-
-                startPx += sliceHeightPx;
-                if (startPx < canvas.height) pdf.addPage();
-            }
-            const dataUri = pdf.output('datauristring');
+            // Simply add the full canvas as one image covering the entire PDF page
+            // Canvas should already be at correct A4 proportions (794x1123 * scale)
+            pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+            
+            const dataUri = pdfDoc.output('datauristring');
             // Cleanup
             try { document.body.removeChild(tempContainer); } catch(e) {}
             return dataUri.split(',')[1];

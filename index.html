@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MTI CONSULTING - Gestion Freelance</title>
+    <link rel="icon" type="image/png" href="/assets/icons/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/assets/icons/favicon.svg" />
+    <link rel="shortcut icon" href="/assets/icons/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/assets/icons/site.webmanifest" />
     <style>
         /* 
          * Toutes les feuilles de style sont inlinées ici conformément à la consigne du projet :
@@ -696,8 +701,6 @@ tr:hover {
 }
 
 </style>
-    <!-- FullCalendar (CSS) -->
-    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
 </head>
 <body>
     <header class="header">
@@ -705,8 +708,7 @@ tr:hover {
             <img src="MTI_CONSULTING.png" alt="MTI CONSULTING Logo" class="logo">
             <h1 class="header-title">MTI CONSULTING</h1>
             <div style="margin-left: auto; display:flex; gap:8px; align-items:center;">
-                <button class="btn btn-secondary" id="importCalendarHeaderBtn" title="Importer depuis Google Calendar">📥 Importer Calendar</button>
-                <span style="margin-left:12px; font-size:13px; color:var(--color-text-secondary);">📧 Envoi automatique avec aperçu</span>
+                <span style="font-size:13px; color:var(--color-text-secondary);">📧 Envoi automatique avec aperçu | 📅 Google Calendar synchronisé</span>
             </div>
         </div>
     </header>
@@ -784,20 +786,28 @@ tr:hover {
                         </div>
                     </div>
 
+                    <!-- MULTI-LINE ITEMS TABLE -->
                     <div class="form-group">
-                        <label class="form-label">Description de la prestation *</label>
-                        <textarea class="form-control" id="serviceDescription" required></textarea>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Quantité *</label>
-                            <input type="number" class="form-control" id="quantity" value="1" min="1" required>
+                        <label class="form-label">Lignes de facturation *</label>
+                        <div id="invoiceItemsContainer" style="border: 1px solid var(--color-border); border-radius: var(--border-radius); overflow: hidden;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: var(--color-bg-secondary);">
+                                        <th style="padding: 8px; text-align: left; font-weight: 600; font-size: var(--font-size-sm);">Description</th>
+                                        <th style="padding: 8px; text-align: center; font-weight: 600; font-size: var(--font-size-sm); width: 80px;">Qté</th>
+                                        <th style="padding: 8px; text-align: right; font-weight: 600; font-size: var(--font-size-sm); width: 120px;">Prix Unit. HT</th>
+                                        <th style="padding: 8px; text-align: right; font-weight: 600; font-size: var(--font-size-sm); width: 120px;">Total HT</th>
+                                        <th style="padding: 8px; text-align: center; width: 50px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="invoiceItemsBody">
+                                    <!-- Invoice items will be added here dynamically -->
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Prix unitaire HT (€) *</label>
-                            <input type="number" class="form-control" id="unitPrice" step="0.01" min="0" required>
-                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="addInvoiceItem()" style="margin-top: 8px;">
+                            ➕ Ajouter une ligne
+                        </button>
                     </div>
 
                     <div class="toggle">
@@ -927,45 +937,47 @@ tr:hover {
         <!-- PLANNING TAB -->
         <div id="planning" class="tab-content">
             <div class="card">
-                <h2 class="card-title">Planning</h2>
-                
-                <!-- View Selector -->
-                <div style="margin-bottom: var(--space-16); display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: center; justify-content: space-between;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-20);">
+                    <h2 class="card-title" style="margin-bottom: 0;">Planning Google Calendar</h2>
                     <div style="display: flex; gap: var(--space-8);">
-                        <button class="btn btn-secondary" id="viewDay">Jour</button>
-                        <button class="btn btn-secondary active" id="viewWeek">Semaine</button>
-                        <button class="btn btn-secondary" id="viewMonth">Mois</button>
-                    </div>
-                    <div style="display: flex; gap: var(--space-8);">
-                        <button class="btn btn-primary" id="syncCalendarBtn" title="Synchroniser avec Google Calendar">📅 Synchroniser Calendar</button>
-                        <button class="btn btn-secondary" id="toggleCalendarViewBtn" title="Basculer entre calendrier Google et calendrier de l'appli">🔄 Basculer vue calendrier</button>
-                        <button class="btn btn-secondary" id="toggleCalendarEmbedBtn" title="Afficher le calendrier intégré">🗓️ Afficher calendrier intégré</button>
-                        <button class="btn btn-primary" id="addTaskBtn">➕ Ajouter une tâche</button>
+                        <button class="btn btn-primary" id="googleAuthBtn">🔐 Se connecter à Google</button>
+                        <button class="btn btn-secondary" id="openGoogleCalendarBtn">🌐 Ouvrir dans Google Calendar</button>
+                        <button class="btn btn-primary" id="addTaskBtn">➕ Nouveau RDV</button>
                     </div>
                 </div>
                 
-                <!-- Date Navigation -->
-                <div style="margin-bottom: var(--space-16); display: flex; gap: var(--space-12); align-items: center; justify-content: center; padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base);">
-                        <button class="btn btn-sm btn-secondary" id="navPrevBtn">← Précédent</button>
-                        <button class="btn btn-sm btn-secondary" id="navTodayBtn">Aujourd'hui</button>
-                        <button class="btn btn-sm btn-secondary" id="navNextBtn">Suivant →</button>
+                <p style="margin-bottom: var(--space-16); color: var(--color-text-secondary); font-size: var(--font-size-sm);">
+                    📅 <strong>Calendrier interactif FullCalendar</strong> : Connectez-vous à Google pour gérer vos rendez-vous directement dans le calendrier (cliquer pour créer, glisser-déposer pour déplacer, redimensionner pour ajuster la durée). Plage horaire : 8h-20h, semaine du lundi au dimanche.
+                </p>
+                
+                <div id="fileProtocolWarning" style="display: none; padding: var(--space-16); background-color: rgba(var(--color-orange-500-rgb), 0.15); color: var(--color-warning); border-radius: var(--radius-base); margin-bottom: var(--space-16); border: 2px solid rgba(var(--color-orange-500-rgb), 0.5);">
+                    <h3 style="margin-bottom: var(--space-8); font-size: var(--font-size-lg);">⚠️ Serveur HTTP requis</h3>
+                    <p style="margin-bottom: var(--space-8);">L'authentification Google OAuth2 ne fonctionne pas avec le protocole <code>file://</code></p>
+                    <p style="margin-bottom: var(--space-12);"><strong>Solutions :</strong></p>
+                    <ul style="margin-left: var(--space-24); margin-bottom: var(--space-12);">
+                        <li><strong>Python :</strong> <code>python -m http.server 8000</code> puis ouvrez <code>http://localhost:8000/index.html</code></li>
+                        <li><strong>Node.js :</strong> <code>npx http-server -p 8000</code> puis ouvrez <code>http://localhost:8000/index.html</code></li>
+                        <li><strong>VS Code :</strong> Extension "Live Server" → Clic droit sur index.html → "Open with Live Server"</li>
+                    </ul>
+                    <p style="font-size: var(--font-size-xs); opacity: 0.8;">Vos domaines autorisés : <code>http://localhost</code> et <code>https://mtcdp59.github.io</code></p>
                 </div>
                 
-                <div id="currentDateDisplay" style="margin-bottom: var(--space-16); text-align: center; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold);"></div>
-                
-                <div id="weeklyStats" style="margin-bottom: var(--space-16); padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base);"></div>
-                <div id="calendarContainer"></div>
-                <div id="appCalendarContainer" style="display:none;"></div>
-                <div id="calendarEmbedContainer" style="margin-top:12px; display:none;">
-                    <label style="font-size:13px; color:var(--color-text-secondary);">Calendrier intégré (utilise l'ID du calendrier configuré)</label>
-                    <div style="margin-top:8px;">
-                        <iframe id="calendarEmbed" style="width:100%; height:600px; border:1px solid var(--color-card-border); border-radius:8px;" src="" frameborder="0" scrolling="no"></iframe>
+                <div id="fullCalendarContainer" style="margin-top: var(--space-16); display: none;">
+                    <div id="calendarNotConnected" style="padding: var(--space-24); text-align: center; background-color: var(--color-bg-1); border-radius: var(--radius-lg); border: 2px dashed var(--color-border); margin-bottom: var(--space-16);">
+                        <div style="font-size: 48px; margin-bottom: var(--space-12);">📅</div>
+                        <h3 style="margin-bottom: var(--space-8); color: var(--color-text);">Calendrier prêt</h3>
+                        <p style="color: var(--color-text-secondary); margin-bottom: var(--space-16);">Cliquez sur <strong>"🔐 Se connecter à Google"</strong> ci-dessus pour accéder à votre calendrier interactif.</p>
+                        <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Une fois connecté, vous pourrez créer, déplacer et modifier vos rendez-vous directement dans le calendrier.</p>
                     </div>
+                    <div id="fullCalendar"></div>
                 </div>
             </div>
             
             <div id="taskFormCard" class="card" style="display: none;">
-                <h2 class="card-title">Nouvelle tâche</h2>
+                <h2 class="card-title">Nouveau rendez-vous</h2>
+                <p style="margin-bottom: var(--space-16); color: var(--color-text-secondary); font-size: var(--font-size-sm);">
+                    Créez un événement qui sera automatiquement ajouté à votre Google Calendar.
+                </p>
                 <form id="taskForm">
                     <div class="form-group">
                         <label class="form-label">Date *</label>
@@ -974,7 +986,7 @@ tr:hover {
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Heure de début *</label>
-                            <input type="time" class="form-control" id="taskTime" required>
+                            <input type="time" class="form-control" id="taskTime" value="09:00" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Durée (heures) *</label>
@@ -985,17 +997,18 @@ tr:hover {
                         <label class="form-label">Type *</label>
                         <select class="form-control" id="taskType" required>
                             <option value="Travail">Travail</option>
-                            <option value="Réunion client">Réunion client</option>
+                            <option value="Réunion">Réunion</option>
                             <option value="Administratif">Administratif</option>
+                            <option value="Autre">Autre</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Description *</label>
-                        <textarea class="form-control" id="taskDescription" required></textarea>
+                        <textarea class="form-control" id="taskDescription" placeholder="Ex: Réunion avec client, Développement module, etc." required></textarea>
                     </div>
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="cancelTask">Annuler</button>
-                        <button type="submit" class="btn btn-primary">Ajouter</button>
+                        <button type="submit" class="btn btn-primary">📅 Créer le rendez-vous</button>
                     </div>
                 </form>
             </div>
@@ -1109,7 +1122,10 @@ tr:hover {
         <!-- PARAMÈTRES TAB -->
         <div id="parametres" class="tab-content">
             <div class="card">
-                <h2 class="card-title">Paramètres de Calcul</h2>
+                <h2 class="card-title">⚙️ Paramètres</h2>
+                
+                <!-- SECTION 1: INFORMATIONS ENTREPRISE -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: 0; margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📄 Informations Entreprise</h3>
                 <div class="form-group" style="position: relative;">
                     <label class="form-label">
                         Logo URL (optionnel)
@@ -1143,21 +1159,36 @@ tr:hover {
                         <input type="text" class="form-control" id="companyCity" placeholder="Paris">
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label class="form-label">IBAN Professionnel (affiché en footer de facture)</label>
+                        <input type="text" class="form-control" id="companyIBAN" placeholder="FR76 1234 5678 9012 3456 7890 123">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Format : 27 caractères (FR + 25 chiffres/lettres)</small>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label">BIC / SWIFT</label>
+                        <input type="text" class="form-control" id="companyBIC" placeholder="ABCDEFGHXXX">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">8 ou 11 caractères</small>
+                    </div>
+                </div>
 
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-border);">IS / IRPP</h3>
+                <!-- SECTION 2: CALCULS FISCAUX -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">💰 Calculs Fiscaux et Sociaux</h3>
+                
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">IS / IRPP</h4>
                 <div class="form-group">
                     <label class="form-label">Taux IS (IRPP/Impôt) (%)</label>
                     <input type="number" class="form-control" id="tauxIS" step="0.1" min="0" value="0">
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">0% si versement libératoire uniquement</small>
                 </div>
 
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-border);">Versement Libératoire</h3>
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Versement Libératoire</h4>
                 <div class="form-group">
                     <label class="form-label">Taux versement libératoire (%)</label>
                     <input type="number" class="form-control" id="tauxVersementLib" step="0.1" min="0" value="2.2">
                 </div>
 
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-border);">CFE (Cotisation Foncière des Entreprises)</h3>
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">CFE (Cotisation Foncière des Entreprises)</h4>
                 <div class="form-group">
                     <label class="form-label">Montant CFE annuel (€)</label>
                     <input type="number" class="form-control" id="cfeAnnuel" step="1" min="0" value="600">
@@ -1171,7 +1202,7 @@ tr:hover {
                     <strong>CFE mensuelle: <span id="cfeMensuel">50.00</span>€</strong>
                 </div>
 
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-border);">Cotisations sociales</h3>
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Cotisations sociales</h4>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Taux avec ACRE active (%)</label>
@@ -1183,18 +1214,29 @@ tr:hover {
                     </div>
                 </div>
 
-                <div id="saveConfirmation" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-teal-500-rgb), 0.15); color: var(--color-success); border-radius: var(--radius-base); margin-bottom: var(--space-16); border: 1px solid rgba(var(--color-teal-500-rgb), 0.25);">
+                <!-- SECTION 3: BARÈME IRPP (Progressif) -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📊 Barème Progressif IRPP</h3>
+                <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-12);">Tranches d'imposition pour le calcul de l'impôt sur le revenu (barème progressif 2025)</p>
+                <div id="irppBaremeContainer" style="display: grid; gap: var(--space-12);">
+                    <!-- Sera rempli dynamiquement par JS -->
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="resetIRPPBareme" style="margin-top: var(--space-12);">🔄 Réinitialiser barème par défaut</button>
+
+                <!-- SECTION 4: DIVERS -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">🔧 Divers</h3>
+                <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary" id="testBackendBtn">🧪 Tester BACKEND</button>
+                    <div id="pdfWarning" style="color:var(--color-warning); font-size:13px; display:none;">⚠️ jsPDF non chargé — génération PDF hors service. Voir Paramètres.</div>
+                </div>
+
+                <!-- SAVE CONFIRMATION & BUTTONS -->
+                <div id="saveConfirmation" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-teal-500-rgb), 0.15); color: var(--color-success); border-radius: var(--radius-base); margin-top: var(--space-24); margin-bottom: var(--space-16); border: 1px solid rgba(var(--color-teal-500-rgb), 0.25);">
                     ✓ Paramètres sauvegardés avec succès
                 </div>
 
-                <div class="action-buttons">
-                    <button type="button" class="btn btn-secondary" id="resetSettings">🔄 Réinitialiser</button>
+                <div class="action-buttons" style="margin-top: var(--space-24);">
+                    <button type="button" class="btn btn-secondary" id="resetSettings">🔄 Réinitialiser tout</button>
                     <button type="button" class="btn btn-primary" id="saveSettings">💾 Enregistrer les paramètres</button>
-                </div>
-                <!-- Backend test + jsPDF warning -->
-                <div style="margin-top: 12px; display:flex; gap:8px; align-items:center;">
-                    <button type="button" class="btn btn-secondary" id="testBackendBtn">🧪 Tester BACKEND</button>
-                    <div id="pdfWarning" style="color:var(--color-warning); font-size:13px; display:none;">⚠️ jsPDF non chargé — génération PDF hors service. Voir Paramètres.</div>
                 </div>
             </div>
         </div>
@@ -1242,6 +1284,13 @@ tr:hover {
                         <span class="calc-label">Net mensuel estimé</span>
                         <span class="calc-value" id="calcNet">0,00 €</span>
                     </div>
+                </div>
+            </div>
+
+            <!-- Comparaison Versement Libératoire vs IRPP Progressif -->
+            <div class="card">
+                <div id="comparaisonContainer">
+                    <!-- Rempli dynamiquement par updateComparaison() -->
                 </div>
             </div>
         </div>
@@ -1417,8 +1466,16 @@ tr:hover {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
     <!-- html2canvas for high-fidelity HTML -> canvas rendering (used to unify PDF preview and email attachment) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- FullCalendar (bundle includes interaction, dayGrid, timeGrid) -->
-    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+    <!-- FullCalendar for interactive calendar management -->
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.10/locales/fr.global.min.js"></script>
+    <!-- Google API Client Library for Calendar API -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <!-- Google Identity Services (GIS) for OAuth2 - New method -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Configuration locale (créer ce fichier avec vos vraies valeurs, voir config.example.js) -->
+    <script src="config.js"></script>
     <!-- Backend raw response modal -->
     <div id="backendModal" class="modal">
         <div class="modal-content" style="max-width:800px;">
