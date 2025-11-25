@@ -3,7 +3,7 @@
 
 // Configuration production (credentials en dur comme en v42)
 const CONFIG = {
-    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyUp4uaDfbrZpziEXI3SRBYm8M_cF32mU17Ji_L3qYnxaQGl-K6KZ19-33yHkCCMD92/exec',
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
     SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
     CALENDAR_ID: '',
@@ -3406,13 +3406,16 @@ function setupFilterListeners() {
 
 // PARAMÈTRES - Settings Management
 
-// Charger la configuration technique dans l'UI
+// Charger la configuration technique dans l'UI (pré-remplit avec les valeurs de CONFIG)
 function loadTechnicalConfig() {
     if (document.getElementById('configBackendURL')) {
+        // Pré-remplir avec les valeurs hardcodées de CONFIG (v42 style)
         document.getElementById('configBackendURL').value = CONFIG.BACKEND_URL || '';
         document.getElementById('configClientID').value = CONFIG.GOOGLE_CLIENT_ID || '';
         document.getElementById('configClientSecret').value = CONFIG.GOOGLE_CLIENT_SECRET || '';
         document.getElementById('configCalendarID').value = CONFIG.CALENDAR_ID || '';
+        
+        console.log('📝 Paramètres pré-remplis avec les valeurs par défaut (CONFIG)');
     }
 }
 

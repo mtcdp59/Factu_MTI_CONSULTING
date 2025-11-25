@@ -1136,6 +1136,7 @@ tr:hover {
                     <input type="text" class="form-control" id="configBackendURL" placeholder="https://script.google.com/macros/s/VOTRE_SCRIPT_ID/exec">
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Obligatoire pour sauvegarder sur Google Drive</small>
                 </div>
+                <form id="configForm" onsubmit="return false;">
                 <div class="form-group">
                     <label class="form-label" style="color: var(--color-error); font-weight: var(--font-weight-semibold);">
                         Google Client ID (OAuth2) *
@@ -1143,12 +1144,12 @@ tr:hover {
                             ⚠️
                         </span>
                     </label>
-                    <input type="text" class="form-control" id="configClientID" placeholder="VOTRE_CLIENT_ID.apps.googleusercontent.com">
+                    <input type="text" class="form-control" id="configClientID" placeholder="VOTRE_CLIENT_ID.apps.googleusercontent.com" autocomplete="username">
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Obligatoire pour Google Calendar</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Google Client Secret (OAuth2)</label>
-                    <input type="password" class="form-control" id="configClientSecret" placeholder="VOTRE_CLIENT_SECRET">
+                    <input type="password" class="form-control" id="configClientSecret" placeholder="VOTRE_CLIENT_SECRET" autocomplete="current-password">
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Optionnel, requis pour certaines opérations Calendar</small>
                 </div>
                 <div class="form-group">
@@ -1167,6 +1168,7 @@ tr:hover {
                         📖 <a href="docs/FICHE_TECHNIQUE.md" target="_blank" style="color: var(--color-primary);">Voir la documentation complète</a>
                     </p>
                 </div>
+                </form>
                 
                 <!-- SECTION 1: INFORMATIONS ENTREPRISE -->
                 <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📄 Informations Entreprise</h3>
