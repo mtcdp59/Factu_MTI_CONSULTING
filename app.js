@@ -40,21 +40,22 @@ function saveConfigToStorage(config) {
 }
 
 // Fusionner avec les valeurs réelles de config.js (si le fichier existe) ou localStorage
-let CONFIG = CONFIG_DEFAULTS;
-if (typeof window !== 'undefined') {
-    // Priorité : config.js (développement local) > localStorage (GitHub Pages) > defaults
-    if (window.CONFIG) {
-        CONFIG = { ...CONFIG_DEFAULTS, ...window.CONFIG };
-        console.log('✅ Configuration chargée depuis config.js');
+// Priorité : window.CONFIG (config.js ou config.production.js) > localStorage (GitHub Pages) > defaults
+let CONFIG;
+if (typeof window !== 'undefined' && window.CONFIG) {
+    // Config déjà définie par config.production.js ou config.js
+    CONFIG = { ...CONFIG_DEFAULTS, ...window.CONFIG };
+    console.log('✅ Configuration chargée depuis config.production.js ou config.js');
+} else {
+    // Essayer localStorage (GitHub Pages avec config manuelle)
+    const storedConfig = loadConfigFromStorage();
+    if (storedConfig) {
+        CONFIG = { ...CONFIG_DEFAULTS, ...storedConfig };
+        console.log('✅ Configuration chargée depuis localStorage');
     } else {
-        const storedConfig = loadConfigFromStorage();
-        if (storedConfig) {
-            CONFIG = { ...CONFIG_DEFAULTS, ...storedConfig };
-            console.log('✅ Configuration chargée depuis localStorage');
-        } else {
-            console.warn('⚠️ Aucune configuration trouvée - utilisation des valeurs par défaut');
-            console.warn('💡 Configurez l\'application dans l\'onglet Paramètres');
-        }
+        CONFIG = CONFIG_DEFAULTS;
+        console.warn('⚠️ Aucune configuration trouvée - utilisation des valeurs par défaut');
+        console.warn('💡 Configurez l\'application dans l\'onglet Paramètres');
     }
 }
 
