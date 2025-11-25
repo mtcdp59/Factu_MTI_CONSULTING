@@ -78,23 +78,11 @@ function doPost(e) {
         response = createResponse(false, 'Action inconnue: ' + action);
     }
     
-    // Ajouter headers CORS à toutes les réponses
-    return addCorsHeaders(response);
+    return response;
   } catch (error) {
     Logger.log('Erreur: ' + error.toString());
-    return addCorsHeaders(createResponse(false, error.toString()));
+    return createResponse(false, error.toString());
   }
-}
-
-// Point d'entrée OPTIONS (preflight CORS)
-function doOptions(e) {
-  var output = ContentService.createTextOutput('');
-  output.setMimeType(ContentService.MimeType.TEXT);
-  output.setHeader('Access-Control-Allow-Origin', '*');
-  output.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  output.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  output.setHeader('Access-Control-Max-Age', '3600');
-  return output;
 }
 
 // Point d'entrée GET (test)
@@ -138,18 +126,10 @@ function doGet(e) {
       message: 'MTI CONSULTING Backend OK',
       timestamp: new Date().toISOString()
     })).setMimeType(ContentService.MimeType.JSON);
-    return addCorsHeaders(defaultResponse);
+    return defaultResponse;
   } catch (err) {
-    return addCorsHeaders(createResponse(false, 'Erreur doGet: ' + err.toString()));
+    return createResponse(false, 'Erreur doGet: ' + err.toString());
   }
-}
-
-// Ajouter les headers CORS aux réponses
-function addCorsHeaders(response) {
-  response.setHeader('Access-Control-Allow-Origin', '*');
-  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  return response;
 }
 
 // ==========================================
