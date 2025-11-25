@@ -56,6 +56,18 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 ## 🚀 Installation
 
+### 🌐 Utilisation directe (GitHub Pages)
+
+**L'application fonctionne directement dans votre navigateur !**
+
+👉 **[Ouvrir l'application](https://mtcdp59.github.io/Factu_MTI_CONSULTING/)**
+
+📖 **[Guide de démarrage GitHub Pages](docs/DEMARRAGE_GITHUB_PAGES.md)** - Configuration complète en 5 minutes
+
+---
+
+### 💻 Installation locale (développement)
+
 ### Prérequis
 - Navigateur moderne (Chrome, Firefox, Edge, Safari)
 - Compte Google (pour Drive, Gmail, Calendar)
