@@ -1518,8 +1518,10 @@ tr:hover {
     <script src="https://apis.google.com/js/api.js"></script>
     <!-- Google Identity Services (GIS) for OAuth2 - New method -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <!-- Configuration locale (créer ce fichier avec vos vraies valeurs, voir config.example.js) -->
-    <script src="config.js" onerror="console.log('config.js non trouvé (normal sur GitHub Pages - utilisez Paramètres)')"></script>
+    <!-- Configuration production (committé, utilisé par GitHub Pages) -->
+    <script src="config.production.js"></script>
+    <!-- Configuration locale (gitignored, remplace config.production.js si présent) -->
+    <script src="config.js" onerror="console.log('config.js non trouvé (utilise config.production.js)')"></script>
     <!-- Backend raw response modal -->
     <div id="backendModal" class="modal">
         <div class="modal-content" style="max-width:800px;">

@@ -100,16 +100,19 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
    - Déployer en tant que Web App
    - Copier l'URL de déploiement
 
-3. **Configurer les identifiants Google (IMPORTANT)**
+3. **Configuration (2 fichiers)**
    
-   🔐 **Ne jamais commiter vos secrets !**
+   📝 **Production vs Développement**
    
-   a. Copier le fichier de configuration :
+   - **`config.production.js`** : Committé sur GitHub, utilisé par GitHub Pages ✅
+   - **`config.js`** : Gitignored, remplace la config production en dev local 🔒
+   
+   **Pour le développement local :**
    ```bash
    cp config.example.js config.js
    ```
    
-   b. Éditer `config.js` avec vos vraies valeurs :
+   Puis éditez `config.js` avec vos valeurs de test :
    ```javascript
    const CONFIG = {
        GOOGLE_CLIENT_ID: 'VOTRE_CLIENT_ID.apps.googleusercontent.com',
@@ -118,14 +121,13 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
    };
    ```
    
-   c. Obtenir les credentials OAuth2 :
-   - Aller sur [Google Cloud Console](https://console.cloud.google.com/)
-   - Créer un projet → APIs & Services → Credentials
+   **Obtenir les credentials OAuth2 :**
+   - [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
    - Créer OAuth 2.0 Client ID (type: Web application)
-   - Ajouter les origines autorisées : `http://localhost:8000`, `http://127.0.0.1:8000`
-   - Copier Client ID et Client Secret dans `config.js`
+   - Ajouter les origines autorisées : `http://localhost:8000`, `http://127.0.0.1:8000`, `https://mtcdp59.github.io`
+   - Copier Client ID et Client Secret
    
-   ⚠️ Le fichier `config.js` est déjà dans `.gitignore` et ne sera pas commité.
+   ⚠️ `config.js` est dans `.gitignore` et ne sera jamais commité.
 
 4. **Lancer l'application**
    
