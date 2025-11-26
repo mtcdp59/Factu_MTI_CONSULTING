@@ -5160,20 +5160,39 @@ async function generateInvoicePDFBase64(invoice) {
     doc.text(`Date : ${formatDateFR(invoice.date)}`, 120, 85);
     doc.text(`Échéance : ${formatDateFR(invoice.dueDate)}`, 120, 90);
 
-    // Tableau
+    // Tableau multi-lignes
     if (doc.autoTable) {
-        doc.autoTable({
-            startY: 120,
-            head: [['Description', 'Quantité', 'Prix unitaire', 'Total HT']],
-            body: [[
+        // Support multi-lignes (v2.0) : utiliser items[] si disponible, sinon fallback ancien format
+        const tableBody = invoice.items && invoice.items.length > 0
+            ? invoice.items.map(item => [
+                item.description || '',
+                (item.quantity || 0).toString(),
+                `${(item.unitPrice || 0).toFixed(2)} €`,
+                `${((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)} €`
+            ])
+            : [[
                 invoice.description || '',
                 (invoice.quantity || 0).toString(),
                 `${(invoice.unitPrice || 0).toFixed(2)} €`,
                 `${(invoice.total || 0).toFixed(2)} €`
-            ]]
+            ]];
+        
+        doc.autoTable({
+            startY: 120,
+            head: [['Description', 'Quantité', 'Prix unitaire', 'Total HT']],
+            body: tableBody
         });
     } else {
-        doc.text(invoice.description || '', 20, 120);
+        // Fallback sans autoTable
+        if (invoice.items && invoice.items.length > 0) {
+            let y = 120;
+            invoice.items.forEach(item => {
+                doc.text(`${item.description} - ${item.quantity} x ${item.unitPrice}€ = ${(item.quantity * item.unitPrice).toFixed(2)}€`, 20, y);
+                y += 7;
+            });
+        } else {
+            doc.text(invoice.description || '', 20, 120);
+        }
     }
 
     const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 10 : 140;
