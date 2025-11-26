@@ -201,6 +201,6 @@ taxSettings = {
 
 ---
 
-**Dernière mise à jour** : Novembre 2025  
+**Dernière mise à jour** : Décembre 2025  
 **Version barème** : IRPP 2025 (officiel)  
 **Statut** : BNC - Micro-entreprise avec versement libératoire

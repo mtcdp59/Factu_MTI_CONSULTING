@@ -2,8 +2,8 @@
 
 **Application de gestion freelance (BNC) - Single Page Application**
 
-**Version** : 2.0  
-**Date** : Novembre 2025  
+**Version** : 2.1  
+**Date** : Décembre 2025  
 **Langage** : JavaScript (ES6+), HTML5, CSS3  
 **Statut** : Production
 
@@ -35,12 +35,13 @@ Factu_MTI_CONSULTING/
 │   │   └── Scripts externes       # CDN libraries
 │   └── <script src="app.js">      # Logique métier
 │
-├── app.js                          # Logique complète (~5300 lignes)
+├── app.js                          # Logique complète (~6600 lignes)
 │   ├── CONFIG (lignes 4-14)       # Backend URL, OAuth2 credentials (hardcodés v42 style)
-│   ├── Data structures (267-280)  # clients[], invoices[], tasks[] (vides par défaut)
+│   ├── Data structures (267-280)  # clients[], invoices[], tasks[], rams[] (vides par défaut)
 │   ├── Company info (361-371)     # companyInfo avec toutes les valeurs par défaut (SIRET, adresse, IBAN, BIC)
-│   ├── Google APIs (400-800)      # Calendar, Drive, Gmail integration
+│   ├── Google APIs (400-800)      # Calendar, Drive, Gmail, Sheets integration
 │   ├── Invoice management         # CRUD, PDF generation, multi-line items
+│   ├── RAM management (5400-6600) # Rapports Activité Mensuelle (PDF, email, Sheets)
 │   ├── Tax calculator             # IRPP progressif, BNC, comparaison
 │   ├── FullCalendar (3800-4200)   # Agenda interactif
 │   └── Init sequence (4700-4850)  # DOMContentLoaded, data loading
@@ -86,7 +87,7 @@ const CONFIG = {
 
 ```javascript
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 Initialisation MTI CONSULTING v2.0...');
+    console.log('🚀 Initialisation MTI CONSULTING v2.1...');
     
     // 1. Vérification backend storage
     const storageCheck = await callBackend('ensureStorage');
@@ -97,7 +98,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 2. Chargement données depuis Drive (écrase les tableaux vides)
     await loadFromDrive();
     
-    // 3. Initialisation UI
+    // 3. Initialisation UI (clients, invoices, tasks, rams)
     initApp();
     
     console.log('✅ Application prête');
@@ -118,8 +119,11 @@ document.addEventListener('DOMContentLoaded', async function() {
 ```javascript
 // Initialisé vide, chargé depuis Drive au démarrage
 let clients = [];
+let invoices = [];
+let tasks = [];
+let rams = [];  // ⚠️ NOUVEAU v2.1 : Rapports Activité Mensuelle
 
-// Structure après chargement depuis Drive :
+// Structure clients après chargement depuis Drive :
 {
     name: "Nom Client",
     siret: "123 456 789 00012",
@@ -134,9 +138,6 @@ let clients = [];
 ### Factures (app.js ligne 268 - vide par défaut)
 
 ```javascript
-// Initialisé vide, chargé depuis Drive au démarrage
-let invoices = [];
-
 // Structure après chargement depuis Drive :
 {
     number: "2024-001",
@@ -202,6 +203,41 @@ companyInfo = {
 }
 ```
 
+### RAMs (Rapports Activité Mensuelle) - v2.1
+
+```javascript
+// Structure RAM
+let rams = [
+    {
+        id: 1701389234567,
+        client: "Nom Client",
+        month: 10,                      // 0-11 (octobre)
+        year: 2025,
+        monthName: "Novembre",
+        activities: [                   // 30 jours
+            {
+                day: "Lundi",
+                date: "01/11",
+                hours: 7.5,
+                comments: "Développement feature X"
+            },
+            // ... 29 autres jours
+        ],
+        remarks: "Remarques générales du mois",
+        invoiceNumber: "2025-011",      // Liaison avec facture (optionnel)
+        createdAt: "2025-11-27T10:30:00.000Z"
+    }
+];
+```
+
+**Fonctionnalités RAM** :
+- Génération PDF A4 format professionnel (logo 35×18mm, couleurs #21808D)
+- Envoi email (RAM seul ou combiné facture+RAM)
+- Export automatique vers Google Sheets (onglet "RAM")
+- Liaison intelligente avec factures (dropdown filtré par client et période)
+- Prévention doublons (validation client+mois+année)
+- Triple-layer storage (localStorage + Drive + Sheets)
+
 ---
 
 ## 🔌 API Backend (Google Apps Script)
@@ -243,6 +279,7 @@ Charge les données depuis Drive.
         "clients": [...],
         "invoices": [...],
         "tasks": [...],
+        "rams": [...],
         "companyInfo": {...},
         "taxSettings": {...}
     }
@@ -260,6 +297,7 @@ Sauvegarde les données sur Drive.
         "clients": [...],
         "invoices": [...],
         "tasks": [...],
+        "rams": [...],
         "companyInfo": {...},
         "taxSettings": {...}
     }
@@ -303,6 +341,61 @@ Sauvegarde un PDF dans un dossier Drive.
 - `createEvent` : Créer événement
 - `updateEvent` : Modifier événement
 - `deleteEvent` : Supprimer événement
+
+#### 6. RAM Actions (Google Apps Script) - v2.1
+
+**6a. sendRAMEmail**
+Envoie un RAM seul par email avec PDF en pièce jointe.
+
+**Request** :
+```json
+{
+    "action": "sendRAMEmail",
+    "to": "client@example.com",
+    "client": "Nom Client",
+    "month": "Novembre",
+    "year": 2025,
+    "pdfBase64": "JVBERi0xLjQ...",
+    "filename": "RAM_2025_Novembre_Client.pdf"
+}
+```
+
+**6b. exportRAMToSheets**
+Exporte les activités RAM vers Google Sheets (onglet "RAM").
+
+**Request** :
+```json
+{
+    "action": "exportRAMToSheets",
+    "ram": {
+        "client": "Nom Client",
+        "month": 10,
+        "year": 2025,
+        "monthName": "Novembre",
+        "activities": [...],
+        "remarks": "Remarques"
+    }
+}
+```
+
+**6c. sendInvoiceWithRAM**
+Envoie facture + RAM combinés par email avec 2 PDFs joints.
+
+**Request** :
+```json
+{
+    "action": "sendInvoiceWithRAM",
+    "to": "client@example.com",
+    "client": "Nom Client",
+    "invoiceFilename": "Facture_2025-011.pdf",
+    "ramFilename": "RAM_2025_Novembre_Client.pdf",
+    "invoiceBody": "Montant total : 1500€...",
+    "invoicePdfBase64": "JVBERi0xLjQ...",
+    "ramPdfBase64": "JVBERi0xLjQ...",
+    "month": "Novembre",
+    "year": 2025
+}
+```
 
 ---
 
@@ -357,6 +450,72 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber,
 ```
 
 **⚠️ Important** : Le HTML retourné doit être valide et autonome (styles inline).
+
+### Génération PDF RAM (v2.1)
+
+**Fonction clé** : `generateRAMPDF(ram)` (ligne 6333)
+
+```javascript
+async function generateRAMPDF(ram) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+    
+    // 1. Chargement logo (35x18mm à position 10,15)
+    const logoUrl = companyInfo.logoUrl || 'assets/images/MTI_CONSULTING.png';
+    const dataUri = await fetchImageAsDataUri(logoUrl);
+    if (dataUri) {
+        doc.addImage(dataUri, 'PNG', 10, 15, 35, 18);
+    }
+    
+    // 2. Informations entreprise (#21808D pour le nom)
+    doc.setFontSize(14);
+    doc.setTextColor(33, 128, 141); // #21808D
+    doc.text(companyInfo.name, 45, 20);
+    
+    // 3. Titre "Rapport d'Activité Mensuelle"
+    doc.setFontSize(16);
+    doc.text(`Rapport d'Activité Mensuelle - ${ram.monthName} ${ram.year}`, 105, 50, { align: 'center' });
+    
+    // 4. Tableau activités (4 colonnes optimisées)
+    const tableData = ram.activities
+        .filter(act => act.hours > 0)
+        .map(act => [act.day, act.date, act.hours, act.comments]);
+    
+    doc.autoTable({
+        startY: 70,
+        head: [['Jour', 'Date', 'Heures', 'Commentaires']],
+        body: tableData,
+        headStyles: { fillColor: [33, 128, 141] },  // #21808D
+        columnStyles: {
+            0: { cellWidth: 22, halign: 'left' },
+            1: { cellWidth: 13, halign: 'center' },
+            2: { cellWidth: 15, halign: 'center' },
+            3: { cellWidth: 130, halign: 'left' }
+        },
+        margin: { left: 15, right: 15 },
+        didParseCell: function(data) {
+            // Weekends grisés
+            if (data.row.raw && data.row.raw[0] && 
+                (data.row.raw[0] === 'Samedi' || data.row.raw[0] === 'Dimanche')) {
+                data.cell.styles.fillColor = [245, 245, 245];
+            }
+        }
+    });
+    
+    // 5. Signature PandaDoc (50x15mm centrée)
+    const sigY = doc.lastAutoTable.finalY + 20;
+    const sigDataUri = await fetchImageAsDataUri('assets/images/signature_pandadoc.png');
+    if (sigDataUri) {
+        doc.addImage(sigDataUri, 'PNG', 30, sigY + 4, 50, 15);
+    }
+    
+    return doc.output('datauristring');
+}
+```
+
+**Helper** : `fetchImageAsDataUri(url)` (ligne 6316)
+- Convertit images en data URI pour éviter CORS
+- Gère fallback si chargement échoue
 
 ---
 
@@ -489,11 +648,11 @@ fetch('https://www.googleapis.com/calendar/v3/calendars/.../events', {
    ↓
 2. callBackend('ensureStorage')    → Vérifie Drive
    ↓
-3. loadFromDrive()                 → Charge mti_data.json
+3. loadFromDrive()                 → Charge mti_data.json (clients, invoices, tasks, rams)
    ↓
 4. localStorage.setItem(...)       → Cache local
    ↓
-5. initApp()                       → Render UI
+5. initApp()                       → Render UI (incluant displayRAMs())
    ↓
 6. renderIRPPBareme()              → Affiche barème IRPP
    ↓
@@ -505,13 +664,15 @@ fetch('https://www.googleapis.com/calendar/v3/calendars/.../events', {
 ```
 User action (create/edit/delete)
    ↓
-Update in-memory arrays (clients[], invoices[], ...)
+Update in-memory arrays (clients[], invoices[], tasks[], rams[])
    ↓
 saveToDrive()
    ↓
 callBackend('saveData', { data: ... })
    ↓
 Google Drive updated (mti_data.json)
+   ↓
+Google Sheets updated (si RAM)     → Export automatique
    ↓
 localStorage.setItem(...)          → Sync cache local
 ```
@@ -581,9 +742,10 @@ if (!bareme || !Array.isArray(bareme) || bareme.length === 0) {
 ## 🧪 Tests et Debugging
 
 ### Console Logs
-- `console.log('🚀 Initialisation MTI CONSULTING v2.0...')` (ligne 4747)
+- `console.log('🚀 Initialisation MTI CONSULTING v2.1...')` (ligne 4747)
 - `console.debug('Calling backend:', CONFIG.BACKEND_URL, body)` (ligne 25)
 - `console.error('Backend error:', errMsg)` (ligne 42)
+- `console.log('✅ RAM loaded:', rams.length)` (après loadFromDrive)
 
 ### Outils de Test
 - **Test Backend** : Bouton dans Paramètres → Appelle `testBackend()`
@@ -685,8 +847,8 @@ Chargées dans `index.html` (lignes 1420-1476) :
 
 ---
 
-**Document généré le** : Novembre 2025  
-**Version application** : 2.0  
+**Document généré le** : Décembre 2025  
+**Version application** : 2.1  
 **Statut** : Production ready
 
 ---
