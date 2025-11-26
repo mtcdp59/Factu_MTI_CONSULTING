@@ -214,7 +214,7 @@ let editingInvoiceIndex = -1;
 // Sauvegarder toutes les données dans Google Drive
 async function saveToDrive() {
     try {
-        const data = { clients, invoices, tasks, companyInfo, taxSettings };
+        const data = { clients, invoices, tasks, rams, companyInfo, taxSettings };
         const result = await callBackend('saveToDrive', { data });
         if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
         console.log('✅ Sauvegarde Drive OK');
@@ -224,6 +224,11 @@ async function saveToDrive() {
         try { showBackendRawResponse(error && (error.stack || error.message || JSON.stringify(error))); } catch (e) {}
         return false;
     }
+}
+
+// Alias pour compatibilité
+async function syncToDrive() {
+    return await saveToDrive();
 }
 
 // Charger toutes les données depuis Google Drive
@@ -239,6 +244,7 @@ async function loadFromDrive() {
         if (data.clients) clients = data.clients;
         if (data.invoices) invoices = data.invoices;
         if (data.tasks) tasks = data.tasks;
+        if (data.rams) rams = data.rams;
         if (data.companyInfo) companyInfo = data.companyInfo;
         if (data.taxSettings) taxSettings = data.taxSettings;
 
@@ -251,6 +257,7 @@ async function loadFromDrive() {
         if (typeof populateClientSelects === 'function') populateClientSelects();
         if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
         if (typeof renderInvoiceList === 'function') renderInvoiceList();
+        if (typeof renderRAMList === 'function') renderRAMList();
 
         return true;
     } catch (error) {
@@ -268,6 +275,7 @@ let lastSyncTime = null;
 let clients = [];
 let invoices = [];
 let tasks = [];
+let rams = []; // Rapports d'Activité Mensuels
 
 // Calendar state
 let currentView = 'week';
@@ -2964,7 +2972,9 @@ function renderInvoiceList() {
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
                 <button class="btn btn-sm btn-secondary" onclick="deleteInvoiceFromList(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+                <button class="btn btn-sm btn-primary" onclick="generateRAMForInvoice(${index})" title="Générer Rapport d'Activité Mensuelle" style="margin-left: var(--space-4);">📊 RAM</button>
                 <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
+                ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button class="btn btn-sm btn-success" onclick="sendInvoiceWithRAM(${index})" title="Envoyer Facture + RAM ensemble" style="margin-left: var(--space-4);">📧+📊 Facture+RAM</button>` : ''}
             </td>
         `;
         tbody.appendChild(row);
@@ -4749,6 +4759,17 @@ document.getElementById('downloadPDF')?.addEventListener('click', async () => {
 
 // Initialize app
 function initApp() {
+    // Load data from localStorage first
+    try {
+        const storedRAMs = localStorage.getItem('mti_rams');
+        if (storedRAMs) {
+            rams = JSON.parse(storedRAMs);
+            console.log(`✅ ${rams.length} RAMs chargés depuis localStorage`);
+        }
+    } catch (e) {
+        console.warn('Erreur chargement RAMs localStorage:', e);
+    }
+    
     // Setup lazy DOM references
     invoiceForm = document.getElementById('invoiceForm');
     invoiceNumberInput = document.getElementById('invoiceNumber');
@@ -4780,6 +4801,7 @@ function initApp() {
     renderCalendar();
     renderClientsTable();
     renderInvoiceList();
+    renderRAMList();  // Afficher les RAMs chargés depuis localStorage
     populateClientSelects();
     checkOverdueInvoices();
     applyFilters();
@@ -4822,8 +4844,36 @@ function initApp() {
 
     // Copy/close buttons exist in DOM; handlers attached globally above via event delegation
 
+    // Setup RAM form auto-update invoice select
+    setupRAMFormListeners();
+    
     // Initial persist attempt
     initialRenderAndPersist();
+}
+
+// Setup listeners pour mise à jour automatique du select factures dans le formulaire RAM
+function setupRAMFormListeners() {
+    const clientInput = document.getElementById('ramClientInput');
+    const monthSelect = document.getElementById('ramMonthSelect');
+    const yearInput = document.getElementById('ramYearInput');
+    
+    if (!clientInput || !monthSelect || !yearInput) return;
+    
+    // Fonction pour mettre à jour le select des factures
+    const updateInvoiceSelect = () => {
+        const client = clientInput.value.trim();
+        const month = parseInt(monthSelect.value);
+        const year = parseInt(yearInput.value);
+        
+        if (client) {
+            populateRAMInvoiceSelect(client, month, year);
+        }
+    };
+    
+    // Écouter les changements
+    clientInput.addEventListener('blur', updateInvoiceSelect);
+    monthSelect.addEventListener('change', updateInvoiceSelect);
+    yearInput.addEventListener('change', updateInvoiceSelect);
 }
 
 // Start the app on DOM ready
@@ -5205,6 +5255,1298 @@ async function generateInvoicePDFBase64(invoice) {
     doc.text(`Total TTC : ${ttc.toFixed(2)} €`, 120, finalY + 14);
 
     return doc.output('datauristring').split(',')[1];
+}
+
+// ==========================================
+// RAPPORT D'ACTIVITÉ MENSUELLE (RAM)
+// ==========================================
+
+// Générer le Rapport d'Activité Mensuelle pour une facture
+async function generateRAMForInvoice(index) {
+    const invoice = invoices[index];
+    if (!invoice) {
+        showToast('❌ Facture introuvable', 'error');
+        return;
+    }
+
+    // Afficher le modal de saisie RAM
+    showRAMModal(invoice);
+}
+
+window.generateRAMForInvoice = generateRAMForInvoice;
+
+// Afficher le modal de saisie du RAM
+function showRAMModal(invoice) {
+    const invoiceDate = new Date(invoice.date);
+    const month = invoiceDate.getMonth();
+    const year = invoiceDate.getFullYear();
+    
+    // Créer le modal
+    const modalHTML = `
+        <div id="ramModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; border-radius: var(--radius-8); padding: var(--space-24); width: 95%; max-width: 1200px; max-height: 95vh; overflow-y: auto;">
+                <h2 style="margin-bottom: var(--space-16);">📊 Rapport d'Activité Mensuelle</h2>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16); margin-bottom: var(--space-16);">
+                    <div>
+                        <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Mois :</label>
+                        <select id="ramMonth" style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);">
+                            <option value="0" ${month === 0 ? 'selected' : ''}>Janvier</option>
+                            <option value="1" ${month === 1 ? 'selected' : ''}>Février</option>
+                            <option value="2" ${month === 2 ? 'selected' : ''}>Mars</option>
+                            <option value="3" ${month === 3 ? 'selected' : ''}>Avril</option>
+                            <option value="4" ${month === 4 ? 'selected' : ''}>Mai</option>
+                            <option value="5" ${month === 5 ? 'selected' : ''}>Juin</option>
+                            <option value="6" ${month === 6 ? 'selected' : ''}>Juillet</option>
+                            <option value="7" ${month === 7 ? 'selected' : ''}>Août</option>
+                            <option value="8" ${month === 8 ? 'selected' : ''}>Septembre</option>
+                            <option value="9" ${month === 9 ? 'selected' : ''}>Octobre</option>
+                            <option value="10" ${month === 10 ? 'selected' : ''}>Novembre</option>
+                            <option value="11" ${month === 11 ? 'selected' : ''}>Décembre</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Année :</label>
+                        <input type="number" id="ramYear" value="${year}" min="2020" max="2100" 
+                               style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);" />
+                    </div>
+                </div>
+                
+                <button onclick="refreshRAMCalendar()" style="margin-bottom: var(--space-16); padding: var(--space-8) var(--space-16); background: var(--secondary-color); color: white; border: none; border-radius: var(--radius-4); cursor: pointer;">
+                    🔄 Mettre à jour le calendrier
+                </button>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Client :</label>
+                    <select id="ramClientSelect" style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4); margin-bottom: var(--space-8);">
+                        <option value="">-- Sélectionner un client --</option>
+                        ${clients.map(c => `<option value="${c.name}" ${c.name === invoice.client ? 'selected' : ''}>${c.name}</option>`).join('')}
+                    </select>
+                    <input type="text" id="ramClientManual" placeholder="ou saisir manuellement un nom de client" 
+                           style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);" />
+                </div>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <h3 style="margin-bottom: var(--space-12);">Planning mensuel :</h3>
+                    <div style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-4);">
+                        <table id="ramActivityTable" style="width: 100%; border-collapse: collapse;">
+                            <thead style="position: sticky; top: 0; background: white; z-index: 10;">
+                                <tr style="background: var(--primary-color); color: white;">
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left; width: 80px;">Jour</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center; width: 60px;">Date</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center; width: 100px;">Heures</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left;">Commentaires</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ramActivityBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Remarques :</label>
+                    <textarea id="ramRemarks" rows="3" style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);"></textarea>
+                </div>
+                
+                <div style="display: flex; gap: var(--space-12); justify-content: flex-end;">
+                    <button onclick="closeRAMModal()" style="padding: var(--space-8) var(--space-16); background: #6c757d; color: white; border: none; border-radius: var(--radius-4); cursor: pointer;">
+                        Annuler
+                    </button>
+                    <button onclick="generateRAMFromModal()" style="padding: var(--space-8) var(--space-16); background: var(--primary-color); color: white; border: none; border-radius: var(--radius-4); cursor: pointer;">
+                        📄 Générer le PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Générer le calendrier mensuel
+    generateRAMCalendar(month, year);
+}
+
+window.showRAMModal = showRAMModal;
+
+// Générer le calendrier mensuel complet
+function generateRAMCalendar(month, year) {
+    const tbody = document.getElementById('ramActivityBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        const dayOfWeek = date.getDay();
+        const dayName = dayNames[dayOfWeek];
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+        const bgColor = isWeekend ? '#f0f0f0' : 'white';
+        
+        const row = document.createElement('tr');
+        row.style.background = bgColor;
+        row.innerHTML = `
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                ${dayName}
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; text-align: center; background: ${bgColor};">
+                ${day.toString().padStart(2, '0')}
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                <input type="number" class="ram-hours" step="0.5" min="0" max="24" 
+                       style="width: 100%; padding: var(--space-4); text-align: center;" 
+                       value="${isWeekend ? '' : '7.5'}" 
+                       data-date="${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}" />
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                <input type="text" class="ram-comment" 
+                       style="width: 100%; padding: var(--space-4);" 
+                       placeholder="Commentaires..." />
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    }
+}
+
+window.generateRAMCalendar = generateRAMCalendar;
+
+// Rafraîchir le calendrier quand on change le mois/année
+function refreshRAMCalendar() {
+    const month = parseInt(document.getElementById('ramMonth').value);
+    const year = parseInt(document.getElementById('ramYear').value);
+    generateRAMCalendar(month, year);
+    showToast('✅ Calendrier mis à jour', 'success');
+}
+
+window.refreshRAMCalendar = refreshRAMCalendar;
+
+// Fermer le modal RAM
+function closeRAMModal() {
+    const modal = document.getElementById('ramModal');
+    if (modal) modal.remove();
+}
+
+window.closeRAMModal = closeRAMModal;
+
+// Générer le RAM à partir des données du modal
+async function generateRAMFromModal() {
+    const clientSelect = document.getElementById('ramClientSelect').value;
+    const clientManual = document.getElementById('ramClientManual').value;
+    const client = clientManual || clientSelect;
+    
+    if (!client) {
+        showToast('❌ Veuillez sélectionner ou saisir un client', 'error');
+        return;
+    }
+    
+    const month = parseInt(document.getElementById('ramMonth').value);
+    const year = parseInt(document.getElementById('ramYear').value);
+    
+    // Vérifier si un RAM existe déjà pour ce client et ce mois
+    const existingRAM = rams.find(r => r.client === client && r.month === month && r.year === year);
+    if (existingRAM) {
+        const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
+        showToast(`⚠️ Un RAM existe déjà pour ${client} - ${monthName} ${year}`, 'error');
+        return;
+    }
+    
+    // Récupérer toutes les lignes d'activité du calendrier
+    const activities = [];
+    const rows = document.querySelectorAll('#ramActivityBody tr');
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    
+    rows.forEach((row, index) => {
+        const hoursInput = row.querySelector('.ram-hours');
+        const commentInput = row.querySelector('.ram-comment');
+        const hours = parseFloat(hoursInput.value) || 0;
+        const comment = commentInput.value || '';
+        const date = hoursInput.dataset.date;
+        const dateObj = new Date(date);
+        const day = dayNames[dateObj.getDay()];
+        
+        // Inclure même les lignes vides pour avoir le calendrier complet
+        activities.push({ 
+            day, 
+            date, 
+            hours, 
+            comment,
+            dayNum: index + 1
+        });
+    });
+    
+    const remarks = document.getElementById('ramRemarks').value;
+    
+    // Créer l'objet RAM
+    const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                       'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
+    const ram = {
+        id: Date.now(),
+        client,
+        month,
+        year,
+        monthName,
+        activities,
+        remarks,
+        createdAt: new Date().toISOString(),
+        invoiceNumber: '' // À lier avec une facture si besoin
+    };
+    
+    // Afficher l'aperçu
+    closeRAMModal();
+    showRAMPreview(ram);
+}
+
+window.generateRAMFromModal = generateRAMFromModal;
+
+// Afficher l'aperçu du RAM
+function showRAMPreview(ram) {
+    const previewContainer = document.getElementById('ramPreview');
+    if (!previewContainer) {
+        // Créer le conteneur d'aperçu s'il n'existe pas
+        const container = document.createElement('div');
+        container.id = 'ramPreview';
+        container.style.cssText = 'margin-top: var(--space-24); padding: var(--space-24); border: 2px solid var(--primary-color); border-radius: var(--radius-8); background: white;';
+        document.getElementById('ramSection')?.appendChild(container);
+    }
+    
+    const monthTotal = ram.activities.reduce((sum, a) => sum + (a.hours || 0), 0);
+    
+    const previewHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-16);">
+            <h2>📊 Aperçu du RAM - ${ram.monthName} ${ram.year}</h2>
+            <div style="display: flex; gap: var(--space-8);">
+                <button onclick="editRAM(${ram.id})" class="btn btn-secondary">✏️ Modifier</button>
+                <button onclick="saveRAM(${ram.id})" class="btn btn-primary">💾 Enregistrer</button>
+                <button onclick="downloadRAMPDF(${ram.id})" class="btn btn-success">📄 Télécharger PDF</button>
+                <button onclick="sendRAMEmail(${ram.id})" class="btn btn-info">📧 Envoyer</button>
+            </div>
+        </div>
+        
+        <div style="background: #f8f9fa; padding: var(--space-16); border-radius: var(--radius-4); margin-bottom: var(--space-16);">
+            <p><strong>Client :</strong> ${ram.client}</p>
+            <p><strong>Période :</strong> ${ram.monthName} ${ram.year}</p>
+            <p><strong>Total heures :</strong> ${monthTotal.toFixed(2)}h</p>
+        </div>
+        
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: var(--space-16);">
+            <thead>
+                <tr style="background: var(--primary-color); color: white;">
+                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left;">Jour</th>
+                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center;">Date</th>
+                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center;">Heures</th>
+                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left;">Commentaires</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${ram.activities.filter(a => a.hours > 0).map(activity => `
+                    <tr>
+                        <td style="padding: var(--space-8); border: 1px solid #ddd;">${activity.day}</td>
+                        <td style="padding: var(--space-8); border: 1px solid #ddd; text-align: center;">${activity.dayNum}</td>
+                        <td style="padding: var(--space-8); border: 1px solid #ddd; text-align: center;">${activity.hours.toFixed(2)}h</td>
+                        <td style="padding: var(--space-8); border: 1px solid #ddd;">${activity.comment || '-'}</td>
+                    </tr>
+                `).join('')}
+                <tr style="font-weight: bold; background: #e9ecef;">
+                    <td colspan="2" style="padding: var(--space-8); border: 1px solid #ddd;">TOTAL</td>
+                    <td style="padding: var(--space-8); border: 1px solid #ddd; text-align: center;">${monthTotal.toFixed(2)}h</td>
+                    <td style="padding: var(--space-8); border: 1px solid #ddd;"></td>
+                </tr>
+            </tbody>
+        </table>
+        
+        ${ram.remarks ? `
+            <div style="margin-top: var(--space-16);">
+                <h4>Remarques :</h4>
+                <p style="white-space: pre-line; padding: var(--space-12); background: #f8f9fa; border-radius: var(--radius-4);">${ram.remarks}</p>
+            </div>
+        ` : ''}
+    `;
+    
+    const ramPreviewElement = document.getElementById('ramPreview');
+    if (ramPreviewElement) {
+        ramPreviewElement.innerHTML = previewHTML;
+        ramPreviewElement.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // Stocker temporairement le RAM en cours
+    window.currentRAM = ram;
+}
+
+window.showRAMPreview = showRAMPreview;
+
+// Enregistrer le RAM
+async function saveRAM(ramId) {
+    const ram = window.currentRAM;
+    if (!ram) {
+        showToast('❌ Aucun RAM à enregistrer', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Enregistrement du RAM...');
+        
+        // Ajouter à la liste des RAMs
+        const existingIndex = rams.findIndex(r => r.id === ram.id);
+        if (existingIndex >= 0) {
+            rams[existingIndex] = ram;
+        } else {
+            rams.push(ram);
+        }
+        
+        // Sauvegarder localement
+        localStorage.setItem('mti_rams', JSON.stringify(rams));
+        
+        // Synchroniser avec Drive
+        await syncToDrive();
+        
+        // Exporter vers Google Sheets
+        await exportRAMToSheets(ram);
+        
+        showToast('✅ RAM enregistré avec succès !', 'success');
+        renderRAMList();
+    } catch (error) {
+        console.error('Erreur enregistrement RAM:', error);
+        showToast('❌ Erreur lors de l\'enregistrement: ' + error.message, 'error');
+    }
+}
+
+window.saveRAM = saveRAM;
+
+// Télécharger le PDF du RAM
+async function downloadRAMPDF(ramId) {
+    const ram = window.currentRAM || rams.find(r => r.id === ramId);
+    if (!ram) {
+        showToast('❌ RAM introuvable', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Génération du PDF...');
+        const pdfBase64 = await generateRAMPDF(ram);
+        
+        const link = document.createElement('a');
+        link.href = 'data:application/pdf;base64,' + pdfBase64;
+        const monthStr = (ram.month + 1).toString().padStart(2, '0');
+        link.download = `RAM_${ram.year}${monthStr}_${ram.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        link.click();
+        
+        showToast('✅ PDF téléchargé !', 'success');
+    } catch (error) {
+        console.error('Erreur génération PDF:', error);
+        showToast('❌ Erreur lors de la génération du PDF: ' + error.message, 'error');
+    }
+}
+
+window.downloadRAMPDF = downloadRAMPDF;
+
+// Envoyer le RAM par email
+async function sendRAMEmail(ramId) {
+    const ram = window.currentRAM || rams.find(r => r.id === ramId);
+    if (!ram) {
+        showToast('❌ RAM introuvable', 'error');
+        return;
+    }
+    
+    const clientObj = clients.find(c => c.name === ram.client);
+    if (!clientObj || !clientObj.email_facturation) {
+        showToast('❌ Email du client introuvable', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Génération et envoi du RAM...');
+        const pdfBase64 = await generateRAMPDF(ram);
+        
+        // Envoyer via le backend
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'sendRAMEmail',
+                to: clientObj.email_facturation,
+                client: ram.client,
+                month: ram.monthName,
+                year: ram.year,
+                pdfBase64: pdfBase64
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showToast('✅ RAM envoyé avec succès !', 'success');
+        } else {
+            throw new Error(result.error || 'Erreur inconnue');
+        }
+    } catch (error) {
+        console.error('Erreur envoi RAM:', error);
+        showToast('❌ Erreur lors de l\'envoi: ' + error.message, 'error');
+    }
+}
+
+window.sendRAMEmail = sendRAMEmail;
+
+// Modifier le RAM
+function editRAM(ramId) {
+    const ram = window.currentRAM;
+    if (!ram) return;
+    
+    // Ré-ouvrir le modal avec les données
+    const modalHTML = `
+        <div id="ramModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; border-radius: var(--radius-8); padding: var(--space-24); width: 95%; max-width: 1200px; max-height: 95vh; overflow-y: auto;">
+                <h2 style="margin-bottom: var(--space-16);">📊 Modifier le Rapport d'Activité</h2>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16); margin-bottom: var(--space-16);">
+                    <div>
+                        <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Mois :</label>
+                        <select id="ramMonth" style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);">
+                            ${['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'].map((m, i) => `<option value="${i}" ${i === ram.month ? 'selected' : ''}>${m}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Année :</label>
+                        <input type="number" id="ramYear" value="${ram.year}" min="2020" max="2100" 
+                               style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);" />
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Client :</label>
+                    <input type="text" id="ramClientManual" value="${ram.client}"
+                           style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);" />
+                </div>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <h3 style="margin-bottom: var(--space-12);">Planning mensuel :</h3>
+                    <div style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-4);">
+                        <table id="ramActivityTable" style="width: 100%; border-collapse: collapse;">
+                            <thead style="position: sticky; top: 0; background: white; z-index: 10;">
+                                <tr style="background: var(--primary-color); color: white;">
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left; width: 80px;">Jour</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center; width: 60px;">Date</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center; width: 100px;">Heures</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left;">Commentaires</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ramActivityBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <label style="display: block; margin-bottom: var(--space-8); font-weight: 600;">Remarques :</label>
+                    <textarea id="ramRemarks" rows="3" style="width: 100%; padding: var(--space-8); border: 1px solid var(--border-color); border-radius: var(--radius-4);">${ram.remarks || ''}</textarea>
+                </div>
+                
+                <div style="display: flex; gap: var(--space-12); justify-content: flex-end;">
+                    <button onclick="closeRAMModal()" style="padding: var(--space-8) var(--space-16); background: #6c757d; color: white; border: none; border-radius: var(--radius-4); cursor: pointer;">
+                        Annuler
+                    </button>
+                    <button onclick="updateRAMFromModal()" style="padding: var(--space-8) var(--space-16); background: var(--primary-color); color: white; border: none; border-radius: var(--radius-4); cursor: pointer;">
+                        ✅ Valider les modifications
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Remplir le tableau avec les données existantes
+    const tbody = document.getElementById('ramActivityBody');
+    ram.activities.forEach(activity => {
+        const isWeekend = (activity.day === 'Samedi' || activity.day === 'Dimanche');
+        const bgColor = isWeekend ? '#f0f0f0' : 'white';
+        
+        const row = document.createElement('tr');
+        row.style.background = bgColor;
+        row.innerHTML = `
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">${activity.day}</td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; text-align: center; background: ${bgColor};">${activity.dayNum}</td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                <input type="number" class="ram-hours" step="0.5" min="0" max="24" 
+                       style="width: 100%; padding: var(--space-4); text-align: center;" 
+                       value="${activity.hours || ''}" 
+                       data-date="${activity.date}" />
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                <input type="text" class="ram-comment" 
+                       style="width: 100%; padding: var(--space-4);" 
+                       value="${activity.comment || ''}" />
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+window.editRAM = editRAM;
+
+// Mettre à jour le RAM depuis le modal d'édition
+function updateRAMFromModal() {
+    const ram = window.currentRAM;
+    if (!ram) return;
+    
+    const clientManual = document.getElementById('ramClientManual').value;
+    const month = parseInt(document.getElementById('ramMonth').value);
+    const year = parseInt(document.getElementById('ramYear').value);
+    
+    if (!clientManual) {
+        showToast('❌ Veuillez saisir un client', 'error');
+        return;
+    }
+    
+    // Récupérer les activités mises à jour
+    const activities = [];
+    const rows = document.querySelectorAll('#ramActivityBody tr');
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    
+    rows.forEach((row, index) => {
+        const hoursInput = row.querySelector('.ram-hours');
+        const commentInput = row.querySelector('.ram-comment');
+        const hours = parseFloat(hoursInput.value) || 0;
+        const comment = commentInput.value || '';
+        const date = hoursInput.dataset.date;
+        const dateObj = new Date(date);
+        const day = dayNames[dateObj.getDay()];
+        
+        activities.push({ 
+            day, 
+            date, 
+            hours, 
+            comment,
+            dayNum: index + 1
+        });
+    });
+    
+    const remarks = document.getElementById('ramRemarks').value;
+    const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                       'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
+    
+    // Mettre à jour le RAM
+    ram.client = clientManual;
+    ram.month = month;
+    ram.year = year;
+    ram.monthName = monthName;
+    ram.activities = activities;
+    ram.remarks = remarks;
+    
+    closeRAMModal();
+    showRAMPreview(ram);
+}
+
+window.updateRAMFromModal = updateRAMFromModal;
+
+// Exporter le RAM vers Google Sheets
+async function exportRAMToSheets(ram) {
+    try {
+        const result = await callBackend('exportRAMToSheets', { ram });
+        if (!result.success) {
+            throw new Error(result.data || 'Erreur export Sheets');
+        }
+    } catch (error) {
+        console.warn('Erreur export RAM vers Sheets:', error);
+        // Ne pas bloquer l'enregistrement si l'export Sheets échoue
+    }
+}
+
+// Afficher la liste des RAMs enregistrés (table comme les factures)
+function renderRAMList() {
+    const tbody = document.getElementById('ramTableBody');
+    if (!tbody) return;
+    
+    // Initialiser le formulaire avec mois/année courant (seulement au premier appel)
+    const ramMonthSelect = document.getElementById('ramMonthSelect');
+    const ramYearInput = document.getElementById('ramYearInput');
+    if (ramMonthSelect && !ramMonthSelect.dataset.initialized) {
+        ramMonthSelect.value = new Date().getMonth();
+        ramMonthSelect.dataset.initialized = 'true';
+    }
+    if (ramYearInput && !ramYearInput.dataset.initialized) {
+        ramYearInput.value = new Date().getFullYear();
+        ramYearInput.dataset.initialized = 'true';
+    }
+    
+    tbody.innerHTML = '';
+    
+    if (rams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: var(--space-24); color: var(--color-text-secondary);">Aucun rapport d\'activité enregistré</td></tr>';
+        return;
+    }
+    
+    rams.forEach((ram, index) => {
+        const totalHours = ram.activities.reduce((sum, a) => sum + (a.hours || 0), 0);
+        const row = document.createElement('tr');
+        
+        row.innerHTML = `
+            <td>${ram.client}</td>
+            <td>${ram.monthName} ${ram.year}</td>
+            <td>${totalHours.toFixed(2)}h</td>
+            <td>${ram.invoiceNumber || '-'}</td>
+            <td>${new Date(ram.createdAt).toLocaleDateString('fr-FR')}</td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editRAMInForm(${index})" title="Modifier">✏️ Modifier</button>
+                <button class="btn btn-sm btn-secondary" onclick="deleteRAM(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+                <button class="btn btn-sm btn-success" onclick="downloadRAMPDF(${ram.id})" title="Télécharger PDF" style="margin-left: var(--space-4);">📄 PDF</button>
+                <button class="btn btn-sm btn-primary" onclick="sendRAMEmail(${ram.id})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
+
+window.renderRAMList = renderRAMList;
+
+// Modifier un RAM dans le formulaire (comme les factures)
+function editRAMInForm(index) {
+    const ram = rams[index];
+    if (!ram) return;
+    
+    window.editingRAMIndex = index;
+    window.currentRAM = ram;
+    
+    // Afficher le formulaire avec les données
+    const formContainer = document.getElementById('ramFormContainer');
+    if (formContainer) {
+        formContainer.style.display = 'block';
+        formContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // Afficher l'indicateur de mode édition
+    const editIndicator = document.getElementById('ramEditModeIndicator');
+    if (editIndicator) {
+        editIndicator.style.display = 'block';
+        editIndicator.innerHTML = `✏️ <strong>Mode Édition</strong> - Modification du RAM: ${ram.client} - ${ram.monthName} ${ram.year}`;
+    }
+    
+    // Pré-remplir les champs
+    const clientInput = document.getElementById('ramClientInput');
+    const monthSelect = document.getElementById('ramMonthSelect');
+    const yearInput = document.getElementById('ramYearInput');
+    const invoiceInput = document.getElementById('ramInvoiceNumber');
+    const remarksInput = document.getElementById('ramRemarksInput');
+    
+    if (clientInput) clientInput.value = ram.client;
+    if (monthSelect) monthSelect.value = ram.month;
+    if (yearInput) yearInput.value = ram.year;
+    if (remarksInput) remarksInput.value = ram.remarks || '';
+    
+    // Peupler le select des factures et pré-sélectionner
+    populateRAMInvoiceSelect(ram.client, ram.month, ram.year);
+    if (invoiceInput) invoiceInput.value = ram.invoiceNumber || '';
+    
+    // Régénérer le calendrier avec les données
+    generateRAMCalendarInForm(ram.month, ram.year, ram.activities);
+    
+    // Changer le bouton "Générer" en "Mettre à jour"
+    const submitBtn = document.getElementById('ramSubmitBtn');
+    if (submitBtn) {
+        submitBtn.innerHTML = '✅ Mettre à jour le RAM';
+        submitBtn.className = 'btn btn-primary';
+    }
+}
+
+window.editRAMInForm = editRAMInForm;
+
+// Annuler l'édition d'un RAM
+function cancelRAMEdit() {
+    window.editingRAMIndex = -1;
+    window.currentRAM = null;
+    
+    const formContainer = document.getElementById('ramFormContainer');
+    if (formContainer) formContainer.style.display = 'none';
+    
+    const editIndicator = document.getElementById('ramEditModeIndicator');
+    if (editIndicator) editIndicator.style.display = 'none';
+    
+    // Réinitialiser le formulaire
+    resetRAMForm();
+}
+
+window.cancelRAMEdit = cancelRAMEdit;
+
+// Peupler le select des factures filtrées par client et mois/année
+function populateRAMInvoiceSelect(clientName = '', month = null, year = null) {
+    const invoiceSelect = document.getElementById('ramInvoiceNumber');
+    if (!invoiceSelect) return;
+    
+    // Réinitialiser le select
+    invoiceSelect.innerHTML = '<option value="">-- Aucune facture liée --</option>';
+    
+    // Si pas de client, impossible de filtrer
+    if (!clientName) return;
+    
+    // Construire le préfixe YYYYMM du numéro de facture
+    const yearMonth = year && month !== null ? `${year}${(month + 1).toString().padStart(2, '0')}` : null;
+    
+    // Filtrer les factures : même client ET (si mois/année fournis) même période
+    const matchingInvoices = invoices.filter(inv => {
+        if (inv.client !== clientName) return false;
+        
+        // Si mois/année fournis, vérifier que le numéro de facture correspond
+        if (yearMonth && inv.number) {
+            return inv.number.startsWith(yearMonth);
+        }
+        
+        return true;
+    });
+    
+    // Ajouter les factures trouvées
+    matchingInvoices.forEach(inv => {
+        const option = document.createElement('option');
+        option.value = inv.number;
+        option.textContent = `${inv.number} - ${inv.total}€ - ${inv.status}`;
+        invoiceSelect.appendChild(option);
+    });
+    
+    // Si aucune facture trouvée, afficher un message
+    if (matchingInvoices.length === 0 && yearMonth) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = `-- Aucune facture pour ${clientName} en ${new Date(year, month).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} --`;
+        option.disabled = true;
+        invoiceSelect.appendChild(option);
+    }
+}
+
+window.populateRAMInvoiceSelect = populateRAMInvoiceSelect;
+
+// Réinitialiser le formulaire RAM
+function resetRAMForm() {
+    const clientInput = document.getElementById('ramClientInput');
+    const monthSelect = document.getElementById('ramMonthSelect');
+    const yearInput = document.getElementById('ramYearInput');
+    const invoiceInput = document.getElementById('ramInvoiceNumber');
+    const remarksInput = document.getElementById('ramRemarksInput');
+    
+    if (clientInput) clientInput.value = '';
+    if (monthSelect) monthSelect.selectedIndex = new Date().getMonth();
+    if (yearInput) yearInput.value = new Date().getFullYear();
+    
+    // Réinitialiser le select des factures
+    if (invoiceInput) {
+        invoiceInput.innerHTML = '<option value="">-- Aucune facture liée --</option>';
+    }
+    if (invoiceInput) invoiceInput.value = '';
+    if (remarksInput) remarksInput.value = '';
+    
+    // Régénérer le calendrier du mois courant vide
+    const month = monthSelect ? parseInt(monthSelect.value) : new Date().getMonth();
+    const year = yearInput ? parseInt(yearInput.value) : new Date().getFullYear();
+    generateRAMCalendarInForm(month, year);
+    
+    const submitBtn = document.getElementById('ramSubmitBtn');
+    if (submitBtn) {
+        submitBtn.innerHTML = '💾 Enregistrer le RAM';
+        submitBtn.className = 'btn btn-primary';
+    }
+    
+    window.editingRAMIndex = -1;
+    window.currentRAM = null;
+}
+
+window.resetRAMForm = resetRAMForm;
+
+// Afficher le formulaire de nouveau RAM
+function showNewRAMForm() {
+    window.editingRAMIndex = -1;
+    window.currentRAM = null;
+    
+    const formContainer = document.getElementById('ramFormContainer');
+    if (formContainer) {
+        formContainer.style.display = 'block';
+        formContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    const editIndicator = document.getElementById('ramEditModeIndicator');
+    if (editIndicator) editIndicator.style.display = 'none';
+    
+    resetRAMForm();
+}
+
+window.showNewRAMForm = showNewRAMForm;
+
+// Générer le calendrier dans le formulaire
+function generateRAMCalendarInForm(month, year, existingActivities = null) {
+    const tbody = document.getElementById('ramCalendarBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        const dayOfWeek = date.getDay();
+        const dayName = dayNames[dayOfWeek];
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+        const bgColor = isWeekend ? '#f0f0f0' : 'white';
+        
+        // Chercher les données existantes si en mode édition
+        let hours = '';
+        let comment = '';
+        if (existingActivities) {
+            const existing = existingActivities.find(a => a.dayNum === day);
+            if (existing) {
+                hours = existing.hours || '';
+                comment = existing.comment || '';
+            }
+        } else if (!isWeekend) {
+            hours = 7.5;
+        }
+        
+        const row = document.createElement('tr');
+        row.style.background = bgColor;
+        row.innerHTML = `
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                ${dayName}
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; text-align: center; background: ${bgColor};">
+                ${day.toString().padStart(2, '0')}
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                <input type="number" class="ram-hours-input" step="0.5" min="0" max="24" 
+                       style="width: 100%; padding: var(--space-4); text-align: center; border: 1px solid #ddd; border-radius: 4px;" 
+                       value="${hours}" 
+                       data-day="${day}" />
+            </td>
+            <td style="padding: var(--space-4); border: 1px solid #ddd; background: ${bgColor};">
+                <input type="text" class="ram-comment-input" 
+                       style="width: 100%; padding: var(--space-4); border: 1px solid #ddd; border-radius: 4px;" 
+                       value="${comment}"
+                       data-day="${day}" />
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    }
+}
+
+window.generateRAMCalendarInForm = generateRAMCalendarInForm;
+
+// Rafraîchir le calendrier du formulaire
+function refreshRAMFormCalendar() {
+    const monthSelect = document.getElementById('ramMonthSelect');
+    const yearInput = document.getElementById('ramYearInput');
+    
+    if (!monthSelect || !yearInput) return;
+    
+    const month = parseInt(monthSelect.value);
+    const year = parseInt(yearInput.value);
+    
+    generateRAMCalendarInForm(month, year);
+    showToast('✅ Calendrier rafraîchi', 'success');
+}
+
+window.refreshRAMFormCalendar = refreshRAMFormCalendar;
+
+// Sauvegarder le RAM depuis le formulaire
+async function saveRAMFromForm() {
+    const clientInput = document.getElementById('ramClientInput');
+    const monthSelect = document.getElementById('ramMonthSelect');
+    const yearInput = document.getElementById('ramYearInput');
+    const invoiceInput = document.getElementById('ramInvoiceNumber');
+    const remarksInput = document.getElementById('ramRemarksInput');
+    
+    if (!clientInput || !monthSelect || !yearInput) return;
+    
+    const client = clientInput.value.trim();
+    if (!client) {
+        showToast('❌ Veuillez saisir un nom de client', 'error');
+        return;
+    }
+    
+    const month = parseInt(monthSelect.value);
+    const year = parseInt(yearInput.value);
+    
+    // Vérifier si un RAM existe déjà pour ce client et ce mois (sauf en mode édition)
+    if (!isEditMode) {
+        const existingRAM = rams.find(r => r.client === client && r.month === month && r.year === year);
+        if (existingRAM) {
+            const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
+            showToast(`⚠️ Un RAM existe déjà pour ${client} - ${monthName} ${year}`, 'error');
+            return;
+        }
+    }
+    const invoiceNumber = invoiceInput ? invoiceInput.value.trim() : '';
+    const remarks = remarksInput ? remarksInput.value.trim() : '';
+    
+    // Récupérer les activités du calendrier
+    const activities = [];
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    const hoursInputs = document.querySelectorAll('.ram-hours-input');
+    const commentInputs = document.querySelectorAll('.ram-comment-input');
+    
+    hoursInputs.forEach((input, index) => {
+        const day = parseInt(input.dataset.day);
+        const date = new Date(year, month, day);
+        const dayName = dayNames[date.getDay()];
+        const hours = parseFloat(input.value) || 0;
+        const comment = commentInputs[index] ? commentInputs[index].value.trim() : '';
+        
+        activities.push({
+            day: dayName,
+            date: `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+            hours: hours,
+            comment: comment,
+            dayNum: day
+        });
+    });
+    
+    const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                       'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
+    
+    try {
+        showToast('⏳ Enregistrement du RAM...');
+        
+        // Mode édition ou création
+        if (window.editingRAMIndex >= 0) {
+            // Mise à jour
+            const ram = rams[window.editingRAMIndex];
+            ram.client = client;
+            ram.month = month;
+            ram.year = year;
+            ram.monthName = monthName;
+            ram.activities = activities;
+            ram.remarks = remarks;
+            ram.invoiceNumber = invoiceNumber;
+        } else {
+            // Création
+            const ram = {
+                id: Date.now(),
+                client,
+                month,
+                year,
+                monthName,
+                activities,
+                remarks,
+                invoiceNumber,
+                createdAt: new Date().toISOString()
+            };
+            rams.push(ram);
+        }
+        
+        // Sauvegarder
+        localStorage.setItem('mti_rams', JSON.stringify(rams));
+        await syncToDrive();
+        
+        // Export Sheets (non bloquant)
+        if (window.editingRAMIndex >= 0) {
+            await exportRAMToSheets(rams[window.editingRAMIndex]);
+        } else {
+            await exportRAMToSheets(rams[rams.length - 1]);
+        }
+        
+        showToast('✅ RAM enregistré avec succès !', 'success');
+        
+        // Masquer le formulaire et rafraîchir la liste
+        cancelRAMEdit();
+        renderRAMList();
+        
+    } catch (error) {
+        console.error('Erreur enregistrement RAM:', error);
+        showToast('❌ Erreur lors de l\'enregistrement: ' + error.message, 'error');
+    }
+}
+
+window.saveRAMFromForm = saveRAMFromForm;
+
+// Supprimer un RAM
+function deleteRAM(index) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce rapport d\'activité ?')) return;
+    
+    rams.splice(index, 1);
+    localStorage.setItem('mti_rams', JSON.stringify(rams));
+    syncToDrive();
+    renderRAMList();
+    showToast('✅ RAM supprimé', 'success');
+}
+
+window.deleteRAM = deleteRAM;
+
+// Envoyer facture + RAM ensemble (si liés)
+async function sendInvoiceWithRAM(invoiceIndex) {
+    const invoice = invoices[invoiceIndex];
+    if (!invoice) {
+        showToast('❌ Facture introuvable', 'error');
+        return;
+    }
+    
+    // Chercher un RAM lié à cette facture
+    const linkedRAM = rams.find(r => r.invoiceNumber === invoice.number);
+    
+    if (!linkedRAM) {
+        showToast('⚠️ Aucun RAM lié à cette facture', 'error');
+        return;
+    }
+    
+    const clientObj = clients.find(c => c.name === invoice.client);
+    if (!clientObj || !clientObj.email_facturation) {
+        showToast('❌ Email du client introuvable', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Génération facture + RAM...');
+        
+        // Générer les deux PDFs
+        const invoicePdf = await generateInvoicePDFBase64(invoice);
+        const ramPdf = await generateRAMPDF(linkedRAM);
+        
+        // Noms de fichiers
+        const invoiceFilename = `Facture_${invoice.number.replace(/\//g, '_')}.pdf`;
+        const ramFilename = `RAM_${linkedRAM.year}_${linkedRAM.monthName}_${invoice.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        
+        // Corps de l'email
+        const invoiceBody = `Montant total : ${invoice.total.toFixed(2)}€\nÉchéance : ${formatDateFR(invoice.dueDate)}`;
+        
+        // Envoyer via le backend
+        const response = await fetch(CONFIG.BACKEND_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'sendInvoiceWithRAM',
+                to: clientObj.email_facturation,
+                client: invoice.client,
+                invoiceFilename: invoiceFilename,
+                ramFilename: ramFilename,
+                invoiceBody: invoiceBody,
+                invoicePdfBase64: invoicePdf,
+                ramPdfBase64: ramPdf,
+                month: linkedRAM.monthName,
+                year: linkedRAM.year
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showToast('✅ Facture + RAM envoyés avec succès !', 'success');
+        } else {
+            throw new Error(result.error || 'Erreur inconnue');
+        }
+    } catch (error) {
+        console.error('Erreur envoi facture+RAM:', error);
+        showToast('❌ Erreur lors de l\'envoi: ' + error.message, 'error');
+    }
+}
+
+window.sendInvoiceWithRAM = sendInvoiceWithRAM;
+
+// Générer le PDF du RAM (format facture A4 portrait)
+async function generateRAMPDF(ram) {
+    if (!window.jspdf) {
+        throw new Error('jsPDF non chargé');
+    }
+    
+    // Helper function pour convertir image en data URI (même que dans generateInvoicePDFBase64)
+    async function fetchImageAsDataUri(url) {
+        if (!url) return null;
+        if (url.startsWith('data:')) return url;
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('Image fetch failed');
+            const blob = await resp.blob();
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) {
+            console.warn('fetchImageAsDataUri failed for', url, e);
+            return null;
+        }
+    }
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('portrait', 'mm', 'a4');
+    
+    const { client, month, year, activities, remarks, invoiceNumber } = ram;
+    const monthName = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 
+                       'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'][month];
+    
+    // Logo - utiliser la même logique que les factures (local ou data URI)
+    if (companyInfo.logoUrl) {
+        try {
+            // Utiliser logo local si l'URL GitHub n'est pas accessible
+            const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') 
+                ? companyInfo.logoUrl 
+                : 'assets/images/MTI_CONSULTING.png';
+            const dataUri = await fetchImageAsDataUri(logoSrc);
+            if (dataUri) {
+                doc.addImage(dataUri, 'PNG', 10, 15, 35, 18);
+            }
+        } catch(e) {
+            console.warn('Logo non chargé:', e);
+            // Fallback: essayer directement le fichier local
+            try {
+                const localDataUri = await fetchImageAsDataUri('assets/images/MTI_CONSULTING.png');
+                if (localDataUri) {
+                    doc.addImage(localDataUri, 'PNG', 10, 15, 35, 18);
+                }
+            } catch(e2) {
+                console.warn('Fallback logo échoué:', e2);
+            }
+        }
+    }
+    
+    // En-tête entreprise (format compact comme facture)
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(33, 128, 141); // #21808D (bleu MTI)
+    doc.text(companyInfo.name, 45, 20);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(0, 0, 0); // Retour au noir
+    doc.text(companyInfo.address, 45, 25);
+    doc.text(`${companyInfo.postalCode} ${companyInfo.city}`, 45, 29);
+    doc.text(`SIRET : ${companyInfo.siret}`, 45, 33);
+    
+    // Titre (centré et plus compact, couleur noire comme factures)
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('RAPPORT D\'ACTIVITÉ MENSUELLE', 105, 48, { align: 'center' });
+    
+    // Mois et client (plus compact)
+    doc.setFontSize(11);
+    doc.text(`${monthName} ${year}`, 105, 56, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Client : ${client}`, 105, 64, { align: 'center' });
+    if (invoiceNumber) {
+        doc.text(`Facture : ${invoiceNumber}`, 105, 69, { align: 'center' });
+    }
+    
+    // Tableau des activités (optimisé pour A4)
+    if (doc.autoTable) {
+        const tableData = [];
+        let monthTotal = 0;
+        
+        activities.forEach((activity) => {
+            const activityDate = new Date(activity.date);
+            const dayNum = activityDate.getDate().toString().padStart(2, '0');
+            const isWeekend = (activity.day === 'Samedi' || activity.day === 'Dimanche');
+            
+            monthTotal += activity.hours || 0;
+            
+            // Ajouter la ligne avec style pour weekends
+            tableData.push({
+                day: activity.day,
+                date: dayNum,
+                hours: (activity.hours || 0).toFixed(1),
+                comment: activity.comment || '',
+                isWeekend: isWeekend
+            });
+        });
+        
+        doc.autoTable({
+            startY: invoiceNumber ? 75 : 70,
+            head: [['Jour', 'Date', 'Heures', 'Commentaires']],
+            body: tableData.map(row => [row.day, row.date, row.hours, row.comment]),
+            foot: [['', 'TOTAL', monthTotal.toFixed(1) + 'h', '']],
+            theme: 'grid',
+            styles: { 
+                fontSize: 7,
+                cellPadding: 1.5,
+                lineColor: [200, 200, 200],
+                lineWidth: 0.1,
+                overflow: 'linebreak',
+                cellWidth: 'wrap'
+            },
+            headStyles: { 
+                fillColor: [33, 128, 141],
+                textColor: 255,
+                fontStyle: 'bold',
+                fontSize: 8,
+                halign: 'center'
+            },
+            footStyles: {
+                fillColor: [240, 240, 240],
+                textColor: 0,
+                fontStyle: 'bold',
+                fontSize: 8
+            },
+            columnStyles: {
+                0: { cellWidth: 22, halign: 'left' },
+                1: { cellWidth: 13, halign: 'center' },
+                2: { cellWidth: 15, halign: 'center' },
+                3: { cellWidth: 130, halign: 'left' }
+            },
+            didParseCell: function(data) {
+                // Griser les lignes de weekend
+                if (data.section === 'body') {
+                    const rowData = tableData[data.row.index];
+                    if (rowData && rowData.isWeekend) {
+                        data.cell.styles.fillColor = [245, 245, 245];
+                        data.cell.styles.textColor = [100, 100, 100];
+                    }
+                }
+            },
+            margin: { left: 15, right: 15 }
+        });
+    }
+    
+    const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 5 : 220;
+    
+    // Remarques (compactes)
+    if (remarks) {
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'bold');
+        doc.text('Remarques :', 15, finalY);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(7);
+        const remarksLines = doc.splitTextToSize(remarks, 175);
+        doc.text(remarksLines, 15, finalY + 4);
+        const remarksHeight = Math.min(remarksLines.length * 3, 15);
+        doc.rect(15, finalY - 2, 180, remarksHeight + 6);
+    }
+    
+    // Signatures (en bas de page, plus compact)
+    const sigY = remarks ? finalY + 20 : finalY + 5;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('Visa Prestataire', 20, sigY);
+    doc.rect(15, sigY + 2, 80, 20);
+    
+    // Ajouter la signature dans la case Prestataire (agrandie et centrée)
+    try {
+        const signaturePath = 'assets/images/signature_pandadoc.png';
+        const sigDataUri = await fetchImageAsDataUri(signaturePath);
+        if (sigDataUri) {
+            // Case fait 80mm de large, signature 50mm centrée : début à 15 + (80-50)/2 = 30mm
+            doc.addImage(sigDataUri, 'PNG', 30, sigY + 4, 50, 15);
+        }
+    } catch(e) {
+        console.warn('Signature non chargée:', e);
+    }
+    
+    doc.text('Visa Superviseur Client', 120, sigY);
+    doc.rect(105, sigY + 2, 80, 20);
+    
+    // Footer (tout en bas, sans superposition)
+    doc.setFontSize(6);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    const footerY = Math.max(sigY + 28, 285);
+    doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
+    doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 3, { align: 'center' });
+    
+    return doc.output('datauristring').split(',')[1];
+}
+
+// Fonction helper pour obtenir le numéro de semaine
+function getWeekNumber(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
 }
 
 // ==========================================

@@ -67,6 +67,79 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
+## [2.1.0] - 2025-12-01
+
+### ✨ Ajouté
+- **Système RAM (Rapport d'Activité Mensuelle)** complet
+  - Interface calendrier 30 jours avec saisie heures/commentaires/remarques
+  - Génération PDF format A4 portrait (identique aux factures)
+  - Logo MTI CONSULTING 35×18mm position (10,15)
+  - Couleurs corporate #21808D (bleu MTI) pour headers et nom entreprise
+  - Weekends grisés (#F5F5F5) automatiquement
+  - Tableau optimisé 4 colonnes (Jour 22mm, Date 13mm, Heures 15mm, Commentaires 130mm)
+  - Marges 15mm gauche/droite = 180mm total (compatible A4)
+  - Signature PandaDoc intégrée (50×15mm centrée dans case "Visa Prestataire")
+- **Envoi RAM par email**
+  - Envoi RAM seul avec PDF en pièce jointe
+  - Envoi combiné facture + RAM avec deux PDFs joints
+  - Variables email complètes (invoiceFilename, ramFilename, invoiceBody)
+  - Subject personnalisé : "Facture + RAM - [Client] - [Mois] [Année]"
+- **Export Google Sheets automatique**
+  - Création onglet "RAM" avec headers #21808D
+  - Colonnes : Date Export, Client, Mois, Année, Jour, Date, Heures, Commentaires, Remarques
+  - Export automatique à chaque sauvegarde
+  - Filtre : uniquement activités avec heures > 0
+- **Liaison factures intelligente**
+  - Dropdown factures filtré par client et période (YYYYMM)
+  - Lien RAM ↔ facture bidirectionnel
+  - Génération RAM depuis onglet Factures
+- **Prévention doublons**
+  - Validation client + mois + année avant création
+  - Bloque création si RAM existant (sauf mode édition)
+  - Toast d'avertissement explicite
+- **Gestion données complète**
+  - Triple-layer : localStorage + Google Drive + Google Sheets
+  - CRUD complet : create, read, update, delete, list
+  - Persistance automatique entre sessions
+  - Chargement initial dans initApp()
+- **Backend Google Apps Script**
+  - Action `sendRAMEmail` : envoi RAM seul
+  - Action `exportRAMToSheets` : export vers Sheets
+  - Action `sendInvoiceWithRAM` : envoi combiné
+  - Code complet 1079 lignes prêt pour déploiement
+
+### 🔧 Modifié
+- **Interface onglet RAM**
+  - Pattern liste + formulaire (identique à Factures)
+  - Formulaire en haut, table liste en bas
+  - Boutons actions : Éditer, Supprimer, Envoyer par email, Export Sheets
+- **Chargement images**
+  - Helper `fetchImageAsDataUri()` pour éviter erreurs CORS
+  - Chargement logo local depuis `assets/images/MTI_CONSULTING.png`
+  - Fallback automatique si image distante échoue
+
+### 🐛 Corrigé
+- **Logo RAM** : Proportions finales 35×18mm (4 itérations : 25×25 → 40×20 → 30×15 → 35×18)
+- **Table overflow** : Optimisation colonnes et marges (final : 180mm avec marges 15mm)
+- **Variables email undefined** : Ajout invoiceFilename, ramFilename, invoiceBody dans sendInvoiceWithRAM
+- **Erreur ramPreview null** : Vérification existence élément avant innerHTML
+- **Export Sheets** : Changement fetch direct → callBackend wrapper
+- **CORS errors** : Implémentation fetchImageAsDataUri pour images locales
+- **Weekends non grisés** : Détection automatique samedi/dimanche avec style #F5F5F5
+
+### 📚 Documentation
+- Nettoyage fichiers temporaires (CORRECTIONS_FORMAT_RAM.md, DEPLOIEMENT_BACKEND_RAM.md, MODIFICATIONS_RAM_FINALES.md)
+- README.md mis à jour avec section RAM complète
+- STRUCTURE.md enrichi avec nouvelles fonctions RAM
+- CHANGELOG.md détaillé pour v2.1.0
+
+### 🔒 Sécurité
+- Validation stricte avant génération PDF (client, mois, année requis)
+- Prévention doublons pour éviter confusion données
+- Gestion erreurs robuste avec try/catch et toasts utilisateur
+
+---
+
 ## [1.0.0] - 2025-10-15
 
 ### ✨ Ajouté (Version initiale)

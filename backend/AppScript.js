@@ -9,6 +9,19 @@ const CONFIG = {
   EMAIL_FROM: 'mticonsulting59@gmail.com'
 };
 
+const companyInfo = {
+  name: 'MTI CONSULTING',
+  logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+  siret: '994 149 904 00017',
+  address: '13A rue du Général de Gaulle',
+  postalCode: '59110',
+  city: 'La Madeleine',
+  email: 'mticonsulting59@gmail.com',
+  phone: '07 77 37 17 39',
+  iban: 'FR76 4061 8804 9700 0403 3099 557',
+  bic: 'BOUSFRPPXXX'
+};
+
 // ==========================================
 // ROUTING
 // ==========================================
@@ -73,6 +86,15 @@ function doPost(e) {
         break;
       case 'updateCalendarEvent':
         response = updateCalendarEvent(data.event);
+        break;
+      case 'sendRAMEmail':
+        response = sendRAMEmail(data);
+        break;
+      case 'exportRAMToSheets':
+        response = exportRAMToSheets(data);
+        break;
+      case 'sendInvoiceWithRAM':
+        response = sendInvoiceWithRAM(data);
         break;
       default:
         response = createResponse(false, 'Action inconnue: ' + action);
@@ -181,16 +203,8 @@ function loadFromDrive() {
         clients: [],
         invoices: [],
         tasks: [],
-        companyInfo: {
-          name: 'MTI CONSULTING',
-          logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
-          siret: '994 149 904 00017',
-          address: '13A rue du Général de Gaulle',
-          postalCode: '59110',
-          city: 'La Madeleine',
-          email: 'mticonsulting59@gmail.com',
-          phone: '07 77 37 17 39'
-        },
+        rams: [],
+        companyInfo: companyInfo,
         taxSettings: { tvaRate: 20, retenuSource: 0, defaultPaymentTerms: 30 }
       };
       
@@ -816,7 +830,223 @@ function createResponse(success, data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// Ensure Drive storage folder and data file exist. Returns details for client.
+// ==========================================
+// RAM (MONTHLY ACTIVITY REPORTS)
+// ==========================================
+
+function sendRAMEmail(params) {
+  try {
+    const { to, client, month, year, pdfBase64 } = params;
+    
+    if (!to) {
+      throw new Error('Email destinataire manquant');
+    }
+    
+    if (!pdfBase64) {
+      throw new Error('PDF manquant');
+    }
+    
+    const subject = `Rapport d'Activité Mensuelle - ${client} - ${month} ${year}`;
+    
+    const body = `Bonjour,
+
+Veuillez trouver ci-joint le rapport d'activité mensuelle pour ${month} ${year}.
+
+Ce rapport détaille les heures travaillées et les activités réalisées durant cette période.
+
+Cordialement,
+${companyInfo.name}
+
+---
+${companyInfo.name}
+${companyInfo.address}
+${companyInfo.postalCode} ${companyInfo.city}
+Email: ${companyInfo.email}
+Tél: ${companyInfo.phone}
+SIRET: ${companyInfo.siret}`;
+    
+    const pdfBlob = Utilities.newBlob(
+      Utilities.base64Decode(pdfBase64),
+      'application/pdf',
+      `RAM_${year}_${month}_${client.replace(/[^a-z0-9]/gi, '_')}.pdf`
+    );
+    
+    GmailApp.sendEmail(to, subject, body, {
+      attachments: [pdfBlob],
+      name: companyInfo.name
+    });
+    
+    Logger.log(`✅ RAM envoyé à ${to} pour ${client} - ${month} ${year}`);
+    
+    return createResponse(true, { 
+      message: `Email envoyé avec succès à ${to}`
+    });
+    
+  } catch (error) {
+    Logger.log(`❌ Erreur sendRAMEmail: ${error.toString()}`);
+    return createResponse(false, error.toString());
+  }
+}
+
+function exportRAMToSheets(params) {
+  try {
+    const { ram } = params;
+    
+    if (!ram) {
+      throw new Error('Données RAM manquantes');
+    }
+    
+    const ss = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    
+    let sheet = ss.getSheetByName('RAM');
+    if (!sheet) {
+      sheet = ss.insertSheet('RAM');
+      
+      const headers = [
+        'Date Export',
+        'Client', 
+        'Mois', 
+        'Année', 
+        'Jour', 
+        'Date', 
+        'Heures', 
+        'Commentaires',
+        'Remarques'
+      ];
+      
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+      sheet.getRange(1, 1, 1, headers.length).setBackground('#21808D');
+      sheet.getRange(1, 1, 1, headers.length).setFontColor('#FFFFFF');
+      
+      sheet.setColumnWidth(1, 150);
+      sheet.setColumnWidth(2, 150);
+      sheet.setColumnWidth(3, 100);
+      sheet.setColumnWidth(4, 80);
+      sheet.setColumnWidth(5, 100);
+      sheet.setColumnWidth(6, 80);
+      sheet.setColumnWidth(7, 80);
+      sheet.setColumnWidth(8, 300);
+      sheet.setColumnWidth(9, 300);
+      
+      sheet.setFrozenRows(1);
+    }
+    
+    const exportDate = new Date().toISOString();
+    const rows = [];
+    
+    ram.activities.forEach(activity => {
+      if (activity.hours && activity.hours > 0) {
+        rows.push([
+          exportDate,
+          ram.client,
+          ram.monthName,
+          ram.year,
+          activity.day,
+          activity.dayNum,
+          activity.hours,
+          activity.comment || '',
+          ram.remarks || ''
+        ]);
+      }
+    });
+    
+    if (rows.length > 0) {
+      const lastRow = sheet.getLastRow();
+      const startRow = lastRow + 1;
+      
+      sheet.getRange(startRow, 1, rows.length, 9).setValues(rows);
+      
+      sheet.getRange(startRow, 1, rows.length, 9).setBorder(
+        true, true, true, true, true, true,
+        '#CCCCCC',
+        SpreadsheetApp.BorderStyle.SOLID
+      );
+      
+      sheet.getRange(startRow, 7, rows.length, 1).setHorizontalAlignment('right');
+      
+      Logger.log(`✅ ${rows.length} lignes exportées vers Sheets pour ${ram.client} - ${ram.monthName} ${ram.year}`);
+    } else {
+      Logger.log(`⚠️ Aucune activité à exporter (toutes les heures sont à 0)`);
+    }
+    
+    return createResponse(true, {
+      rowsExported: rows.length,
+      message: `${rows.length} ligne(s) exportée(s) avec succès`
+    });
+    
+  } catch (error) {
+    Logger.log(`❌ Erreur exportRAMToSheets: ${error.toString()}`);
+    return createResponse(false, error.toString());
+  }
+}
+
+function sendInvoiceWithRAM(params) {
+  try {
+    const { to, invoiceSubject, invoiceBody, invoicePdfBase64, invoiceFilename, ramPdfBase64, ramFilename, client, month, year } = params;
+    
+    if (!to) {
+      throw new Error('Email destinataire manquant');
+    }
+    
+    if (!invoicePdfBase64 || !ramPdfBase64) {
+      throw new Error('PDF manquant (facture ou RAM)');
+    }
+    
+    const subject = `Facture + RAM - ${client} - ${month} ${year}`;
+    
+    const body = `Bonjour,
+
+Veuillez trouver ci-joint :
+- La facture ${invoiceFilename}
+- Le rapport d'activité mensuelle pour ${month} ${year}
+
+${invoiceBody}
+
+Cordialement,
+${companyInfo.name}
+
+---
+${companyInfo.name}
+${companyInfo.address}
+${companyInfo.postalCode} ${companyInfo.city}
+Email: ${companyInfo.email}
+Tél: ${companyInfo.phone}
+SIRET: ${companyInfo.siret}`;
+    
+    const invoiceBlob = Utilities.newBlob(
+      Utilities.base64Decode(invoicePdfBase64),
+      'application/pdf',
+      invoiceFilename
+    );
+    
+    const ramBlob = Utilities.newBlob(
+      Utilities.base64Decode(ramPdfBase64),
+      'application/pdf',
+      ramFilename
+    );
+    
+    GmailApp.sendEmail(to, subject, body, {
+      attachments: [invoiceBlob, ramBlob],
+      name: companyInfo.name
+    });
+    
+    Logger.log(`✅ Facture + RAM envoyés à ${to} pour ${client}`);
+    
+    return createResponse(true, { 
+      message: `Email envoyé avec succès à ${to} (Facture + RAM)`
+    });
+    
+  } catch (error) {
+    Logger.log(`❌ Erreur sendInvoiceWithRAM: ${error.toString()}`);
+    return createResponse(false, error.toString());
+  }
+}
+
+// ==========================================
+// UTILITAIRES
+// ==========================================
+
 function ensureStorage() {
   try {
     const folder = getOrCreateFolder(CONFIG.DRIVE_FOLDER);
@@ -828,21 +1058,12 @@ function ensureStorage() {
       const file = files.next();
       fileId = file.getId();
     } else {
-      // create initial empty structure
       const emptyData = {
         clients: [],
         invoices: [],
         tasks: [],
-        companyInfo: {
-          name: 'MTI CONSULTING',
-          logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
-          siret: '994 149 904 00017',
-          address: '13A rue du Général de Gaulle',
-          postalCode: '59110',
-          city: 'La Madeleine',
-          email: 'mticonsulting59@gmail.com',
-          phone: '07 77 37 17 39'
-        },
+        rams: [],
+        companyInfo: companyInfo,
         taxSettings: { tvaRate: 20, retenuSource: 0, defaultPaymentTerms: 30 }
       };
       const f = folder.createFile(CONFIG.DATA_FILE, JSON.stringify(emptyData, null, 2), MimeType.PLAIN_TEXT);

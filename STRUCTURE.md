@@ -4,7 +4,7 @@
 Factu_MTI_CONSULTING/
 │
 ├── 📄 index.html                   # Application principale (UI complète)
-├── 📄 app.js                       # Logique métier (~5300 lignes)
+├── 📄 app.js                       # Logique métier (~6600 lignes)
 ├── 📄 README.md                    # Documentation utilisateur
 ├── 📄 STRUCTURE.md                 # Ce fichier
 ├── 📄 CHANGELOG.md                 # Historique des versions
@@ -32,7 +32,7 @@ Factu_MTI_CONSULTING/
 │   └── CORS_URGENCE.md            # Solutions CORS (historique)
 │
 ├── 📁 backend/                     # Code backend
-│   └── AppScript.js               # Google Apps Script (~850 lignes, v42 style)
+│   └── AppScript.js               # Google Apps Script (~1080 lignes, v42 style)
 │
 ├── 📁 scripts/                     # Scripts utilitaires
 │   ├── start-server.bat           # Lancement serveur (Windows)
@@ -69,7 +69,8 @@ Documentation complète du projet :
 
 ### `backend/`
 Code backend Google Apps Script (v42 style) :
-- **AppScript.js** : API REST pour Drive/Gmail/Calendar/Sheets (~850 lignes)
+- **AppScript.js** : API REST pour Drive/Gmail/Calendar/Sheets (~1080 lignes)
+- Actions : saveData, loadData, savePdfToDrive, sendRAMEmail, exportRAMToSheets, sendInvoiceWithRAM
 - Architecture simple : pas de gestion CORS, retours de réponses directs
 - Déployé sur Google Apps Script en tant que Web App (accès: Tout le monde)
 
@@ -107,12 +108,65 @@ scripts/start-server.*
 ## 📊 Statistiques
 
 - **Fichiers principaux** : 2 (index.html + app.js)
-- **Lignes de code** : ~6800 (5300 JS + 1500 HTML/CSS)
-- **Backend** : 1 fichier Google Apps Script (~850 lignes, v42 style)
+- **Lignes de code** : ~8100 (6600 JS + 1500 HTML/CSS)
+- **Backend** : 1 fichier Google Apps Script (~1080 lignes, v42 style)
 - **Assets** : 8 fichiers (1 logo + 7 icons)
 - **Documentation** : 7 fichiers markdown
 - **Architecture** : Frontend-only (vanilla JS) + Google Apps Script backend
 - **Déploiement** : GitHub Pages (production), localhost (dev)
+
+## 🔑 Fonctions clés app.js
+
+### Gestion Clients
+- `loadClients()`, `saveClients()` : Persistance localStorage
+- `addOrEditClient()`, `deleteClient()` : CRUD clients
+- `displayClients()`, `filterClients()` : Affichage et recherche
+
+### Facturation
+- `addInvoiceLine()`, `deleteInvoiceLine()` : Lignes de facture
+- `generateInvoicePDF()` : Génération PDF A4 avec jsPDF
+- `saveInvoice()`, `editInvoice()`, `deleteInvoice()` : CRUD factures
+- `displayInvoices()`, `filterInvoices()` : Liste et recherche
+- `getCurrentInvoiceForPreview()` : Prévisualisation facture
+
+### RAM (Rapports d'Activité Mensuelle) - v2.1
+- `generateRAMPDF(ram)` : Génération PDF A4 format professionnel
+- `saveRAMFromForm()` : Sauvegarde RAM depuis formulaire (onglet RAM)
+- `generateRAMFromModal()` : Création RAM depuis modal (onglet Factures)
+- `sendRAMEmail(ramId)` : Envoi RAM seul par email
+- `sendInvoiceWithRAM(invoiceIndex)` : Envoi combiné facture + RAM
+- `exportRAMToSheets(ram)` : Export automatique vers Google Sheets
+- `showRAMPreview(ram)` : Prévisualisation RAM
+- `populateRAMInvoiceSelect()` : Dropdown factures intelligent (filtré par client et période)
+- `setupRAMFormListeners()` : Auto-update dropdown lors changement client/mois/année
+- `editRAM(ramId)`, `deleteRAM(ramId)` : CRUD RAMs
+- `displayRAMs()` : Affichage liste RAMs avec boutons actions
+- `fetchImageAsDataUri(url)` : Helper chargement images sans CORS
+- **Structure RAM** : `{ id, client, month, year, monthName, activities[], remarks, invoiceNumber, createdAt }`
+- **Duplicate Prevention** : Validation client+mois+année avant création
+- **Triple-layer Storage** : localStorage + Google Drive + Google Sheets
+
+### Calculs Fiscaux
+- `calculateSocialCharges(amount)` : URSSAF avec ACRE
+- `calculateTaxes(amount)` : IRPP progressif 2025
+- `compareIRPPvsVL(ca)` : Comparaison versement libératoire vs progressif
+- `calculateBNC(ca)` : Revenu imposable avec abattement 34%
+
+### Google Calendar
+- `initGoogleCalendar()` : Initialisation OAuth2
+- `loadCalendarEvents()` : Chargement événements
+- `createCalendarEvent()`, `updateCalendarEvent()`, `deleteCalendarEvent()` : CRUD
+
+### Backend Sync
+- `syncToBackend()` : Sauvegarde Drive automatique
+- `callBackend(action, params)` : Wrapper appels backend
+- **Actions backend** : saveData, loadData, savePdfToDrive, sendRAMEmail, exportRAMToSheets, sendInvoiceWithRAM
+
+### UI & Charts
+- `displayDashboard()` : Graphiques CA et statuts (Chart.js)
+- `showToast(message, type)` : Notifications utilisateur
+- `showTab(tabName)` : Navigation onglets
+- `initApp()` : Initialisation complète (clients, invoices, tasks, rams, calendar)
 
 ## 🚀 Points d'entrée
 
@@ -123,5 +177,5 @@ scripts/start-server.*
 
 ---
 
-**Dernière mise à jour** : Novembre 2025  
-**Version** : 2.0
+**Dernière mise à jour** : Décembre 2025  
+**Version** : 2.1

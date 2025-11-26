@@ -44,15 +44,33 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 ### 🔄 Stockage et Synchronisation
 - ✅ **Google Drive API** : Sauvegarde automatique dans `mti_data.json`
-- ✅ **Google Apps Script Backend** : REST API pour opérations
+- ✅ **Google Apps Script Backend** : REST API pour opérations (clients, factures, RAMs)
+- ✅ **Google Sheets Export** : Export automatique RAMs vers onglet dédié
 - ✅ Persistance locale (localStorage) + sync cloud
 - ✅ Fallback JSONP pour compatibilité CORS
+- ✅ Triple-layer : localStorage → Drive → Sheets
 
 ### 📧 Envoi de Factures
 - ✅ Sauvegarde PDF sur Google Drive (dossier "Factures")
 - ✅ Ouverture automatique du PDF depuis Drive
 - ✅ Génération email Gmail pré-rempli
 - ✅ Corps d'email personnalisé par client
+
+### 📄 Rapports d'Activité Mensuelle (RAM)
+- ✅ **Génération calendrier 30 jours** : Interface complète mois/année
+- ✅ **Saisie détaillée** : Heures, commentaires, remarques par jour
+- ✅ **PDF format professionnel** : Format A4 portrait identique aux factures
+  - Logo MTI CONSULTING 35×18mm
+  - Couleurs corporate #21808D (bleu MTI)
+  - Weekends grisés automatiquement
+  - Tableau optimisé 4 colonnes (Jour/Date/Heures/Commentaires)
+  - Signature PandaDoc intégrée
+- ✅ **Envoi email** : RAM seul ou combiné facture + RAM
+- ✅ **Export Google Sheets** : Synchronisation automatique vers onglet RAM
+- ✅ **Liaison factures** : Dropdown intelligent filtré par client et période
+- ✅ **Prévention doublons** : Contrôle client + mois + année
+- ✅ **Gestion CRUD** : Création, lecture, modification, suppression, liste
+- ✅ **Persistance données** : Triple-layer (localStorage + Drive + Sheets)
 
 ## 🚀 Installation
 
@@ -293,10 +311,10 @@ Google Drive (persistence cloud)
 
 ## 📊 Statistiques du Projet
 
-- **Lignes de code** : ~5300 (app.js) + ~1500 (index.html) + ~850 (backend)
-- **Fonctionnalités** : 30+
-- **API intégrées** : Google Drive, Gmail, Calendar
-- **Format de données** : JSON
+- **Lignes de code** : ~6600 (app.js) + ~1500 (index.html) + ~1080 (backend)
+- **Fonctionnalités** : 35+
+- **API intégrées** : Google Drive, Gmail, Calendar, Sheets
+- **Format de données** : JSON + Google Sheets
 - **Architecture** : Frontend vanilla JS + Google Apps Script backend (v42 style)
 - **Compatibilité** : Navigateurs modernes (ES6+)
 - **Déploiement** : GitHub Pages (gratuit)
@@ -332,6 +350,18 @@ MIT License - Voir LICENSE pour plus de détails
 
 ## 📅 Changelog
 
+### v2.1 (Décembre 2025)
+- ✨ **Système RAM complet** : Rapports d'Activité Mensuelle
+  - Génération PDF A4 format professionnel (logo 35×18mm, #21808D)
+  - Envoi email (RAM seul ou facture + RAM combiné)
+  - Export Google Sheets automatique
+  - Liaison intelligente avec factures
+  - Prévention doublons (client + mois + année)
+  - CRUD complet avec persistance triple-layer
+- 🔧 Chargement images optimisé (fetchImageAsDataUri, évite CORS)
+- 🔧 Signature PandaDoc intégrée dans RAMs
+- 🐛 Corrections logo, table overflow, variables email
+
 ### v2.0 (Novembre 2025)
 - ✨ **Facturation multi-lignes** : Plusieurs lignes par facture
 - ✨ **Barème IRPP progressif 2025** : Éditable + comparaison automatique
@@ -351,6 +381,6 @@ MIT License - Voir LICENSE pour plus de détails
 
 ---
 
-**Dernière mise à jour** : Novembre 2025  
-**Version** : 2.0  
+**Dernière mise à jour** : Décembre 2025  
+**Version** : 2.1  
 **Statut** : Production

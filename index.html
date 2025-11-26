@@ -719,6 +719,9 @@ tr:hover {
             <button class="nav-tab active" data-tab="factures">
                 📄 Factures
             </button>
+            <button class="nav-tab" data-tab="ram">
+                📊 RAM
+            </button>
             <button class="nav-tab" data-tab="tiers">
                 👥 Tiers
             </button>
@@ -867,6 +870,118 @@ tr:hover {
                         </thead>
                         <tbody id="invoiceListBody">
                             <!-- Invoices will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- RAM TAB -->
+        <div id="ram" class="tab-content">
+            <!-- Formulaire de création/édition RAM -->
+            <div id="ramFormContainer" class="card" style="display: none;">
+                <div id="ramEditModeIndicator" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-orange-500-rgb), 0.15); color: var(--color-warning); border-radius: var(--radius-base); margin-bottom: var(--space-16); border: 1px solid rgba(var(--color-orange-500-rgb), 0.25); font-weight: var(--font-weight-semibold);">
+                </div>
+                <h2 class="card-title">📊 Créer/Modifier un RAM</h2>
+                
+                <div class="form-row" style="margin-bottom: var(--space-16);">
+                    <div class="form-group">
+                        <label class="form-label">Client *</label>
+                        <input type="text" id="ramClientInput" class="form-control" placeholder="Nom du client" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">N° Facture (optionnel)</label>
+                        <select id="ramInvoiceNumber" class="form-control">
+                            <option value="">-- Aucune facture liée --</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-row" style="margin-bottom: var(--space-16);">
+                    <div class="form-group">
+                        <label class="form-label">Mois *</label>
+                        <select id="ramMonthSelect" class="form-control">
+                            <option value="0">Janvier</option>
+                            <option value="1">Février</option>
+                            <option value="2">Mars</option>
+                            <option value="3">Avril</option>
+                            <option value="4">Mai</option>
+                            <option value="5">Juin</option>
+                            <option value="6">Juillet</option>
+                            <option value="7">Août</option>
+                            <option value="8">Septembre</option>
+                            <option value="9">Octobre</option>
+                            <option value="10">Novembre</option>
+                            <option value="11">Décembre</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Année *</label>
+                        <input type="number" id="ramYearInput" class="form-control" min="2020" max="2100" required>
+                    </div>
+                </div>
+                
+                <button onclick="refreshRAMFormCalendar()" class="btn btn-secondary" style="margin-bottom: var(--space-16);">
+                    🔄 Rafraîchir le calendrier
+                </button>
+                
+                <div style="margin-bottom: var(--space-16);">
+                    <h3 style="font-size: var(--font-size-base); margin-bottom: var(--space-8);">Calendrier mensuel</h3>
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-4);">
+                        <table style="width: 100%; border-collapse: collapse;" id="ramCalendarTable">
+                            <thead style="position: sticky; top: 0; background: var(--color-primary); color: white; z-index: 10;">
+                                <tr>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left; width: 80px;">Jour</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center; width: 50px;">Date</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: center; width: 80px;">Heures</th>
+                                    <th style="padding: var(--space-8); border: 1px solid #ddd; text-align: left;">Commentaires</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ramCalendarBody">
+                                <!-- Généré dynamiquement -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-bottom: var(--space-16);">
+                    <label class="form-label">Remarques</label>
+                    <textarea id="ramRemarksInput" class="form-control" rows="3" placeholder="Remarques générales sur le mois..."></textarea>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="ramSubmitBtn" onclick="saveRAMFromForm()" class="btn btn-primary">
+                        💾 Enregistrer le RAM
+                    </button>
+                    <button onclick="cancelRAMEdit()" class="btn btn-secondary">
+                        ❌ Annuler
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Bouton nouveau RAM + Liste des RAMs -->
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-16);">
+                    <h2 class="card-title" style="margin: 0;">Liste des Rapports d'Activité Mensuels</h2>
+                    <button onclick="showNewRAMForm()" class="btn btn-primary">
+                        ➕ Nouveau RAM
+                    </button>
+                </div>
+                
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Client</th>
+                                <th>Période</th>
+                                <th>Total Heures</th>
+                                <th>N° Facture</th>
+                                <th>Créé le</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ramTableBody">
+                            <!-- Généré dynamiquement -->
                         </tbody>
                     </table>
                 </div>
