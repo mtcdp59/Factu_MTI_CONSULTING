@@ -10,7 +10,13 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 ### 💼 Gestion Clients
 - ✅ Création et modification de fiches clients
-- ✅ SIRET, adresse, email de facturation
+- ✅ **Enrichissement SIRENE automatique** : API INSEE pour auto-complétion (v2.1)
+  - Code NAF (activité principale)
+  - Catégorie juridique (ex: SAS, SASU, SARL)
+  - État administratif (Actif/Fermé)
+  - Type établissement (Siège social/Établissement)
+- ✅ SIRET validé + cache 90 jours
+- ✅ Export Google Sheets : 9 colonnes enrichies
 - ✅ Recherche et filtrage
 - ✅ Import/Export CSV
 
@@ -25,14 +31,20 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 - ✅ Dates d'échéance et suivi des paiements
 - ✅ **Validation stricte** : Empêche les factures vides
 
-### 📊 Calculs Fiscaux et Sociaux
-- ✅ **Barème IRPP progressif 2025** (éditable)
-- ✅ **Comparaison automatique** : Versement libératoire vs IRPP progressif
-- ✅ Calcul BNC avec abattement 34%
-- ✅ Charges sociales URSSAF (ACRE actif/inactif)
-- ✅ CFE (Cotisation Foncière des Entreprises)
-- ✅ Simulateur de CA mensuel
-- ✅ Graphiques : CA par mois, répartition par statut
+### 📊 Calculateur de Charges et Impôts (Taux Officiels 2025)
+- ✅ **Taux URSSAF vérifiés** : 11,6% (ACRE) / 24,6% (Standard 2025) - Décret n°2024-484
+- ✅ **CFP obligatoire** : 0,2% (Code du travail L6331-48)
+- ✅ **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
+- ✅ **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
+- ✅ **Vérification éligibilité VL** : RFR ≤ 28,797€/part (seuil 2026)
+- ✅ **CFE personnalisée** : API Open Data Soft DGFiP 2024 (34,934 communes) + fallback 14 villes
+- ✅ **Tableau détaillé** : 4 colonnes (Poste/Taux/Base/Montant)
+- ✅ **Comparaison VL vs IRPP** : Affichage côte à côte avec recommandation
+- ✅ **Projection 2025-2029** : Évolution URSSAF +1%/an (→ 28,6%)
+- ✅ **Graphique distribution** : Histogramme empilé des charges
+- ✅ **Toggle Mensuel/Annuel** : Flexibilité d'affichage
+- ✅ **Sauvegarde simulation** : Persistance paramètres dans localStorage
+- ✅ **Export PDF** : Simulation complète avec sources légales
 
 ### 📅 Agenda Google Calendar
 - ✅ **FullCalendar** intégré avec OAuth2
@@ -154,16 +166,20 @@ L'application est **pré-configurée** avec les credentials Google API de MTI CO
 - IBAN professionnel
 - BIC / SWIFT
 
-**Section 2 : Calculs Fiscaux et Sociaux**
-- Taux IS / IRPP
-- Versement libératoire (défaut 2.2%)
-- CFE annuel et proration mensuelle
-- Cotisations sociales ACRE actif/inactif
+**Section 2 : Calculs Fiscaux et Sociaux (Taux Officiels 2025)**
+- **Cotisations sociales URSSAF BNC** :
+  - Taux avec ACRE Année 1 : 11,6% (Décret n°2024-484)
+  - Taux standard 2025 : 24,6% (évolution +1%/an jusqu'en 2029)
+- **CFP (Formation Pro)** : 0,2% obligatoire (Code du travail L6331-48)
+- **Versement libératoire** : 2,2% (BNC)
+- **Conditions VL** : RFR max 28,797€/part (2026), CA max 77,700€ (BNC)
+- **CFE annuel** : Personnalisable par commune
 
-**Section 3 : Barème Progressif IRPP**
+**Section 3 : Barème Progressif IRPP 2025**
 - Édition des tranches (Min/Max/Taux)
 - Ajout/Suppression de tranches
 - Réinitialisation au barème officiel 2025
+- Abattement BNC : 34% (forfaitaire micro-entreprise)
 - Source : [service-public.gouv.fr](https://www.service-public.gouv.fr/particuliers/vosdroits/F1419)
 
 **Section 4 : Divers**
@@ -311,13 +327,14 @@ Google Drive (persistence cloud)
 
 ## 📊 Statistiques du Projet
 
-- **Lignes de code** : ~6600 (app.js) + ~1500 (index.html) + ~1080 (backend)
-- **Fonctionnalités** : 35+
+- **Lignes de code** : ~7,266 (app.js) + ~1,830 (index.html) + ~1,080 (backend)
+- **Fonctionnalités** : 45+
 - **API intégrées** : Google Drive, Gmail, Calendar, Sheets
 - **Format de données** : JSON + Google Sheets
 - **Architecture** : Frontend vanilla JS + Google Apps Script backend (v42 style)
 - **Compatibilité** : Navigateurs modernes (ES6+)
 - **Déploiement** : GitHub Pages (gratuit)
+- **Sources légales** : URSSAF, Legifrance, service-public.gouv.fr (taux officiels 2025)
 
 ## 🤝 Contribution
 
@@ -345,12 +362,31 @@ MIT License - Voir LICENSE pour plus de détails
 - [FullCalendar](https://fullcalendar.io/) pour l'agenda interactif
 - [jsPDF](https://github.com/parallax/jsPDF) pour la génération PDF
 - [RealFaviconGenerator](https://realfavicongenerator.net/) pour les favicons
-- [service-public.gouv.fr](https://www.service-public.gouv.fr/) pour le barème IRPP officiel
-- Google pour les APIs Drive, Gmail, Calendar
+- [service-public.gouv.fr](https://www.service-public.gouv.fr/) pour le barème IRPP officiel 2025
+- [URSSAF](https://www.autoentrepreneur.urssaf.fr/) pour les taux de cotisations 2025 (Décret n°2024-484)
+- [Legifrance](https://www.legifrance.gouv.fr/) pour le Code du travail (Art. L6331-48 CFP) et CSS (Art. L.131-6-4 ACRE)
+- Google pour les APIs Drive, Gmail, Calendar, Sheets
 
 ## 📅 Changelog
 
-### v2.1 (Décembre 2025)
+### v2.2 (Décembre 2025) - 🧮 Calculateur Avancé
+- ✨ **Calculateur de charges complet** (taux officiels 2025 vérifiés)
+  - **Taux URSSAF** : 11,6% (ACRE) / 24,6% (Standard) - Décret n°2024-484
+  - **CFP obligatoire** : 0,2% (Code du travail L6331-48)
+  - **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
+  - **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
+  - **Vérification éligibilité VL** : RFR ≤ 28,797€/part (seuil 2026)
+  - **CFE personnalisée** : Base de données 12 communes (237€ - 2,433€)
+- 📊 **Tableau détaillé des charges** : 4 colonnes (Poste/Taux/Base/Montant)
+- ⚖️ **Comparaison VL vs IRPP** : Affichage côte à côte avec recommandation automatique
+- 📈 **Projection 2025-2029** : Évolution URSSAF +1%/an (24,6% → 28,6%)
+- 📊 **Graphique distribution** : Histogramme empilé des charges (URSSAF/CFP/Impôt/CFE/Net)
+- 🔄 **Toggle Mensuel/Annuel** : Flexibilité d'affichage
+- 💾 **Sauvegarde simulation** : Persistance paramètres dans localStorage
+- 📄 **Export PDF** : Simulation complète avec sources légales
+- 🔧 Tous les taux modifiables dans Paramètres (mise à jour annuelle simplifiée)
+
+### v2.1 (Décembre 2025) - 📋 Système RAM
 - ✨ **Système RAM complet** : Rapports d'Activité Mensuelle
   - Génération PDF A4 format professionnel (logo 35×18mm, #21808D)
   - Envoi email (RAM seul ou facture + RAM combiné)
@@ -362,7 +398,7 @@ MIT License - Voir LICENSE pour plus de détails
 - 🔧 Signature PandaDoc intégrée dans RAMs
 - 🐛 Corrections logo, table overflow, variables email
 
-### v2.0 (Novembre 2025)
+### v2.0 (Novembre 2025) - 🧾 Facturation Multi-lignes
 - ✨ **Facturation multi-lignes** : Plusieurs lignes par facture
 - ✨ **Barème IRPP progressif 2025** : Éditable + comparaison automatique
 - ✨ **Validation PDF** : Empêche les factures vides
@@ -372,9 +408,9 @@ MIT License - Voir LICENSE pour plus de détails
 - 📊 Calculateur BNC avec abattement 34%
 - 🎨 Favicons multi-formats
 
-### v1.0 (Octobre 2025)
-- 🎉 Version initiale
+### v1.0 (Octobre 2025) - 🎉 Version Initiale
 - Gestion clients, factures, tâches
+- Intégration Google Drive, Gmail, Calendar
 - Intégration Google Drive + Calendar
 - Génération PDF basique
 - Calculateur de charges

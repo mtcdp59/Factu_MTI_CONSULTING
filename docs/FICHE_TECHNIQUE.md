@@ -35,22 +35,28 @@ Factu_MTI_CONSULTING/
 │   │   └── Scripts externes       # CDN libraries
 │   └── <script src="app.js">      # Logique métier
 │
-├── app.js                          # Logique complète (~6600 lignes)
+├── app.js                          # Logique complète (~7800 lignes)
 │   ├── CONFIG (lignes 4-14)       # Backend URL, OAuth2 credentials (hardcodés v42 style)
 │   ├── Data structures (267-280)  # clients[], invoices[], tasks[], rams[] (vides par défaut)
 │   ├── Company info (361-371)     # companyInfo avec toutes les valeurs par défaut (SIRET, adresse, IBAN, BIC)
 │   ├── Google APIs (400-800)      # Calendar, Drive, Gmail, Sheets integration
 │   ├── Invoice management         # CRUD, PDF generation, multi-line items
 │   ├── RAM management (5400-6600) # Rapports Activité Mensuelle (PDF, email, Sheets)
-│   ├── Tax calculator             # IRPP progressif, BNC, comparaison
+│   ├── Tax calculator             # IRPP progressif, BNC, comparaison, CFE API (34,934 communes)
+│   ├── SIRENE integration         # API INSEE auto-fill (NAF, catégorie juridique, état, type siège)
 │   ├── FullCalendar (3800-4200)   # Agenda interactif
 │   └── Init sequence (4700-4850)  # DOMContentLoaded, data loading
+│
+├── backend/
+│   ├── AppScript.js                # Google Apps Script backend (1092 lignes)
+│   └── appsscript.json             # Manifest OAuth scopes + advanced services
 │
 ├── MTI_CONSULTING.png              # Logo (180×90px)
 ├── favicon.*                       # Favicons multi-formats
 ├── site.webmanifest                # PWA manifest
 ├── README.md                       # Documentation utilisateur
 ├── BAREME_IRPP.md                  # Doc calculateur fiscal
+├── docs/                           # Documentation technique complète
 └── .github/
     └── copilot-instructions.md     # Conventions projet
 ```
@@ -82,6 +88,7 @@ const CONFIG = {
 - ✅ Modifiables via l'onglet **Paramètres** (sauvegarde dans localStorage)
 - ✅ GitHub Pages fonctionne immédiatement sans configuration
 - ✅ Backend Google Apps Script sans gestion CORS (retours directs)
+- ✅ Backend propre (1092 lignes, aucune fonction de test résiduelle)
 
 ### 2. Fonction d'initialisation (app.js ligne ~4900)
 
@@ -123,17 +130,27 @@ let invoices = [];
 let tasks = [];
 let rams = [];  // ⚠️ NOUVEAU v2.1 : Rapports Activité Mensuelle
 
-// Structure clients après chargement depuis Drive :
+// Structure clients après chargement depuis Drive (9 colonnes enrichies SIRENE) :
 {
     name: "Nom Client",
     siret: "123 456 789 00012",
     address: "123 Rue...",
-    postalCode: "59000",
-    city: "Lille",
     email_facturation: "client@example.com",
-    phone: "06 12 34 56 78"
+    contact_name: "Prénom Nom",
+    naf: "58.29C",                          // ⚠️ NOUVEAU v2.1 : Code NAF (API SIRENE)
+    categorie_juridique: "5710",           // ⚠️ NOUVEAU v2.1 : Ex: SAS (API SIRENE)
+    etat_administratif: "Actif",           // ⚠️ NOUVEAU v2.1 : Actif/Fermé (API SIRENE)
+    type_siege: "Siège social"             // ⚠️ NOUVEAU v2.1 : Siège/Établissement (API SIRENE)
 }
 ```
+
+**Intégration API SIRENE INSEE (v2.1)** :
+- **Endpoint** : `https://api.insee.fr/api-sirene/3.11/siret/{siret}`
+- **API Key** : `84dbb5c2-6a3c-41d4-9bb5-c26a3c41d4f4`
+- **Cache** : 90 jours localStorage (`mti_sirene_cache`)
+- **Auto-fill** : 6 champs (nom, adresse, NAF, catégorie juridique, état administratif, type siège)
+- **Export Google Sheets** : 9 colonnes (onglet "Tiers")
+- **Validation** : Format SIRET 14 chiffres + vérification existence
 
 ### Factures (app.js ligne 268 - vide par défaut)
 

@@ -277,12 +277,16 @@ function importClients(sheetId) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     
-    // Trouver les indices des colonnes
+    // Trouver les indices des colonnes (9 colonnes enrichies SIRENE)
     const nameIdx = headers.indexOf('Nom');
     const siretIdx = headers.indexOf('SIRET');
     const addressIdx = headers.indexOf('Adresse');
     const emailIdx = headers.indexOf('Email Facturation');
     const contactIdx = headers.indexOf('Contact');
+    const nafIdx = headers.indexOf('Code NAF');
+    const categorieIdx = headers.indexOf('Catégorie Juridique');
+    const etatIdx = headers.indexOf('État Administratif');
+    const typeSiegeIdx = headers.indexOf('Type Siège');
     
     if (nameIdx === -1) {
       return createResponse(false, 'Colonne "Nom" non trouvée');
@@ -299,7 +303,11 @@ function importClients(sheetId) {
         siret: row[siretIdx] || '',
         address: row[addressIdx] || '',
         email_facturation: row[emailIdx] || '',
-        contact_name: row[contactIdx] || ''
+        contact_name: row[contactIdx] || '',
+        naf: row[nafIdx] || '',
+        categorie_juridique: row[categorieIdx] || '',
+        etat_administratif: row[etatIdx] || '',
+        type_siege: row[typeSiegeIdx] || ''
       });
     }
     
@@ -320,12 +328,12 @@ function exportClients(sheetId, clients) {
       sheet = spreadsheet.insertSheet(CONFIG.TIERS_SHEET);
     }
     
-    // Clear et headers
+    // Clear et headers (9 colonnes enrichies SIRENE)
     sheet.clear();
-    sheet.appendRow(['Nom', 'SIRET', 'Adresse', 'Email Facturation', 'Contact']);
+    sheet.appendRow(['Nom', 'SIRET', 'Adresse', 'Email Facturation', 'Contact', 'Code NAF', 'Catégorie Juridique', 'État Administratif', 'Type Siège']);
     
     // Formater headers
-    const headerRange = sheet.getRange(1, 1, 1, 5);
+    const headerRange = sheet.getRange(1, 1, 1, 9);
     headerRange.setFontWeight('bold');
     headerRange.setBackground('#4285f4');
     headerRange.setFontColor('#ffffff');
@@ -337,12 +345,16 @@ function exportClients(sheetId, clients) {
         client.siret || '',
         client.address || '',
         client.email_facturation || '',
-        client.contact_name || ''
+        client.contact_name || '',
+        client.naf || '',
+        client.categorie_juridique || '',
+        client.etat_administratif || '',
+        client.type_siege || ''
       ]);
     });
     
     // Auto-resize
-    sheet.autoResizeColumns(1, 5);
+    sheet.autoResizeColumns(1, 9);
     
     Logger.log('Clients exportés: ' + clients.length);
     return createResponse(true, { 
@@ -1076,3 +1088,5 @@ function ensureStorage() {
     return createResponse(false, 'Erreur ensureStorage: ' + err.toString());
   }
 }
+
+

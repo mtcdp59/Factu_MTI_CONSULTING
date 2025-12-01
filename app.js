@@ -3,7 +3,7 @@
 
 // Configuration production (credentials en dur comme en v42)
 const CONFIG = {
-    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec',
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycby7tGJVMVB51juVHJUWfv-gAmf8Fkp5K8nkSTdzpherNdH1Wn2kYK_Hu08pYoOTwCqL/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
     SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
     CALENDAR_ID: 'mticonsulting59@gmail.com',
@@ -302,8 +302,14 @@ let taxSettings = {
     versementLiberatoire: 2.2,
     prorationMensuelle: 8.33,
     cfeAnnuel: 600,
-    acreActif: 11.6,
-    acreInactif: 24.6,
+    // Charges sociales URSSAF (BNC - Activités libérales)
+    acreActif: 11.6,          // Année 1 avec ACRE (50% de réduction)
+    acreInactif: 24.6,        // Standard 2025 (Décret n°2024-484)
+    // CFP (Contribution Formation Professionnelle) BNC - OBLIGATOIRE
+    cfpBNC: 0.2,              // 0,2% du CA (Code du travail L6331-48)
+    // Conditions versement libératoire
+    rfrMaxVL: 28797,          // RFR max par part pour VL 2026 (27478€ pour 2025)
+    caMaxBNC: 77700,          // Plafond CA BNC pour micro-entreprise
     // Barème IRPP progressif 2025 (tranches annuelles - célibataire 1 part)
     // Source : https://www.service-public.gouv.fr/particuliers/vosdroits/F1419
     irppBareme: [
@@ -330,6 +336,9 @@ const defaultSettings = {
     cfeAnnuel: 600,
     acreActif: 11.6,
     acreInactif: 24.6,
+    cfpBNC: 0.2,
+    rfrMaxVL: 28797,
+    caMaxBNC: 77700,
     irppBareme: [
         { min: 0, max: 11497, taux: 0 },
         { min: 11498, max: 29315, taux: 11 },
@@ -480,6 +489,9 @@ function renderClientsTable() {
             <td><strong>${client.name}${emailIcon}</strong></td>
             <td>${client.siret || '-'}</td>
             <td style="white-space: pre-line; max-width: 200px;">${client.address || '-'}</td>
+            <td>${client.naf || '-'}</td>
+            <td>${client.categorie_juridique || '-'}</td>
+            <td>${client.etat_administratif || '-'}</td>
             <td>${client.email_facturation || '-'}</td>
             <td>${client.contact_name || '-'}</td>
             <td>${clientInvoices.length}</td>
@@ -706,7 +718,12 @@ function setupClientFormHandlers() {
                 siret: document.getElementById('clientFormSiret').value,
                 address: document.getElementById('clientFormAddress').value,
                 email_facturation: document.getElementById('clientFormEmail').value,
-                contact_name: document.getElementById('clientFormContactName').value
+                contact_name: document.getElementById('clientFormContactName').value,
+                // Données SIRENE enrichies
+                naf: document.getElementById('clientFormNAF')?.value || '',
+                categorie_juridique: document.getElementById('clientFormCategorieJuridique')?.value || '',
+                etat_administratif: document.getElementById('clientFormEtat')?.value || '',
+                type_siege: document.getElementById('clientFormTypeSiege')?.value || ''
             };
 
             if (index === -1) {
@@ -737,11 +754,23 @@ function editClient(index) {
     const addressEl = document.getElementById('clientFormAddress');
     const emailEl = document.getElementById('clientFormEmail');
     const contactEl = document.getElementById('clientFormContactName');
+    const nafEl = document.getElementById('clientFormNAF');
+    const categorieJuridiqueEl = document.getElementById('clientFormCategorieJuridique');
+    const etatEl = document.getElementById('clientFormEtat');
+    const typeSiegeEl = document.getElementById('clientFormTypeSiege');
+    
     if (nameEl) nameEl.value = client.name;
     if (siretEl) siretEl.value = client.siret || '';
     if (addressEl) addressEl.value = client.address || '';
     if (emailEl) emailEl.value = client.email_facturation || '';
     if (contactEl) contactEl.value = client.contact_name || '';
+    
+    // Charger données SIRENE enrichies
+    if (nafEl) nafEl.value = client.naf || '';
+    if (categorieJuridiqueEl) categorieJuridiqueEl.value = client.categorie_juridique || '';
+    if (etatEl) etatEl.value = client.etat_administratif || '';
+    if (typeSiegeEl) typeSiegeEl.value = client.type_siege || '';
+    
     const card = document.getElementById('clientFormCard');
     if (card) card.style.display = 'block';
 }
@@ -3396,6 +3425,17 @@ function loadCompanySettings() {
         document.getElementById('companyIBAN').value = companyInfo.iban || '';
         document.getElementById('companyBIC').value = companyInfo.bic || '';
     }
+    
+    // Charger les paramètres fiscaux (taxSettings → HTML)
+    if (document.getElementById('tauxAcreActif')) {
+        document.getElementById('tauxAcreActif').value = taxSettings.acreActif;
+        document.getElementById('tauxAcreInactif').value = taxSettings.acreInactif;
+        document.getElementById('tauxCFPBNC').value = taxSettings.cfpBNC;
+        document.getElementById('rfrMaxVL').value = taxSettings.rfrMaxVL;
+        document.getElementById('caMaxBNC').value = taxSettings.caMaxBNC;
+        document.getElementById('tauxVersementLib').value = taxSettings.versementLiberatoire;
+        document.getElementById('cfeAnnuel').value = taxSettings.cfeAnnuel;
+    }
 }
 
 function saveSettings() {
@@ -3415,6 +3455,9 @@ function saveSettings() {
     taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
     taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif')?.value) || 11.6;
     taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif')?.value) || 24.6;
+    taxSettings.cfpBNC = parseFloat(document.getElementById('tauxCFPBNC')?.value) || 0.2;
+    taxSettings.rfrMaxVL = parseFloat(document.getElementById('rfrMaxVL')?.value) || 28797;
+    taxSettings.caMaxBNC = parseFloat(document.getElementById('caMaxBNC')?.value) || 77700;
     // Le barème IRPP est déjà dans taxSettings.irppBareme (mis à jour par updateIRPPTranche)
 
     // Show confirmation
@@ -3438,6 +3481,9 @@ function resetSettings() {
     document.getElementById('cfeAnnuel').value = defaultSettings.cfeAnnuel;
     document.getElementById('tauxAcreActif').value = defaultSettings.acreActif;
     document.getElementById('tauxAcreInactif').value = defaultSettings.acreInactif;
+    document.getElementById('tauxCFPBNC').value = defaultSettings.cfpBNC;
+    document.getElementById('rfrMaxVL').value = defaultSettings.rfrMaxVL;
+    document.getElementById('caMaxBNC').value = defaultSettings.caMaxBNC;
     
     // Réinitialiser le barème IRPP
     taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
@@ -3659,56 +3705,161 @@ if (document.getElementById('logoUrl')) {
 
 // CALCULS - Tax Calculator
 const caInput = document.getElementById('caInput');
-const acreToggle = document.getElementById('acreToggle');
-const versementToggle = document.getElementById('versementToggle');
 
 function calculateTaxes() {
     // Sécurité : initialiser le barème IRPP si absent
-    if (!taxSettings.irppBareme || !Array.isArray(taxSettings.irppBareme) || taxSettings.irppBareme.length === 0) {
-        taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
+function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
+    const { vl, irpp } = scenarios;
+    const isMensuel = multiplicateur === 1;
+    const periodeText = isMensuel ? 'Mensuel' : 'Annuel';
+
+    // Scenario VL
+    const scenarioVLContent = document.getElementById('scenarioVLContent');
+    if (scenarioVLContent) {
+        scenarioVLContent.innerHTML = `
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8);">CA ${periodeText}: <strong>${(ca * multiplicateur).toFixed(2)} €</strong></div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">URSSAF: ${(vl.charges * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFP: ${(vl.cfp * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">Impôt VL (${taxSettings.versementLiberatoire}%): ${(vl.impot * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFE: ${(vl.cfe * multiplicateur).toFixed(2)} €</div>
+            <div style="border-top: 2px solid var(--color-border); padding-top: var(--space-8); margin-top: var(--space-8); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Total charges: <span style="color: var(--color-warning);">${(vl.total * multiplicateur).toFixed(2)} €</span></div>
+            <div style="font-size: var(--font-size-base); font-weight: var(--font-weight-bold); margin-top: var(--space-8); color: var(--color-primary);">Revenu net: ${(vl.net * multiplicateur).toFixed(2)} €</div>
+        `;
+    }
+
+    // Scenario IRPP
+    const scenarioIRPPContent = document.getElementById('scenarioIRPPContent');
+    if (scenarioIRPPContent) {
+        scenarioIRPPContent.innerHTML = `
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8);">CA ${periodeText}: <strong>${(ca * multiplicateur).toFixed(2)} €</strong></div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">URSSAF: ${(irpp.charges * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFP: ${(irpp.cfp * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">Impôt IRPP (progressif): ${(irpp.impot * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFE: ${(irpp.cfe * multiplicateur).toFixed(2)} €</div>
+            <div style="border-top: 2px solid var(--color-border); padding-top: var(--space-8); margin-top: var(--space-8); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Total charges: <span style="color: var(--color-warning);">${(irpp.total * multiplicateur).toFixed(2)} €</span></div>
+            <div style="font-size: var(--font-size-base); font-weight: var(--font-weight-bold); margin-top: var(--space-8); color: var(--color-primary);">Revenu net: ${(irpp.net * multiplicateur).toFixed(2)} €</div>
+        `;
+    }
+
+    // Recommandation
+    const comparaisonRecommandation = document.getElementById('comparaisonRecommandation');
+    if (comparaisonRecommandation) {
+        const diff = Math.abs(vl.net - irpp.net) * multiplicateur;
+        const meilleur = vl.net > irpp.net ? 'Versement Libératoire' : 'IRPP Progressif';
+        const icone = vl.net > irpp.net ? '💼' : '📊';
+        comparaisonRecommandation.innerHTML = `${icone} <strong>Recommandation :</strong> ${meilleur} (gain de ${diff.toFixed(2)} € ${isMensuel ? 'par mois' : 'par an'})`;
+        comparaisonRecommandation.style.background = vl.net > irpp.net ? 'var(--color-success)' : 'var(--color-primary)';
+    }
+}
+
+function calculateTaxes() {
+    // Sécurité : initialiser le barème IRPP si absentgify(defaultSettings.irppBareme));
     }
     if (!taxSettings.bncAbattement) {
         taxSettings.bncAbattement = defaultSettings.bncAbattement;
     }
-
-    const ca = parseFloat(caInput?.value) || 0;
-    const acreActive = acreToggle ? acreToggle.checked : false;
-    const versementLib = versementToggle ? versementToggle.checked : false;
-
-    // Calculate charges using settings
-    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
-    const charges = ca * chargesRate;
-
-    // Calculate taxes based on versement libératoire toggle
-    let impot = 0;
-    let impotLabel = '';
-
-    if (versementLib) {
-        // Versement libératoire: taux fixe sur CA
-        impot = ca * (taxSettings.versementLiberatoire / 100);
-        impotLabel = `${impot.toFixed(2)} € (Versement libératoire ${taxSettings.versementLiberatoire}%)`;
-    } else {
-        // IRPP barème progressif avec abattement BNC
-        const caAnnuel = ca * 12;
-        const revenuImposable = calculateBNCRevenuImposable(caAnnuel);
-        const impotAnnuel = calculateIRPPProgressif(revenuImposable);
-        impot = impotAnnuel / 12; // Ramené au mensuel
-        impotLabel = `${impot.toFixed(2)} € (IRPP progressif)`;
+    if (!taxSettings.cfpBNC) {
+        taxSettings.cfpBNC = defaultSettings.cfpBNC;
     }
 
-    // Calculate CFE monthly
+    const ca = parseFloat(caInput?.value) || 0;
+    
+    // Déterminer année ACRE (radio buttons)
+    const acreAnnee1Radio = document.getElementById('acreAnnee1');
+    const acreActive = acreAnnee1Radio ? acreAnnee1Radio.checked : true;
+    
+    // Déterminer période affichage (mensuel ou annuel)
+    const periodeMensuelRadio = document.getElementById('periodeMensuel');
+    const isMensuel = periodeMensuelRadio ? periodeMensuelRadio.checked : true;
+    const multiplicateur = isMensuel ? 1 : 12;
+    
+    // Mise à jour label période
+    const periodeLabel = document.getElementById('periodeLabel');
+    if (periodeLabel) {
+        periodeLabel.textContent = isMensuel ? '(Mensuelles)' : '(Annuelles)';
+    }
+
+    // 1. Charges sociales URSSAF
+    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+    const charges = ca * chargesRate;
+    const chargesLabel = acreActive ? `ACRE Année 1` : `Standard 2025`;
+
+    // 2. CFP (Contribution Formation Professionnelle) - OBLIGATOIRE
+    const cfp = ca * (taxSettings.cfpBNC / 100);
+
+    // 3. CFE mensuel
     const cfe = taxSettings.cfeAnnuel / 12;
-    const net = ca - charges - impot - cfe;
 
-    // Display results
-    document.getElementById('calcCA') && (document.getElementById('calcCA').textContent = ca.toFixed(2) + ' €');
-    document.getElementById('calcCharges') && (document.getElementById('calcCharges').textContent = charges.toFixed(2) + ' € (' + (chargesRate * 100).toFixed(1) + '%)');
-    document.getElementById('calcImpot') && (document.getElementById('calcImpot').textContent = impotLabel);
-    document.getElementById('calcCFE') && (document.getElementById('calcCFE').textContent = cfe.toFixed(2) + ' € (CFE mensuel)');
-    document.getElementById('calcNet') && (document.getElementById('calcNet').textContent = net.toFixed(2) + ' €');
+    // === CALCUL SCENARIO VL ===
+    const impotVL = ca * (taxSettings.versementLiberatoire / 100);
+    const totalChargesVL = charges + cfp + impotVL + cfe;
+    const netVL = ca - totalChargesVL;
 
-    // Mise à jour de la comparaison (si élément présent)
-    updateComparaison(ca);
+    // === CALCUL SCENARIO IRPP ===
+    const caAnnuel = ca * 12;
+    const revenuImposable = calculateBNCRevenuImposable(caAnnuel);
+    const impotAnnuelIRPP = calculateIRPPProgressif(revenuImposable);
+    const impotIRPP = impotAnnuelIRPP / 12;
+    const totalChargesIRPP = charges + cfp + impotIRPP + cfe;
+    const netIRPP = ca - totalChargesIRPP;
+
+    // === DÉTERMINER RÉGIME FISCAL SÉLECTIONNÉ ===
+    const regimeVLRadio = document.getElementById('regimeVL');
+    const useVL = regimeVLRadio ? regimeVLRadio.checked : false;
+    
+    // Choisir le scénario à afficher dans le tableau de détail
+    const impotDetail = useVL ? impotVL : impotIRPP;
+    const totalChargesDetail = useVL ? totalChargesVL : totalChargesIRPP;
+    const netDetail = useVL ? netVL : netIRPP;
+    const regimeLabel = useVL ? 'Versement Libératoire' : 'IRPP progressif';
+    const impotTaux = useVL ? `${taxSettings.versementLiberatoire}%` : 'Barème';
+    const impotBase = useVL ? (ca * multiplicateur).toFixed(2) : revenuImposable.toFixed(2);
+
+    // === REMPLIR TABLEAU DE DETAIL (utilise régime sélectionné) ===
+    const detailBody = document.getElementById('detailChargesBody');
+    if (detailBody) {
+        detailBody.innerHTML = `
+            <tr style="border-bottom: 1px solid var(--color-border);">
+                <td style="padding: var(--space-12);">Charges sociales URSSAF <small style="color: var(--color-text-secondary);">(${chargesLabel})</small></td>
+                <td style="padding: var(--space-12); text-align: center;">${(chargesRate * 100).toFixed(1)}%</td>
+                <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(charges * multiplicateur).toFixed(2)} €</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--color-border);">
+                <td style="padding: var(--space-12);">CFP (Formation professionnelle)</td>
+                <td style="padding: var(--space-12); text-align: center;">${taxSettings.cfpBNC}%</td>
+                <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(cfp * multiplicateur).toFixed(2)} €</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--color-border);">
+                <td style="padding: var(--space-12);">Impôt sur le revenu <small style="color: var(--color-text-secondary);">(${regimeLabel})</small></td>
+                <td style="padding: var(--space-12); text-align: center;">${impotTaux}</td>
+                <td style="padding: var(--space-12); text-align: right;">${impotBase} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(impotDetail * multiplicateur).toFixed(2)} €</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--color-border);">
+                <td style="padding: var(--space-12);">CFE <small style="color: var(--color-text-secondary);">(Cotisation Foncière Entreprises)</small></td>
+                <td style="padding: var(--space-12); text-align: center;">—</td>
+                <td style="padding: var(--space-12); text-align: right;">—</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(cfe * multiplicateur).toFixed(2)} €</td>
+            </tr>
+        `;
+    }
+    document.getElementById('detailTotalCharges') && (document.getElementById('detailTotalCharges').textContent = (totalChargesDetail * multiplicateur).toFixed(2) + ' €');
+    document.getElementById('detailRevenuNet') && (document.getElementById('detailRevenuNet').textContent = (netDetail * multiplicateur).toFixed(2) + ' €');
+
+    // === COMPARAISON VL vs IRPP ===
+    const scenarios = {
+        vl: { charges, cfp, impot: impotVL, cfe, total: totalChargesVL, net: netVL },
+        irpp: { charges, cfp, impot: impotIRPP, cfe, total: totalChargesIRPP, net: netIRPP }
+    };
+    updateComparaisonVL_IRPP(ca, multiplicateur, scenarios);
+    
+    // === PROJECTION 3-5 ANS ===
+    updateProjection3_5Ans(ca, multiplicateur, scenarios);
+    
+    // === GRAPHIQUE DISTRIBUTION CHARGES ===
+    renderChargesDistributionChart(scenarios, multiplicateur);
 }
 
 function updateComparaison(caMensuel) {
@@ -3764,11 +3915,1033 @@ function updateComparaison(caMensuel) {
 if (caInput) {
     caInput.addEventListener('input', calculateTaxes);
 }
-if (acreToggle) {
-    acreToggle.addEventListener('change', calculateTaxes);
+
+// Event listeners pour les radio buttons ACRE
+const acreAnnee1 = document.getElementById('acreAnnee1');
+const acreAnnee2Plus = document.getElementById('acreAnnee2Plus');
+if (acreAnnee1) acreAnnee1.addEventListener('change', calculateTaxes);
+if (acreAnnee2Plus) acreAnnee2Plus.addEventListener('change', calculateTaxes);
+
+// Event listeners pour les radio buttons Régime Fiscal
+const regimeIRPP = document.getElementById('regimeIRPP');
+const regimeVL = document.getElementById('regimeVL');
+if (regimeIRPP) regimeIRPP.addEventListener('change', calculateTaxes);
+if (regimeVL) regimeVL.addEventListener('change', calculateTaxes);
+
+// Event listeners pour les radio buttons Mensuel/Annuel
+const periodeMensuel = document.getElementById('periodeMensuel');
+const periodeAnnuel = document.getElementById('periodeAnnuel');
+if (periodeMensuel) periodeMensuel.addEventListener('change', calculateTaxes);
+if (periodeAnnuel) periodeAnnuel.addEventListener('change', calculateTaxes);
+
+// Event listeners pour CFE commune et RFR
+const communeInput = document.getElementById('communeInput');
+const rfrInput = document.getElementById('rfrInput');
+if (communeInput) {
+    // Autocomplétion dynamique + update CFE
+    let communeDebounceTimer;
+    communeInput.addEventListener('input', (e) => {
+        clearTimeout(communeDebounceTimer);
+        communeDebounceTimer = setTimeout(() => {
+            searchCommunesAPI(e.target.value);
+        }, 300);
+    });
+    
+    // Clic en dehors pour fermer autocomplete
+    document.addEventListener('click', (e) => {
+        if (!communeInput.contains(e.target) && !document.getElementById('communeAutocomplete').contains(e.target)) {
+            document.getElementById('communeAutocomplete').style.display = 'none';
+        }
+    });
 }
-if (versementToggle) {
-    versementToggle.addEventListener('change', calculateTaxes);
+if (rfrInput) rfrInput.addEventListener('input', verifierEligibiliteVL);
+
+// Event listeners pour validation SIRET (tous les champs)
+const siretFields = [
+    { input: 'clientSiret', status: 'clientSiretStatus', info: 'clientSiretInfo' },
+    { input: 'clientFormSiret', status: 'clientFormSiretStatus', info: 'clientFormSiretInfo' },
+    { input: 'companyLegalSiret', status: 'companyLegalSiretStatus', info: 'companyLegalSiretInfo' },
+    { input: 'editClientSiret', status: 'editClientSiretStatus', info: 'editClientSiretInfo' }
+];
+
+siretFields.forEach(field => {
+    const input = document.getElementById(field.input);
+    if (input) {
+        let siretDebounceTimer;
+        
+        // Contrôle strict : seulement chiffres
+        input.addEventListener('keypress', (e) => {
+            // Autoriser seulement chiffres (0-9)
+            if (!/^\d$/.test(e.key)) {
+                e.preventDefault();
+            }
+        });
+        
+        // Contrôle paste : filtrer caractères non-numériques
+        input.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+            const numericOnly = pastedText.replace(/\D/g, '').slice(0, 14); // Max 14 chiffres
+            
+            // Insérer texte nettoyé
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const currentValue = input.value.replace(/\D/g, '');
+            const newValue = currentValue.slice(0, start) + numericOnly + currentValue.slice(end);
+            input.value = newValue.slice(0, 14);
+            
+            // Déclencher validation
+            const event = new Event('input', { bubbles: true });
+            input.dispatchEvent(event);
+        });
+        
+        input.addEventListener('input', (e) => {
+            clearTimeout(siretDebounceTimer);
+            
+            // Nettoyer : seulement chiffres
+            let siret = e.target.value.replace(/\D/g, ''); // Supprimer tout sauf chiffres
+            
+            // Limiter à 14 caractères
+            if (siret.length > 14) {
+                siret = siret.slice(0, 14);
+            }
+            
+            // Mettre à jour l'input (sans espaces pour l'instant)
+            e.target.value = siret;
+            
+            // Validation selon longueur
+            if (siret.length === 14) {
+                siretDebounceTimer = setTimeout(() => {
+                    validateSIRET(siret, field.status, field.info);
+                }, 500);
+            } else if (siret.length > 0) {
+                updateSiretStatus(field.status, field.info, 'pending', `${siret.length}/14 chiffres`);
+            } else {
+                updateSiretStatus(field.status, field.info, 'empty', '');
+            }
+        });
+    }
+});
+
+// Event listener pour date début activité ACRE
+const dateDebutActiviteInput = document.getElementById('dateDebutActivite');
+if (dateDebutActiviteInput) dateDebutActiviteInput.addEventListener('change', calculateACREPeriod);
+
+// Event listener pour export PDF simulateur
+const exportSimulateurPDFBtn = document.getElementById('exportSimulateurPDF');
+if (exportSimulateurPDFBtn) {
+    exportSimulateurPDFBtn.addEventListener('click', exportSimulateurPDF);
+}
+
+// Event listeners pour save/reset simulation
+const saveSimulationBtn = document.getElementById('saveSimulation');
+const resetSimulationBtn = document.getElementById('resetSimulation');
+if (saveSimulationBtn) {
+    saveSimulationBtn.addEventListener('click', saveSimulationParams);
+}
+if (resetSimulationBtn) {
+    resetSimulationBtn.addEventListener('click', resetSimulationParams);
+}
+
+// Cache API CFE (localStorage)
+const CFE_CACHE_KEY = 'mti_cfe_api_cache';
+const CFE_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 jours
+
+// Base de données codes INSEE principales communes (fallback)
+const inseeCodesDB = {
+    'paris': '75056',
+    'lyon': '69123',
+    'marseille': '13055',
+    'toulouse': '31555',
+    'nice': '06088',
+    'nantes': '44109',
+    'montpellier': '34172',
+    'strasbourg': '67482',
+    'bordeaux': '33063',
+    'lille': '59350',
+    'rennes': '35238',
+    'reims': '51454',
+    'tourcoing': '59599',
+    'roubaix': '59512',
+    'la madeleine': '59368'
+};
+
+// Base de données CFE fallback (estimations si API échoue)
+const cfeFallbackDB = {
+    'paris': 2433,
+    'lyon': 1500,
+    'marseille': 1200,
+    'toulouse': 900,
+    'nice': 1100,
+    'nantes': 800,
+    'montpellier': 750,
+    'strasbourg': 850,
+    'bordeaux': 950,
+    'lille': 700,
+    'rennes': 650,
+    'reims': 600,
+    'la madeleine': 418,
+    'default': 600
+};
+
+// Fonction récupération CFE depuis API Open Data Soft
+async function getCFEFromAPI(commune) {
+    const communeLower = commune.toLowerCase();
+    
+    // 1. Vérifier cache localStorage
+    const cache = JSON.parse(localStorage.getItem(CFE_CACHE_KEY) || '{}');
+    const cached = cache[communeLower];
+    if (cached && Date.now() - cached.timestamp < CFE_CACHE_TTL) {
+        return { taux: cached.taux, source: 'API (cache)', inseeCode: cached.inseeCode };
+    }
+    
+    // 2. Rechercher code INSEE
+    let inseeCode = null;
+    for (const [ville, code] of Object.entries(inseeCodesDB)) {
+        if (communeLower.includes(ville) || ville.includes(communeLower)) {
+            inseeCode = code;
+            break;
+        }
+    }
+    
+    if (!inseeCode) {
+        // Fallback estimation si commune inconnue
+        const fallback = cfeFallbackDB[communeLower] || cfeFallbackDB.default;
+        return { taux: fallback, source: 'Estimation (commune non référencée)', inseeCode: null };
+    }
+    
+    // 3. Appel API Open Data Soft
+    try {
+        const url = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?limit=1&refine=exercice:"2024"&refine=insee_com:"${inseeCode}"`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            const result = data.results[0];
+            const tauxCFE = result.taux_global_cfe_hz;
+            
+            if (tauxCFE !== null && tauxCFE !== undefined) {
+                // Conversion taux (%) vers base minimale estimée (€)
+                // Note: l'API donne le TAUX CFE, pas la base minimale
+                // Base minimale 2024: entre 237€ et 7,349€ selon CA
+                // Estimation base minimale moyenne: 1,200€
+                const baseMinimaleEstimee = 1200;
+                const cfeEstimee = Math.round((tauxCFE / 100) * baseMinimaleEstimee);
+                
+                // Mise à jour cache
+                cache[communeLower] = {
+                    taux: cfeEstimee,
+                    inseeCode: inseeCode,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(CFE_CACHE_KEY, JSON.stringify(cache));
+                
+                return { taux: cfeEstimee, source: 'API DGFiP 2024 (taux officiel)', inseeCode: inseeCode, tauxPct: tauxCFE };
+            }
+        }
+        
+        // Si API ne retourne pas de résultat, utiliser fallback
+        const fallback = cfeFallbackDB[communeLower] || cfeFallbackDB.default;
+        return { taux: fallback, source: 'Estimation (données API incomplètes)', inseeCode: inseeCode };
+        
+    } catch (error) {
+        console.warn('Erreur API CFE:', error);
+        const fallback = cfeFallbackDB[communeLower] || cfeFallbackDB.default;
+        return { taux: fallback, source: 'Estimation (erreur API)', inseeCode: inseeCode };
+    }
+}
+
+// Fonction recherche communes dynamique via API
+let communesSearchCache = {};
+async function searchCommunesAPI(query) {
+    const autocompleteDiv = document.getElementById('communeAutocomplete');
+    if (!autocompleteDiv) return;
+    
+    if (!query || query.length < 2) {
+        autocompleteDiv.style.display = 'none';
+        return;
+    }
+    
+    // Vérifier cache
+    if (communesSearchCache[query]) {
+        displayCommunesResults(communesSearchCache[query]);
+        return;
+    }
+    
+    // Afficher loading
+    autocompleteDiv.style.display = 'block';
+    autocompleteDiv.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--color-text-secondary);">🔄 Recherche...</div>';
+    
+    try {
+        // API Open Data Soft - Recherche communes
+        const url = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com&where=search(libcom,'${encodeURIComponent(query)}')&group_by=libcom,insee_com&limit=10&refine=exercice:"2024"`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            communesSearchCache[query] = data.results;
+            displayCommunesResults(data.results);
+        } else {
+            autocompleteDiv.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--color-text-secondary);">Aucune commune trouvée</div>';
+        }
+    } catch (error) {
+        console.error('Erreur recherche communes:', error);
+        autocompleteDiv.innerHTML = '<div style="padding: 12px; text-align: center; color: red;">❌ Erreur API</div>';
+    }
+}
+
+function displayCommunesResults(results) {
+    const autocompleteDiv = document.getElementById('communeAutocomplete');
+    if (!autocompleteDiv) return;
+    
+    autocompleteDiv.style.display = 'block';
+    autocompleteDiv.innerHTML = results.map(r => `
+        <div class="commune-result" data-commune="${r.libcom}" data-insee="${r.insee_com}" style="padding: 12px; cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background 0.2s;">
+            <strong>${r.libcom}</strong> <span style="color: var(--color-text-secondary); font-size: 12px;">(${r.insee_com})</span>
+        </div>
+    `).join('');
+    
+    // Event listeners pour sélection
+    document.querySelectorAll('.commune-result').forEach(el => {
+        el.addEventListener('mouseenter', (e) => e.target.style.background = 'var(--color-bg-1)');
+        el.addEventListener('mouseleave', (e) => e.target.style.background = 'white');
+        el.addEventListener('click', async (e) => {
+            const commune = e.currentTarget.dataset.commune;
+            communeInput.value = commune;
+            autocompleteDiv.style.display = 'none';
+            await updateCFEEstimation(); // Déclencher calcul CFE
+        });
+    });
+}
+
+// Cache validation SIRET (90 jours)
+const SIRET_CACHE_KEY = 'mti_siret_cache';
+const SIRET_CACHE_TTL = 90 * 24 * 60 * 60 * 1000; // 90 jours
+const INSEE_API_KEY = '84dbb5c2-6a3c-41d4-9bb5-c26a3c41d4f4'; // Clé API SIRENE INSEE
+
+async function validateSIRET(siret, statusElementId, infoElementId) {
+    const statusEl = document.getElementById(statusElementId);
+    const infoEl = document.getElementById(infoElementId);
+    
+    if (!statusEl || !infoEl) return;
+    
+    // Vérifier format (14 chiffres)
+    if (!/^\d{14}$/.test(siret)) {
+        updateSiretStatus(statusElementId, infoElementId, 'error', 'Format invalide (14 chiffres requis)');
+        return;
+    }
+    
+    // Vérifier cache
+    const cache = JSON.parse(localStorage.getItem(SIRET_CACHE_KEY) || '{}');
+    const cached = cache[siret];
+    if (cached && Date.now() - cached.timestamp < SIRET_CACHE_TTL) {
+        const cacheLabel = cached.source === 'insee' ? '💾' : '⚠️';
+        const btnId = `fill-${statusElementId}`;
+        updateSiretStatus(statusElementId, infoElementId, 'valid', 
+            `✅ ${cached.nom} (${cached.etat}) ${cacheLabel} Cache<br><button id="${btnId}" style="margin-top: 4px; padding: 4px 8px; background: var(--color-primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">📋 Remplir les champs</button>`
+        );
+        
+        // Event listener pour bouton de remplissage manuel
+        setTimeout(() => {
+            const fillBtn = document.getElementById(btnId);
+            if (fillBtn) {
+                fillBtn.addEventListener('click', () => {
+                    autoFillClientFromSIRET(statusElementId, cached);
+                });
+            }
+        }, 100);
+        
+        return;
+    }
+    
+    // Loading
+    updateSiretStatus(statusElementId, infoElementId, 'loading', '🔄 Vérification INSEE...');
+    
+    try {
+        // API SIRENE INSEE Officielle (https://api.insee.fr/api-sirene/3.11)
+        const url = `https://api.insee.fr/api-sirene/3.11/siret/${siret}`;
+        const response = await fetch(url, {
+            headers: {
+                'X-INSEE-Api-Key-Integration': INSEE_API_KEY,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.etablissement) {
+                const etab = data.etablissement;
+                const ul = etab.uniteLegale;
+                const periode = etab.periodesEtablissement[0]; // Période la plus récente
+                
+                // Extraction données
+                const nom = ul.denominationUniteLegale || 
+                           `${ul.prenomUsuelUniteLegale || ''} ${ul.nomUniteLegale || ''}`.trim() ||
+                           ul.denominationUsuelle1UniteLegale ||
+                           'Entreprise sans dénomination';
+                
+                const etat = periode.etatAdministratifEtablissement === 'A' ? 'Actif' : 'Fermé';
+                const etatUL = ul.etatAdministratifUniteLegale === 'A' ? 'Active' : 'Cessée';
+                
+                // Adresse
+                const adr = etab.adresseEtablissement;
+                const adresse = [
+                    adr.numeroVoieEtablissement,
+                    adr.typeVoieEtablissement,
+                    adr.libelleVoieEtablissement,
+                    adr.codePostalEtablissement,
+                    adr.libelleCommuneEtablissement
+                ].filter(Boolean).join(' ');
+                
+                // Informations complémentaires
+                const sigle = ul.sigleUniteLegale ? ` (${ul.sigleUniteLegale})` : '';
+                const categorieJuridique = ul.categorieJuridiqueUniteLegale;
+                const naf = etab.uniteLegale.activitePrincipaleUniteLegale;
+                const typeSiege = etab.etablissementSiege ? 'Siège social' : 'Établissement';
+                
+                // Mise à jour cache
+                cache[siret] = {
+                    nom: nom + sigle,
+                    etat: etat,
+                    etatUL: etatUL,
+                    adresse: adresse,
+                    categorieJuridique: categorieJuridique,
+                    naf: naf,
+                    typeSiege: typeSiege,
+                    source: 'insee',
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(SIRET_CACHE_KEY, JSON.stringify(cache));
+                
+                // Affichage résultat détaillé
+                const etablissementLabel = etab.etablissementSiege ? '🏢 Siège' : '📍 Établissement';
+                const message = `✅ ${nom}${sigle} (${etat} - ${etatUL})<br>${etablissementLabel} ${adresse}<br><small>NAF: ${naf} | CJ: ${categorieJuridique}</small>`;
+                updateSiretStatus(statusElementId, infoElementId, 'valid', message);
+                
+                // Auto-remplissage des champs client si SIRET valide
+                autoFillClientFromSIRET(statusElementId, cache[siret]);
+            } else {
+                updateSiretStatus(statusElementId, infoElementId, 'error', '❌ SIRET non trouvé dans la base SIRENE INSEE');
+            }
+        } else if (response.status === 404) {
+            updateSiretStatus(statusElementId, infoElementId, 'error', '❌ SIRET non trouvé (404)');
+        } else if (response.status === 401 || response.status === 403) {
+            // Fallback vers API Recherche Entreprises si problème de clé
+            console.warn('Erreur authentification INSEE, fallback vers API Recherche Entreprises');
+            await validateSIRETFallback(siret, statusElementId, infoElementId, cache);
+        } else {
+            updateSiretStatus(statusElementId, infoElementId, 'error', `⚠️ Erreur API (${response.status})`);
+        }
+    } catch (error) {
+        console.error('Erreur validation SIRET INSEE:', error);
+        // Fallback vers API Recherche Entreprises
+        await validateSIRETFallback(siret, statusElementId, infoElementId, cache);
+    }
+}
+
+// Fonction fallback si API INSEE échoue
+async function validateSIRETFallback(siret, statusElementId, infoElementId, cache) {
+    try {
+        const url = `https://recherche-entreprises.api.gouv.fr/search?q=${siret}&page=1&per_page=1`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            const entreprise = data.results[0];
+            const nom = entreprise.nom_complet || entreprise.nom_raison_sociale;
+            const etat = entreprise.etat_administratif === 'A' ? 'Actif' : 'Fermé';
+            const adresse = entreprise.siege?.adresse || '';
+            
+            // Mise à jour cache (source: fallback)
+            cache[siret] = {
+                nom: nom,
+                etat: etat,
+                adresse: adresse,
+                source: 'fallback',
+                timestamp: Date.now()
+            };
+            localStorage.setItem(SIRET_CACHE_KEY, JSON.stringify(cache));
+            
+            // Affichage résultat
+            const message = `✅ ${nom} (${etat})${adresse ? `<br>${adresse}` : ''}<br><small>⚠️ Source: API Recherche Entreprises (fallback)</small>`;
+            updateSiretStatus(statusElementId, infoElementId, 'valid', message);
+            
+            // Auto-remplissage des champs client (fallback)
+            autoFillClientFromSIRET(statusElementId, cache[siret]);
+        } else {
+            updateSiretStatus(statusElementId, infoElementId, 'error', '❌ SIRET non trouvé');
+        }
+    } catch (error) {
+        console.error('Erreur fallback SIRET:', error);
+        updateSiretStatus(statusElementId, infoElementId, 'error', '⚠️ Erreur API (vérifiez votre connexion)');
+    }
+}
+
+// Fonction auto-remplissage champs client depuis données SIRENE
+function autoFillClientFromSIRET(statusElementId, siretData) {
+    if (!siretData) return;
+    
+    // Mapping des champs selon le contexte (input SIRET utilisé)
+    const fieldMappings = {
+        'clientSiretStatus': {
+            name: 'clientName',
+            address: 'clientAddress',
+            naf: null,
+            categorieJuridique: null,
+            etat: null,
+            typeSiege: null
+        },
+        'clientFormSiretStatus': {
+            name: 'clientFormName',
+            address: 'clientFormAddress',
+            naf: 'clientFormNAF',
+            categorieJuridique: 'clientFormCategorieJuridique',
+            etat: 'clientFormEtat',
+            typeSiege: 'clientFormTypeSiege'
+        },
+        'editClientSiretStatus': {
+            name: 'editClientName',
+            address: 'editClientAddress',
+            naf: null,
+            categorieJuridique: null,
+            etat: null,
+            typeSiege: null
+        },
+        'companyLegalSiretStatus': {
+            name: 'companyLegalName',
+            address: 'companyLegalAddress',
+            naf: null,
+            categorieJuridique: null,
+            etat: null,
+            typeSiege: null
+        }
+    };
+    
+    const mapping = fieldMappings[statusElementId];
+    if (!mapping) return;
+    
+    const fieldsToFill = [
+        { field: document.getElementById(mapping.name), value: siretData.nom },
+        { field: document.getElementById(mapping.address), value: siretData.adresse },
+        { field: document.getElementById(mapping.naf), value: siretData.naf },
+        { field: document.getElementById(mapping.categorieJuridique), value: siretData.categorieJuridique },
+        { field: document.getElementById(mapping.etat), value: siretData.etat || siretData.etatUL },
+        { field: document.getElementById(mapping.typeSiege), value: siretData.typeSiege }
+    ];
+    
+    // Remplir tous les champs disponibles
+    fieldsToFill.forEach(({ field, value }) => {
+        if (field && value && !field.value.trim()) {
+            field.value = value;
+            // Animation highlight
+            field.style.transition = 'background 0.5s';
+            field.style.background = '#e3f2fd';
+            setTimeout(() => field.style.background = '', 1000);
+        }
+    });
+    
+    // Toast notification avec détails
+    let toastMsg = `✅ Informations SIRENE récupérées :\n${siretData.nom}`;
+    if (siretData.naf) toastMsg += `\n📊 Activité (NAF): ${siretData.naf}`;
+    if (siretData.categorieJuridique) toastMsg += `\n🏢 Catégorie juridique: ${siretData.categorieJuridique}`;
+    showToast(toastMsg);
+}
+
+function updateSiretStatus(statusElementId, infoElementId, state, message) {
+    const statusEl = document.getElementById(statusElementId);
+    const infoEl = document.getElementById(infoElementId);
+    
+    if (!statusEl || !infoEl) return;
+    
+    const states = {
+        'empty': { icon: '', info: '' },
+        'pending': { icon: '⏳', info: message },
+        'loading': { icon: '🔄', info: message },
+        'valid': { icon: '✅', info: message },
+        'error': { icon: '❌', info: message }
+    };
+    
+    const current = states[state] || states.empty;
+    statusEl.innerHTML = current.icon;
+    infoEl.innerHTML = current.info; // Supporte HTML (balises <br>, <small>, etc.)
+    infoEl.style.display = current.info ? 'block' : 'none';
+    infoEl.style.color = state === 'valid' ? 'var(--color-success)' : state === 'error' ? 'var(--color-danger)' : 'var(--color-text-secondary)';
+    infoEl.style.fontSize = '12px';
+    infoEl.style.lineHeight = '1.4';
+}
+
+// Fonction estimation CFE par commune (version API)
+async function updateCFEEstimation() {
+    const commune = communeInput?.value.trim();
+    const cfeEstimationDiv = document.getElementById('cfeEstimation');
+    
+    if (!cfeEstimationDiv) return;
+    
+    if (!commune) {
+        cfeEstimationDiv.style.display = 'none';
+        return;
+    }
+    
+    // Affichage loading
+    cfeEstimationDiv.style.display = 'block';
+    cfeEstimationDiv.innerHTML = '<small>🔄 Recherche données officielles...</small>';
+    
+    // Récupération CFE (API ou fallback)
+    const result = await getCFEFromAPI(commune);
+    
+    // Icône source selon fiabilité
+    let sourceIcon = '📊'; // API officielle
+    if (result.source.includes('Estimation')) sourceIcon = '⚠️';
+    if (result.source.includes('cache')) sourceIcon = '💾';
+    
+    cfeEstimationDiv.style.display = 'block';
+    cfeEstimationDiv.innerHTML = `
+        <strong>📍 CFE pour "${commune}" :</strong> ${result.taux} €/an (${(result.taux / 12).toFixed(2)} €/mois)<br>
+        <small style="color: var(--color-text-secondary);">
+            ${sourceIcon} Source: ${result.source}
+            ${result.inseeCode ? `<br>Code INSEE: ${result.inseeCode}` : ''}
+            ${result.tauxPct ? `<br>Taux CFE: ${result.tauxPct}% (base minimale estimée: 1,200€)` : ''}
+            <br><em>⚠️ CFE réelle = Taux × Base minimale (selon votre CA). Consultez votre avis CFE pour le montant exact.</em>
+        </small>
+    `;
+    
+    // Mettre à jour taxSettings.cfeAnnuel temporairement
+    taxSettings.cfeAnnuel = result.taux;
+    calculateTaxes();
+}
+
+// Fonction calcul période ACRE
+function calculateACREPeriod() {
+    const dateDebutInput = document.getElementById('dateDebutActivite');
+    const acrePeriodeInfo = document.getElementById('acrePeriodeInfo');
+    
+    if (!dateDebutInput || !acrePeriodeInfo) return;
+    
+    const dateDebut = dateDebutInput.value;
+    if (!dateDebut) {
+        acrePeriodeInfo.style.display = 'none';
+        return;
+    }
+    
+    const debut = new Date(dateDebut);
+    
+    // Calculer le trimestre de début
+    const trimestreDebut = Math.floor(debut.getMonth() / 3) + 1;
+    const anneeDebut = debut.getFullYear();
+    
+    // Fin ACRE = fin du 3ème trimestre civil suivant
+    // Trimestre actuel + 3 trimestres = 4 trimestres au total
+    let trimestreFin = trimestreDebut + 3;
+    let anneeFin = anneeDebut;
+    
+    if (trimestreFin > 4) {
+        anneeFin++;
+        trimestreFin -= 4;
+    }
+    
+    // Dates de fin de trimestre
+    const finsTrimestre = {
+        1: `${anneeFin}-03-31`,
+        2: `${anneeFin}-06-30`,
+        3: `${anneeFin}-09-30`,
+        4: `${anneeFin}-12-31`
+    };
+    
+    const dateFin = new Date(finsTrimestre[trimestreFin]);
+    const dateFinFormatted = dateFin.toLocaleDateString('fr-FR');
+    
+    // Vérifier si l'ACRE est encore active aujourd'hui
+    const aujourdhui = new Date();
+    const acreActive = aujourdhui <= dateFin;
+    
+    // Calculer durée restante
+    const joursRestants = Math.ceil((dateFin - aujourdhui) / (1000 * 60 * 60 * 24));
+    const moisRestants = Math.floor(joursRestants / 30);
+    
+    // Afficher les informations
+    acrePeriodeInfo.style.display = 'block';
+    
+    if (acreActive) {
+        acrePeriodeInfo.style.background = 'rgba(var(--color-teal-500-rgb), 0.15)';
+        acrePeriodeInfo.style.border = '1px solid rgba(var(--color-teal-500-rgb), 0.25)';
+        acrePeriodeInfo.style.color = 'var(--color-success)';
+        acrePeriodeInfo.innerHTML = `
+            <strong>✅ Période ACRE active</strong><br>
+            <small style="color: var(--color-text-secondary);">
+                Début : ${debut.toLocaleDateString('fr-FR')} (T${trimestreDebut} ${anneeDebut})<br>
+                Fin : ${dateFinFormatted} (fin T${trimestreFin} ${anneeFin})<br>
+                <strong>Durée restante : ${moisRestants} mois (${joursRestants} jours)</strong>
+            </small>
+        `;
+        
+        // Activer automatiquement le radio "Avec ACRE"
+        const acreRadio = document.getElementById('acreAnnee1');
+        if (acreRadio) acreRadio.checked = true;
+    } else {
+        acrePeriodeInfo.style.background = 'rgba(255, 152, 0, 0.15)';
+        acrePeriodeInfo.style.border = '1px solid rgba(255, 152, 0, 0.25)';
+        acrePeriodeInfo.style.color = 'var(--color-warning)';
+        acrePeriodeInfo.innerHTML = `
+            <strong>⚠️ Période ACRE expirée</strong><br>
+            <small style="color: var(--color-text-secondary);">
+                Début : ${debut.toLocaleDateString('fr-FR')}<br>
+                Fin : ${dateFinFormatted}<br>
+                <strong>Taux plein URSSAF applicable (24,6%)</strong>
+            </small>
+        `;
+        
+        // Activer automatiquement le radio "Sans ACRE"
+        const sansAcreRadio = document.getElementById('acreAnnee2Plus');
+        if (sansAcreRadio) sansAcreRadio.checked = true;
+    }
+    
+    // Recalculer les taxes
+    calculateTaxes();
+}
+
+// Fonction sauvegarde paramètres simulation
+function saveSimulationParams() {
+    const params = {
+        ca: parseFloat(caInput?.value) || 0,
+        acreAnnee1: document.getElementById('acreAnnee1')?.checked || false,
+        dateDebutActivite: document.getElementById('dateDebutActivite')?.value || '',
+        commune: communeInput?.value || '',
+        rfr: parseFloat(rfrInput?.value) || 0,
+        regimeVL: document.getElementById('regimeVL')?.checked || false,
+        periodeMensuel: document.getElementById('periodeMensuel')?.checked || true
+    };
+    
+    localStorage.setItem('mti_simulation_params', JSON.stringify(params));
+    
+    // Afficher confirmation
+    const confirmDiv = document.getElementById('saveSimulationConfirmation');
+    if (confirmDiv) {
+        confirmDiv.style.display = 'block';
+        setTimeout(() => {
+            confirmDiv.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// Fonction chargement paramètres simulation
+function loadSimulationParams() {
+    const saved = localStorage.getItem('mti_simulation_params');
+    if (!saved) return;
+    
+    try {
+        const params = JSON.parse(saved);
+        
+        // Restaurer les valeurs
+        if (caInput) caInput.value = params.ca || 0;
+        
+        // Restaurer date début activité (ACRE)
+        const dateDebutInput = document.getElementById('dateDebutActivite');
+        if (dateDebutInput && params.dateDebutActivite) {
+            dateDebutInput.value = params.dateDebutActivite;
+            calculateACREPeriod();
+        }
+        
+        // Restaurer ACRE (si pas de date, utiliser le param manuel)
+        if (!params.dateDebutActivite) {
+            if (params.acreAnnee1) {
+                const acreAnnee1Radio = document.getElementById('acreAnnee1');
+                if (acreAnnee1Radio) acreAnnee1Radio.checked = true;
+            } else {
+                const acreAnnee2Radio = document.getElementById('acreAnnee2Plus');
+                if (acreAnnee2Radio) acreAnnee2Radio.checked = true;
+            }
+        }
+        
+        // Restaurer commune
+        if (communeInput && params.commune) {
+            communeInput.value = params.commune;
+            updateCFEEstimation();
+        }
+        
+        // Restaurer RFR
+        if (rfrInput && params.rfr) {
+            rfrInput.value = params.rfr;
+            verifierEligibiliteVL();
+        }
+        
+        // Restaurer régime fiscal
+        if (params.regimeVL) {
+            const vlRadio = document.getElementById('regimeVL');
+            if (vlRadio) vlRadio.checked = true;
+        } else {
+            const irppRadio = document.getElementById('regimeIRPP');
+            if (irppRadio) irppRadio.checked = true;
+        }
+        
+        // Restaurer période
+        if (params.periodeMensuel) {
+            const mensuelRadio = document.getElementById('periodeMensuel');
+            if (mensuelRadio) mensuelRadio.checked = true;
+        } else {
+            const annuelRadio = document.getElementById('periodeAnnuel');
+            if (annuelRadio) annuelRadio.checked = true;
+        }
+        
+        // Recalculer
+        calculateTaxes();
+    } catch (e) {
+        console.error('Erreur chargement simulation:', e);
+    }
+}
+
+// Fonction réinitialisation simulation
+function resetSimulationParams() {
+    if (caInput) caInput.value = 0;
+    
+    const acreAnnee1Radio = document.getElementById('acreAnnee1');
+    if (acreAnnee1Radio) acreAnnee1Radio.checked = true;
+    
+    const dateDebutInput = document.getElementById('dateDebutActivite');
+    if (dateDebutInput) dateDebutInput.value = '';
+    
+    if (communeInput) communeInput.value = '';
+    if (rfrInput) rfrInput.value = '';
+    
+    const irppRadio = document.getElementById('regimeIRPP');
+    if (irppRadio) irppRadio.checked = true;
+    
+    const mensuelRadio = document.getElementById('periodeMensuel');
+    if (mensuelRadio) mensuelRadio.checked = true;
+    
+    // Masquer les zones dynamiques
+    const cfeEstDiv = document.getElementById('cfeEstimation');
+    if (cfeEstDiv) cfeEstDiv.style.display = 'none';
+    
+    const eligDiv = document.getElementById('eligibiliteVL');
+    if (eligDiv) eligDiv.style.display = 'none';
+    
+    const acrePeriodeInfo = document.getElementById('acrePeriodeInfo');
+    if (acrePeriodeInfo) acrePeriodeInfo.style.display = 'none';
+    
+    // Réinitialiser CFE par défaut
+    taxSettings.cfeAnnuel = defaultSettings.cfeAnnuel || 600;
+    
+    // Supprimer de localStorage
+    localStorage.removeItem('mti_simulation_params');
+    
+    // Recalculer
+    calculateTaxes();
+}
+
+// Fonction vérification éligibilité Versement Libératoire
+function verifierEligibiliteVL() {
+    const rfr = parseFloat(rfrInput?.value) || 0;
+    const eligibiliteDiv = document.getElementById('eligibiliteVL');
+    
+    if (!eligibiliteDiv) return;
+    
+    if (rfr === 0) {
+        eligibiliteDiv.style.display = 'none';
+        return;
+    }
+    
+    const seuil = taxSettings.rfrMaxVL || 28797;
+    const isEligible = rfr <= seuil;
+    
+    eligibiliteDiv.style.display = 'block';
+    if (isEligible) {
+        eligibiliteDiv.style.background = 'var(--color-success)';
+        eligibiliteDiv.style.color = 'white';
+        eligibiliteDiv.innerHTML = `✅ <strong>Éligible au Versement Libératoire</strong><br>RFR (${rfr.toFixed(0)} €) ≤ Seuil 2026 (${seuil.toFixed(0)} €)`;
+    } else {
+        eligibiliteDiv.style.background = 'var(--color-error)';
+        eligibiliteDiv.style.color = 'white';
+        eligibiliteDiv.innerHTML = `❌ <strong>Non éligible au Versement Libératoire</strong><br>RFR (${rfr.toFixed(0)} €) > Seuil 2026 (${seuil.toFixed(0)} €)`;
+    }
+}
+
+// Fonction génération projection 3-5 ans
+function updateProjection3_5Ans(ca, multiplicateur, baseScenario) {
+    const projectionBody = document.getElementById('projectionTableBody');
+    if (!projectionBody) return;
+    
+    const isMensuel = multiplicateur === 1;
+    const anneesProjection = [2025, 2026, 2027, 2028, 2029];
+    const tauxURSSAFBase = 24.6; // Taux standard 2025 (année 2+)
+    
+    // Déterminer régime fiscal sélectionné
+    const regimeVLRadio = document.getElementById('regimeVL');
+    const useVL = regimeVLRadio ? regimeVLRadio.checked : false;
+    const impotBase = useVL ? baseScenario.vl.impot : baseScenario.irpp.impot;
+    
+    let html = '';
+    anneesProjection.forEach((annee, index) => {
+        const tauxURSSAF = tauxURSSAFBase + index; // +1%/an
+        const urssaf = ca * (tauxURSSAF / 100) * multiplicateur;
+        const cfp = ca * (taxSettings.cfpBNC / 100) * multiplicateur;
+        const impot = impotBase * multiplicateur;
+        const cfe = (taxSettings.cfeAnnuel / 12) * multiplicateur;
+        const totalCharges = urssaf + cfp + impot + cfe;
+        const revenuNet = (ca * multiplicateur) - totalCharges;
+        
+        const rowStyle = index === 0 ? 'background: var(--color-bg-1);' : '';
+        
+        html += `
+            <tr style="border-bottom: 1px solid var(--color-border); ${rowStyle}">
+                <td style="padding: var(--space-12); font-weight: var(--font-weight-semibold);">${annee}</td>
+                <td style="padding: var(--space-12); text-align: center;">${tauxURSSAF.toFixed(1)}%</td>
+                <td style="padding: var(--space-12); text-align: right;">${urssaf.toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${cfp.toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${impot.toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${cfe.toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); color: var(--color-warning);">${totalCharges.toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-bold); color: var(--color-primary);">${revenuNet.toFixed(2)} €</td>
+            </tr>
+        `;
+    });
+    
+    projectionBody.innerHTML = html;
+}
+
+// Fonction rendu graphique distribution charges
+function renderChargesDistributionChart(scenarios, multiplicateur) {
+    const canvas = document.getElementById('chargesDistributionChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const { vl, irpp } = scenarios;
+    const ca = parseFloat(caInput?.value) || 0;
+    const caTotal = ca * multiplicateur;
+    
+    // Dimensions
+    const chartWidth = canvas.width - 120;
+    const chartHeight = canvas.height - 80;
+    const barWidth = 80;
+    const gap = 100;
+    const startX = 60;
+    const startY = canvas.height - 40;
+    
+    // Couleurs
+    const colors = {
+        urssaf: '#003366',
+        cfp: '#0066cc',
+        impot: '#3399ff',
+        cfe: '#66b3ff',
+        net: '#00cc66'
+    };
+    
+    // Fonction de dessin barre empilée
+    function drawStackedBar(x, scenario, label) {
+        const scale = chartHeight / caTotal;
+        let currentY = startY;
+        
+        // URSSAF
+        const urssafHeight = scenario.charges * multiplicateur * scale;
+        ctx.fillStyle = colors.urssaf;
+        ctx.fillRect(x, currentY - urssafHeight, barWidth, urssafHeight);
+        currentY -= urssafHeight;
+        
+        // CFP
+        const cfpHeight = scenario.cfp * multiplicateur * scale;
+        ctx.fillStyle = colors.cfp;
+        ctx.fillRect(x, currentY - cfpHeight, barWidth, cfpHeight);
+        currentY -= cfpHeight;
+        
+        // Impôt
+        const impotHeight = scenario.impot * multiplicateur * scale;
+        ctx.fillStyle = colors.impot;
+        ctx.fillRect(x, currentY - impotHeight, barWidth, impotHeight);
+        currentY -= impotHeight;
+        
+        // CFE
+        const cfeHeight = scenario.cfe * multiplicateur * scale;
+        ctx.fillStyle = colors.cfe;
+        ctx.fillRect(x, currentY - cfeHeight, barWidth, cfeHeight);
+        currentY -= cfeHeight;
+        
+        // Net
+        const netHeight = scenario.net * multiplicateur * scale;
+        ctx.fillStyle = colors.net;
+        ctx.fillRect(x, currentY - netHeight, barWidth, netHeight);
+        
+        // Label
+        ctx.fillStyle = '#000';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x + barWidth / 2, startY + 20);
+        
+        // Total
+        ctx.fillText(`${(scenario.total * multiplicateur).toFixed(0)} €`, x + barWidth / 2, startY + 35);
+    }
+    
+    // Dessiner les deux barres
+    drawStackedBar(startX, irpp, 'IRPP');
+    drawStackedBar(startX + barWidth + gap, vl, 'VL');
+    
+    // Axe Y (échelle)
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(startX - 10, startY);
+    ctx.lineTo(startX - 10, startY - chartHeight);
+    ctx.stroke();
+    
+    // Valeurs axe Y
+    ctx.fillStyle = '#666';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 5; i++) {
+        const value = (caTotal / 5) * i;
+        const y = startY - (chartHeight / 5) * i;
+        ctx.fillText(`${value.toFixed(0)} €`, startX - 15, y + 4);
+    }
+}
+
+// Fonction export PDF simulateur
+function exportSimulateurPDF() {
+    if (typeof jsPDF === 'undefined') {
+        alert('⚠️ jsPDF non chargé. Vérifiez les paramètres pour activer la génération PDF.');
+        return;
+    }
+    
+    const pdf = new jsPDF();
+    const ca = parseFloat(caInput?.value) || 0;
+    const acreAnnee1Radio = document.getElementById('acreAnnee1');
+    const acreActive = acreAnnee1Radio ? acreAnnee1Radio.checked : true;
+    const periodeMensuelRadio = document.getElementById('periodeMensuel');
+    const isMensuel = periodeMensuelRadio ? periodeMensuelRadio.checked : true;
+    
+    // Page 1: Titre et paramètres
+    pdf.setFontSize(18);
+    pdf.setTextColor(0, 51, 102);
+    pdf.text('Simulation Charges Auto-Entrepreneur BNC', 10, 20);
+    
+    pdf.setFontSize(10);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} - MTI CONSULTING`, 10, 28);
+    
+    pdf.setFontSize(12);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text('PARAMÈTRES DE SIMULATION', 10, 40);
+    pdf.setFontSize(10);
+    pdf.text(`Chiffre d'affaires: ${ca.toFixed(2)} € ${isMensuel ? '(mensuel)' : '(annuel)'}`, 15, 48);
+    pdf.text(`Situation ACRE: ${acreActive ? 'Année 1 (11,6%)' : 'Année 2+ (24,6%)'}`, 15, 54);
+    pdf.text(`CFE annuelle: ${taxSettings.cfeAnnuel} €`, 15, 60);
+    
+    // Tableau de détail
+    pdf.setFontSize(12);
+    pdf.text('DÉTAIL DES CHARGES', 10, 72);
+    pdf.setFontSize(9);
+    pdf.text('(Valeurs basées sur scénario IRPP progressif)', 15, 78);
+    
+    // Ajouter note légale
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('Sources légales: Décret n°2024-484 (URSSAF), Code du travail L6331-48 (CFP)', 10, 280);
+    
+    // Sauvegarder
+    const fileName = `Simulation_AE_${new Date().toISOString().split('T')[0]}.pdf`;
+    pdf.save(fileName);
+    
+    alert(`✅ Simulation exportée: ${fileName}`);
 }
 
 // Charts
@@ -4810,6 +5983,7 @@ function initApp() {
     updateCFEMensuel();
     loadCompanySettings();
     renderIRPPBareme(); // Initialiser l'UI du barème IRPP
+    loadSimulationParams(); // Charger les paramètres de simulation sauvegardés
 
     // Show jsPDF warning if missing
     const pdfWarnEl = document.getElementById('pdfWarning');
@@ -6593,6 +7767,8 @@ async function exportClientsToSheets() {
     }
 
     try {
+        // Note: Le backend Google Apps Script doit gérer les colonnes enrichies :
+        // name, siret, address, email_facturation, contact_name, naf, categorie_juridique, etat_administratif, type_siege
         const result = await callBackend('exportClients', { sheetId: CONFIG.SHEETS_ID, clients });
         if (!result || result.success === false) throw new Error((result && result.data) ? result.data : 'Erreur serveur lors de l\'export');
         alert(`✅ ${clients.length} clients exportés`);

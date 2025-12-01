@@ -765,17 +765,18 @@ tr:hover {
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label">Nom du client *</label>
+                            <label class="form-label">Nom du client * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-rempli via SIRET)</small></label>
                             <input type="text" class="form-control" id="clientName" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">SIRET</label>
-                            <input type="text" class="form-control" id="clientSiret">
+                            <label class="form-label">SIRET <span id="clientSiretStatus" style="margin-left: 8px;"></span></label>
+                            <input type="text" class="form-control" id="clientSiret" placeholder="14 chiffres" maxlength="14" inputmode="numeric" pattern="\d{14}">
+                            <small id="clientSiretInfo" style="display: none; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary);"></small>
                         </div>
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Adresse du client *</label>
+                        <label class="form-label">Adresse du client * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-remplie via SIRET)</small></label>
                         <textarea class="form-control" id="clientAddress" required></textarea>
                     </div>
 
@@ -1005,6 +1006,9 @@ tr:hover {
                                 <th>Nom</th>
                                 <th>SIRET</th>
                                 <th>Adresse</th>
+                                <th>NAF</th>
+                                <th>Catégorie juridique</th>
+                                <th>État</th>
                                 <th>Email facturation</th>
                                 <th>Contact</th>
                                 <th>Nb factures</th>
@@ -1023,15 +1027,16 @@ tr:hover {
                 <form id="clientForm">
                     <input type="hidden" id="editClientIndex" value="-1">
                     <div class="form-group">
-                        <label class="form-label">Nom *</label>
+                        <label class="form-label">Nom * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-rempli via SIRET)</small></label>
                         <input type="text" class="form-control" id="clientFormName" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">SIRET</label>
-                        <input type="text" class="form-control" id="clientFormSiret">
+                        <label class="form-label">SIRET <span id="clientFormSiretStatus" style="margin-left: 8px;"></span></label>
+                        <input type="text" class="form-control" id="clientFormSiret" placeholder="14 chiffres" maxlength="14" inputmode="numeric" pattern="\d{14}">
+                        <small id="clientFormSiretInfo" style="display: none; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary);"></small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Adresse complète</label>
+                        <label class="form-label">Adresse complète <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-remplie via SIRET)</small></label>
                         <textarea class="form-control" id="clientFormAddress"></textarea>
                     </div>
                     <div class="form-group">
@@ -1042,6 +1047,32 @@ tr:hover {
                         <label class="form-label">Nom contact facturation</label>
                         <input type="text" class="form-control" id="clientFormContactName" placeholder="Prénom Nom">
                     </div>
+                    
+                    <!-- Informations SIRENE enrichies (auto-remplies) -->
+                    <div style="border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: 16px;">
+                        <h4 style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 12px;">📊 Informations SIRENE (auto-remplies)</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Code NAF (Activité)</label>
+                                <input type="text" class="form-control" id="clientFormNAF" placeholder="Ex: 46.19B" readonly style="background: var(--color-bg-1);">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Catégorie juridique</label>
+                                <input type="text" class="form-control" id="clientFormCategorieJuridique" placeholder="Ex: 5499" readonly style="background: var(--color-bg-1);">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">État administratif</label>
+                                <input type="text" class="form-control" id="clientFormEtat" placeholder="Actif/Fermé" readonly style="background: var(--color-bg-1);">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Type établissement</label>
+                                <input type="text" class="form-control" id="clientFormTypeSiege" placeholder="Siège/Établissement" readonly style="background: var(--color-bg-1);">
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="cancelClient">Annuler</button>
                         <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
@@ -1304,8 +1335,9 @@ tr:hover {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">SIRET</label>
-                    <input type="text" class="form-control" id="companyLegalSiret" placeholder="123 456 789 00012">
+                    <label class="form-label">SIRET <span id="companyLegalSiretStatus" style="margin-left: 8px;"></span></label>
+                    <input type="text" class="form-control" id="companyLegalSiret" placeholder="14 chiffres" maxlength="14" inputmode="numeric" pattern="\d{14}">
+                    <small id="companyLegalSiretInfo" style="display: none; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary);"></small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Adresse</label>
@@ -1364,15 +1396,38 @@ tr:hover {
                     <strong>CFE mensuelle: <span id="cfeMensuel">50.00</span>€</strong>
                 </div>
 
-                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Cotisations sociales</h4>
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Cotisations sociales URSSAF (BNC)</h4>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Taux avec ACRE active (%)</label>
+                        <label class="form-label">Taux avec ACRE Année 1 (%)</label>
                         <input type="number" class="form-control" id="tauxAcreActif" step="0.1" min="0" value="11.6">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Exonération 50% pendant 12 mois</small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Taux sans ACRE (%)</label>
+                        <label class="form-label">Taux standard 2025 (%)</label>
                         <input type="number" class="form-control" id="tauxAcreInactif" step="0.1" min="0" value="24.6">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Décret n°2024-484 (évolution +1%/an jusqu'en 2029)</small>
+                    </div>
+                </div>
+
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">CFP (Contribution Formation Professionnelle)</h4>
+                <div class="form-group">
+                    <label class="form-label">Taux CFP BNC (%)</label>
+                    <input type="number" class="form-control" id="tauxCFPBNC" step="0.01" min="0" value="0.2">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Obligatoire - Code du travail L6331-48</small>
+                </div>
+
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Conditions d'éligibilité Versement Libératoire</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">RFR maximum par part (€)</label>
+                        <input type="number" class="form-control" id="rfrMaxVL" step="1" min="0" value="28797">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">28 797€ pour 2026 (27 478€ pour 2025)</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">CA maximum BNC (€)</label>
+                        <input type="number" class="form-control" id="caMaxBNC" step="1" min="0" value="77700">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Plafond micro-entreprise BNC</small>
                     </div>
                 </div>
 
@@ -1408,52 +1463,229 @@ tr:hover {
             <div class="card">
                 <h2 class="card-title">Calculateur de Charges et Impôts</h2>
                 <div class="form-group">
-                    <label class="form-label">Chiffre d'affaires mensuel (€) *</label>
+                    <label class="form-label">Chiffre d'affaires (€) *</label>
                     <input type="number" class="form-control" id="caInput" step="0.01" min="0" value="0">
                 </div>
 
-                <div class="toggle">
-                    <input type="checkbox" id="acreToggle" checked>
-                    <label class="form-label" style="margin-bottom: 0;">ACRE active (exonération partielle)</label>
+                <!-- Sélecteur Année ACRE -->
+                <div class="form-group" style="margin-top: var(--space-16);">
+                    <label class="form-label" style="margin-bottom: var(--space-8);">📅 Situation ACRE</label>
+                    <div style="display: flex; gap: var(--space-16); flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
+                            <input type="radio" name="anneeACRE" id="acreAnnee1" value="annee1" checked style="margin-right: var(--space-8);">
+                            <span><strong>Avec ACRE</strong> <small style="color: var(--color-text-secondary);">(URSSAF 11,6%)</small></span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
+                            <input type="radio" name="anneeACRE" id="acreAnnee2Plus" value="annee2plus" style="margin-right: var(--space-8);">
+                            <span><strong>Sans ACRE</strong> <small style="color: var(--color-text-secondary);">(URSSAF 24,6%)</small></span>
+                        </label>
+                    </div>
+                    <div style="margin-top: var(--space-8);">
+                        <label class="form-label" style="font-size: var(--font-size-sm);">📆 Date de début d'activité (pour calcul ACRE)</label>
+                        <input type="date" class="form-control" id="dateDebutActivite" style="max-width: 200px;">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: var(--space-4); display: block;">
+                            L'ACRE s'applique jusqu'à la fin du 3ème trimestre civil suivant le début d'activité (Art. L.131-6-4 CSS)
+                        </small>
+                        <div id="acrePeriodeInfo" style="margin-top: var(--space-8); padding: var(--space-12); background: var(--color-bg-1); border-radius: var(--radius-base); font-size: var(--font-size-sm); display: none;">
+                            <!-- Affichage dynamique période ACRE -->
+                        </div>
+                    </div>
                 </div>
 
-                <div class="toggle">
-                    <input type="checkbox" id="versementToggle">
-                    <label class="form-label" style="margin-bottom: 0;">Versement libératoire (option fiscale)</label>
+                <!-- CFE Personnalisée par Commune -->
+                <div class="form-group" style="margin-top: var(--space-16); position: relative;">
+                    <label class="form-label">🏙️ Commune (CFE personnalisée)</label>
+                    <input type="text" class="form-control" id="communeInput" placeholder="Tapez le nom de votre commune..." autocomplete="off">
+                    <div id="communeAutocomplete" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid var(--color-border); border-radius: var(--radius-base); max-height: 200px; overflow-y: auto; display: none; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <!-- Résultats autocomplétion dynamiques -->
+                    </div>
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: var(--space-4); display: block;">
+                        📊 Recherche en temps réel parmi 34,934 communes (DGFiP 2024). Laissez vide pour estimation par défaut (600€/an).
+                    </small>
+                    <div id="cfeEstimation" style="margin-top: var(--space-8); padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base); font-size: var(--font-size-sm); display: none;">
+                        <!-- Affichage dynamique CFE estimée -->
+                    </div>
+                </div>
+
+                <!-- Vérificateur Éligibilité Versement Libératoire -->
+                <div class="form-group" style="margin-top: var(--space-16);">
+                    <label class="form-label">💰 Revenu Fiscal de Référence (RFR) par part</label>
+                    <input type="number" class="form-control" id="rfrInput" placeholder="Ex: 25000" step="1" min="0">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: var(--space-4); display: block;">
+                        Pour vérifier l'éligibilité au Versement Libératoire (seuil 2026: 28,797€/part)
+                    </small>
+                    <div id="eligibiliteVL" style="margin-top: var(--space-8); padding: var(--space-12); border-radius: var(--radius-base); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); display: none;">
+                        <!-- Affichage dynamique éligibilité -->
+                    </div>
+                </div>
+
+                <!-- Sélecteur Régime Fiscal -->
+                <div class="form-group" style="margin-top: var(--space-16);">
+                    <label class="form-label" style="margin-bottom: var(--space-8);">💰 Régime fiscal (Impôt sur le revenu)</label>
+                    <div style="display: flex; gap: var(--space-16); flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
+                            <input type="radio" name="regimeFiscal" id="regimeIRPP" value="irpp" checked style="margin-right: var(--space-8);">
+                            <span><strong>IRPP Progressif</strong> <small style="color: var(--color-text-secondary);">(Barème par tranches)</small></span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
+                            <input type="radio" name="regimeFiscal" id="regimeVL" value="vl" style="margin-right: var(--space-8);">
+                            <span><strong>Versement Libératoire</strong> <small style="color: var(--color-text-secondary);">(Taux fixe 2,2%)</small></span>
+                        </label>
+                    </div>
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: var(--space-4); display: block;">
+                        ⚠️ Le Versement Libératoire nécessite d'être éligible (RFR ≤ 28,797€/part). Vérifiez votre éligibilité ci-dessus.
+                    </small>
+                </div>
+
+                <!-- Toggle Mensuel/Annuel -->
+                <div class="form-group" style="margin-top: var(--space-16);">
+                    <label class="form-label" style="margin-bottom: var(--space-8);">📊 Affichage</label>
+                    <div style="display: flex; gap: var(--space-16); flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
+                            <input type="radio" name="periodeAffichage" id="periodeMensuel" value="mensuel" checked style="margin-right: var(--space-8);">
+                            <span><strong>Mensuel</strong></span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
+                            <input type="radio" name="periodeAffichage" id="periodeAnnuel" value="annuel" style="margin-right: var(--space-8);">
+                            <span><strong>Annuel</strong> <small style="color: var(--color-text-secondary);">(×12)</small></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Boutons d'action simulation -->
+                <div class="action-buttons" style="margin-top: var(--space-24);">
+                    <button type="button" class="btn btn-secondary" id="resetSimulation">🔄 Réinitialiser simulation</button>
+                    <button type="button" class="btn btn-primary" id="saveSimulation">💾 Enregistrer simulation</button>
+                </div>
+                <div id="saveSimulationConfirmation" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-teal-500-rgb), 0.15); color: var(--color-success); border-radius: var(--radius-base); margin-top: var(--space-12); border: 1px solid rgba(var(--color-teal-500-rgb), 0.25);">
+                    ✓ Paramètres de simulation enregistrés avec succès
                 </div>
             </div>
 
+            <!-- Tableau détaillé des charges -->
             <div class="card">
-                <h2 class="card-title">Résultats</h2>
-                <div class="calc-results" id="calcResults">
-                    <div class="calc-row">
-                        <span class="calc-label">Chiffre d'affaires</span>
-                        <span class="calc-value" id="calcCA">0,00 €</span>
+                <h2 class="card-title">📋 Détail des Charges <span id="periodeLabel" style="font-weight: normal; font-size: var(--font-size-base); color: var(--color-text-secondary);">(Mensuelles)</span></h2>
+                <table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-sm);">
+                    <thead>
+                        <tr style="background: var(--color-bg-1); border-bottom: 2px solid var(--color-border);">
+                            <th style="padding: var(--space-12); text-align: left; font-weight: var(--font-weight-semibold);">Poste</th>
+                            <th style="padding: var(--space-12); text-align: center; font-weight: var(--font-weight-semibold); width: 100px;">Taux</th>
+                            <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); width: 120px;">Base</th>
+                            <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); width: 120px;">Montant</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailChargesBody">
+                        <!-- Lignes générées dynamiquement -->
+                    </tbody>
+                    <tfoot>
+                        <tr style="border-top: 2px solid var(--color-border); background: var(--color-bg-1); font-weight: var(--font-weight-semibold);">
+                            <td colspan="3" style="padding: var(--space-12); text-align: left;">TOTAL CHARGES</td>
+                            <td id="detailTotalCharges" style="padding: var(--space-12); text-align: right; color: var(--color-warning);">0,00 €</td>
+                        </tr>
+                        <tr style="background: var(--color-primary); color: white; font-size: var(--font-size-base); font-weight: var(--font-weight-bold);">
+                            <td colspan="3" style="padding: var(--space-16); text-align: left;">REVENU NET</td>
+                            <td id="detailRevenuNet" style="padding: var(--space-16); text-align: right;">0,00 €</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <div style="margin-top: var(--space-16); padding: var(--space-12); background: var(--color-bg-1); border-radius: var(--radius-base); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                    <strong>ℹ️ Année 1 ACRE :</strong> Exonération 50% sur URSSAF pendant 12 mois (11,6% au lieu de 23,2%)<br>
+                    <strong>⚠️ Année 2+ :</strong> Taux standard 24,6% (Décret n°2024-484) avec évolution +1%/an jusqu'en 2029 (→ 28,6%)
+                </div>
+            </div>
+
+            <!-- Graphique Distribution des Charges -->
+            <div class="card">
+                <h2 class="card-title">📊 Distribution des Charges</h2>
+                <div style="display: flex; justify-content: center; align-items: center; padding: var(--space-16);">
+                    <canvas id="chargesDistributionChart" width="600" height="300"></canvas>
+                </div>
+                <div style="display: flex; justify-content: center; gap: var(--space-16); flex-wrap: wrap; margin-top: var(--space-16); font-size: var(--font-size-sm);">
+                    <div style="display: flex; align-items: center; gap: var(--space-8);">
+                        <div style="width: 20px; height: 20px; background: #003366; border-radius: var(--radius-sm);"></div>
+                        <span>URSSAF</span>
                     </div>
-                    <div class="calc-row">
-                        <span class="calc-label">Charges sociales URSSAF</span>
-                        <span class="calc-value" id="calcCharges">0,00 €</span>
+                    <div style="display: flex; align-items: center; gap: var(--space-8);">
+                        <div style="width: 20px; height: 20px; background: #0066cc; border-radius: var(--radius-sm);"></div>
+                        <span>CFP</span>
                     </div>
-                    <div class="calc-row">
-                        <span class="calc-label">Impôt sur le revenu</span>
-                        <span class="calc-value" id="calcImpot">0,00 €</span>
+                    <div style="display: flex; align-items: center; gap: var(--space-8);">
+                        <div style="width: 20px; height: 20px; background: #3399ff; border-radius: var(--radius-sm);"></div>
+                        <span>Impôt</span>
                     </div>
-                    <div class="calc-row">
-                        <span class="calc-label">CFE (estimation mensuelle)</span>
-                        <span class="calc-value" id="calcCFE">50,00 €</span>
+                    <div style="display: flex; align-items: center; gap: var(--space-8);">
+                        <div style="width: 20px; height: 20px; background: #66b3ff; border-radius: var(--radius-sm);"></div>
+                        <span>CFE</span>
                     </div>
-                    <div class="calc-row total">
-                        <span class="calc-label">Net mensuel estimé</span>
-                        <span class="calc-value" id="calcNet">0,00 €</span>
+                    <div style="display: flex; align-items: center; gap: var(--space-8);">
+                        <div style="width: 20px; height: 20px; background: #00cc66; border-radius: var(--radius-sm);"></div>
+                        <span>Revenu Net</span>
                     </div>
                 </div>
             </div>
 
             <!-- Comparaison Versement Libératoire vs IRPP Progressif -->
             <div class="card">
-                <div id="comparaisonContainer">
-                    <!-- Rempli dynamiquement par updateComparaison() -->
+                <h2 class="card-title">⚖️ Comparaison Versement Libératoire vs IRPP</h2>
+                <div id="comparaisonContainer" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16);">
+                    <!-- Colonne VL -->
+                    <div id="scenarioVL" style="padding: var(--space-16); border: 2px solid var(--color-border); border-radius: var(--radius-base); background: var(--color-bg-1);">
+                        <h3 style="margin: 0 0 var(--space-12) 0; font-size: var(--font-size-base); color: var(--color-primary);">💼 Versement Libératoire</h3>
+                        <div id="scenarioVLContent">
+                            <!-- Rempli dynamiquement -->
+                        </div>
+                    </div>
+                    <!-- Colonne IRPP -->
+                    <div id="scenarioIRPP" style="padding: var(--space-16); border: 2px solid var(--color-border); border-radius: var(--radius-base); background: var(--color-bg-1);">
+                        <h3 style="margin: 0 0 var(--space-12) 0; font-size: var(--font-size-base); color: var(--color-primary);">📊 IRPP Progressif</h3>
+                        <div id="scenarioIRPPContent">
+                            <!-- Rempli dynamiquement -->
+                        </div>
+                    </div>
                 </div>
+                <div id="comparaisonRecommandation" style="margin-top: var(--space-16); padding: var(--space-12); background: var(--color-success); color: white; border-radius: var(--radius-base); font-weight: var(--font-weight-semibold); text-align: center;">
+                    <!-- Recommandation générée dynamiquement -->
+                </div>
+            </div>
+
+            <!-- Projection 3-5 ans -->
+            <div class="card">
+                <h2 class="card-title">📈 Projection Charges 2025-2029</h2>
+                <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-16);">
+                    Évolution des charges sociales URSSAF avec augmentation programmée de +1%/an (Décret n°2024-484)
+                </p>
+                <div id="projectionTableContainer" style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-sm);">
+                        <thead>
+                            <tr style="background: var(--color-bg-1); border-bottom: 2px solid var(--color-border);">
+                                <th style="padding: var(--space-12); text-align: left; font-weight: var(--font-weight-semibold);">Année</th>
+                                <th style="padding: var(--space-12); text-align: center; font-weight: var(--font-weight-semibold);">Taux URSSAF</th>
+                                <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">URSSAF</th>
+                                <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">CFP</th>
+                                <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">Impôt</th>
+                                <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">CFE</th>
+                                <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); width: 120px;">Total Charges</th>
+                                <th style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); background: var(--color-primary); color: white; width: 120px;">Revenu Net</th>
+                            </tr>
+                        </thead>
+                        <tbody id="projectionTableBody">
+                            <!-- Lignes générées dynamiquement -->
+                        </tbody>
+                    </table>
+                </div>
+                <div style="margin-top: var(--space-16); padding: var(--space-12); background: var(--color-bg-1); border-radius: var(--radius-base); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                    <strong>⚠️ Note :</strong> Projection basée sur un CA constant. Les taux CFP (0,2%), Impôt et CFE restent stables. Seul le taux URSSAF augmente de +1%/an jusqu'en 2029.
+                </div>
+            </div>
+
+            <!-- Export PDF -->
+            <div class="card" style="text-align: center;">
+                <button type="button" class="btn btn-primary" id="exportSimulateurPDF" style="font-size: var(--font-size-base); padding: var(--space-12) var(--space-24);">
+                    📝 Exporter la simulation en PDF
+                </button>
+                <p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-top: var(--space-8);">
+                    Inclut: paramètres, tableau de détail, comparaison VL/IRPP, projection 2025-2029, sources légales
+                </p>
             </div>
         </div>
     </div>
@@ -1502,16 +1734,17 @@ tr:hover {
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Nom du client *</label>
+                        <label class="form-label">Nom du client * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-rempli via SIRET)</small></label>
                         <input type="text" class="form-control" id="editClientName" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">SIRET</label>
-                        <input type="text" class="form-control" id="editClientSiret">
+                        <label class="form-label">SIRET <span id="editClientSiretStatus" style="margin-left: 8px;"></span></label>
+                        <input type="text" class="form-control" id="editClientSiret" placeholder="14 chiffres" maxlength="14" inputmode="numeric" pattern="\d{14}">
+                        <small id="editClientSiretInfo" style="display: none; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary);"></small>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Adresse du client *</label>
+                    <label class="form-label">Adresse du client * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-remplie via SIRET)</small></label>
                     <textarea class="form-control" id="editClientAddress" required></textarea>
                 </div>
                 <div class="form-row">
