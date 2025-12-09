@@ -373,7 +373,7 @@ MIT License - Voir LICENSE pour plus de détails
 
 ### v2.2 (Décembre 2025) - 🧮 Calculateur Avancé
 - ✨ **Calculateur de charges complet** (taux officiels 2025 vérifiés)
-  - **Taux URSSAF** : 11,6% (ACRE) / 24,6% (Standard) - Décret n°2024-484
+  - **Taux URSSAF** : 12,3% (ACRE) / 24,6% (Standard) - Décret n°2024-484
   - **CFP obligatoire** : 0,2% (Code du travail L6331-48)
   - **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
   - **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
