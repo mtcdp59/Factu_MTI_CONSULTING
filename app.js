@@ -4245,17 +4245,14 @@ async function searchCommunesAPI(query) {
         const cleanQuery = query.replace(/[%*]/g, ' ');
         
         // Recherche par nom de commune (partielle, insensible à la casse)
-        const searchByName = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com,code_postal&where=search(libcom,'${encodeURIComponent(cleanQuery)}')&group_by=libcom,insee_com,code_postal&limit=10&refine=exercice:"2024"`;
+        // Note: code_postal retiré car champ supprimé par Data.gouv (décembre 2025)
+        const searchByName = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com&where=search(libcom,'${encodeURIComponent(cleanQuery)}')&group_by=libcom,insee_com&limit=10&refine=exercice:"2024"`;
         
-        // Si la requête ressemble à un code postal (5 chiffres), recherche aussi par CP
+        // Recherche par code postal désactivée (champ supprimé de l'API)
         let searchByCP = null;
-        if (/^\d{5}$/.test(query.replace(/\s/g, ''))) {
-            searchByCP = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com,code_postal&where=code_postal='${query.replace(/\s/g, '')}'&group_by=libcom,insee_com,code_postal&limit=10&refine=exercice:"2024"`;
-        }
         
-        // Lancer les recherches en parallèle
+        // Lancer la recherche
         const promises = [fetch(searchByName)];
-        if (searchByCP) promises.push(fetch(searchByCP));
         
         const responses = await Promise.all(promises);
         const dataResults = await Promise.all(responses.map(r => r.json()));
