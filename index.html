@@ -875,6 +875,59 @@ tr:hover {
                     </table>
                 </div>
             </div>
+
+            <!-- NOUVEAU: Factures Récurrentes / Abonnements -->
+            <div class="card" style="margin-top: var(--space-24); border: 2px solid var(--color-primary);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-16);">
+                    <h2 class="card-title" style="margin: 0;">🔄 Factures Récurrentes / Abonnements</h2>
+                    <button type="button" class="btn btn-primary" id="createRecurringBtn" style="font-size: var(--font-size-sm);">
+                        ➕ Créer récurrence
+                    </button>
+                </div>
+
+                <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-16);">
+                    Générez automatiquement des factures à intervalles réguliers (abonnements, prestations mensuelles, etc.)
+                </p>
+
+                <!-- Liste des récurrences -->
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Client</th>
+                                <th>Montant</th>
+                                <th>Fréquence</th>
+                                <th>Prochaine date</th>
+                                <th>Dernière génération</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recurringListBody">
+                            <tr>
+                                <td colspan="8" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">
+                                    Aucune facture récurrente. Créez-en une à partir d'une facture existante.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Info box -->
+                <div style="margin-top: var(--space-16); padding: var(--space-12); background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm);">
+                    <strong>ℹ️ Comment ça marche ?</strong>
+                    <ol style="margin: var(--space-8) 0 0 var(--space-20); padding: 0;">
+                        <li>Créez une facture modèle (ou sélectionnez-en une existante)</li>
+                        <li>Cliquez sur <strong>"Créer récurrence"</strong> et choisissez la fréquence</li>
+                        <li>L'application génère automatiquement les factures aux dates prévues</li>
+                        <li>Vous recevez une notification à chaque génération</li>
+                    </ol>
+                    <p style="margin: var(--space-8) 0 0;">
+                        <strong>Fréquences disponibles :</strong> Mensuelle, Trimestrielle, Annuelle
+                    </p>
+                </div>
+            </div>
         </div>
 
         <!-- RAM TAB -->
@@ -962,11 +1015,16 @@ tr:hover {
             
             <!-- Bouton nouveau RAM + Liste des RAMs -->
             <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-16);">
-                    <h2 class="card-title" style="margin: 0;">Liste des Rapports d'Activité Mensuels</h2>
-                    <button onclick="showNewRAMForm()" class="btn btn-primary">
-                        ➕ Nouveau RAM
-                    </button>
+                <h2 class="card-title">Liste des Rapports d'Activité Mensuels</h2>
+                
+                <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="showNewRAMForm()">➕ Nouveau RAM</button>
+                    <button class="btn btn-secondary" onclick="importRAMsFromSheets()">📥 Importer depuis Sheets</button>
+                    <button class="btn btn-secondary" onclick="exportRAMsToSheets()">📤 Exporter vers Sheets</button>
+                    <button class="btn btn-danger" onclick="clearRAMsInSheets()" title="Nettoyer toutes les lignes RAM dans Google Sheets">🗑️ Nettoyer Sheets</button>
+                </div>
+                <div style="padding: 8px; background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); margin-bottom: 16px;">
+                    <strong>ℹ️ Astuce :</strong> L'export ajoute les données sans supprimer les anciennes (historique). Utilisez "🗑️ Nettoyer Sheets" pour tout effacer avant un nouvel export complet.
                 </div>
                 
                 <div class="table-wrapper">
@@ -1211,6 +1269,56 @@ tr:hover {
                 </div>
             </div>
 
+            <!-- NOUVEAU: Compteur CA annuel avec alertes seuils -->
+            <div class="card" style="margin-bottom: var(--space-16); border: 2px solid var(--color-primary);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-12);">
+                    <h3 style="font-size: var(--font-size-lg); margin: 0; font-weight: var(--font-weight-semibold);">
+                        📊 Compteur CA Annuel <span id="caAnnee" style="color: var(--color-text-secondary); font-size: var(--font-size-base);">2025</span>
+                    </h3>
+                    <select id="caYearSelect" class="form-control" style="width: 120px; height: 36px; font-size: var(--font-size-sm);">
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2026">2026</option>
+                    </select>
+                </div>
+                
+                <div class="summary-grid" style="margin-bottom: var(--space-12);">
+                    <div class="summary-card">
+                        <div class="summary-label">CA cumulé (toutes factures)</div>
+                        <div class="summary-value" id="caCumule">0 €</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">CA payé (encaissé)</div>
+                        <div class="summary-value" id="caPaye">0 €</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Seuil TVA (37 500 €)</div>
+                        <div class="summary-value" id="seuilTVA">0%</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Plafond Micro (77 700 €)</div>
+                        <div class="summary-value" id="seuilMicro">0%</div>
+                    </div>
+                </div>
+                
+                <!-- Barre de progression seuils -->
+                <div style="margin-bottom: var(--space-8);">
+                    <div style="display: flex; justify-content: space-between; font-size: var(--font-size-sm); margin-bottom: 4px;">
+                        <span>0 €</span>
+                        <span style="color: var(--color-warning);">37 500 € (TVA)</span>
+                        <span style="color: var(--color-error);">77 700 € (Micro)</span>
+                    </div>
+                    <div style="width: 100%; height: 24px; background: var(--color-gray-100); border-radius: var(--border-radius-sm); position: relative; overflow: hidden;">
+                        <div id="caProgressBar" style="height: 100%; background: linear-gradient(90deg, var(--color-success) 0%, var(--color-warning) 48%, var(--color-error) 100%); width: 0%; transition: width 0.3s ease;"></div>
+                        <div style="position: absolute; left: 48.3%; top: 0; width: 2px; height: 100%; background: var(--color-warning); opacity: 0.5;"></div>
+                        <div style="position: absolute; left: 100%; top: 0; width: 2px; height: 100%; background: var(--color-error); opacity: 0.5;"></div>
+                    </div>
+                </div>
+                
+                <!-- Alerte seuils -->
+                <div id="caAlert" style="display: none; padding: var(--space-12); border-radius: var(--border-radius-sm); margin-top: var(--space-12); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);"></div>
+            </div>
+
             <div class="summary-grid">
                 <div class="summary-card">
                     <div class="summary-label">Total facturé</div>
@@ -1396,16 +1504,17 @@ tr:hover {
                     <strong>CFE mensuelle: <span id="cfeMensuel">50.00</span>€</strong>
                 </div>
 
-                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Cotisations sociales URSSAF (BNC)</h4>
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Cotisations sociales URSSAF (BNC - Prestations de services)</h4>
+                <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-12);">⚠️ Depuis la réforme 2020, l'ACRE est valable <strong>12 mois</strong> (plus de dégressivité sur 3 ans)</p>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Taux avec ACRE Année 1 (%)</label>
-                        <input type="number" class="form-control" id="tauxAcreActif" step="0.1" min="0" value="11.6">
-                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Exonération 50% pendant 12 mois</small>
+                        <label class="form-label">Avec ACRE (12 mois) (%)</label>
+                        <input type="number" class="form-control" id="tauxAcreActif" step="0.01" min="0" value="12.3">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Taux réduit BNC 2025 : 12,30%</small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Taux standard 2025 (%)</label>
-                        <input type="number" class="form-control" id="tauxAcreInactif" step="0.1" min="0" value="24.6">
+                        <label class="form-label">Sans ACRE (taux plein) (%)</label>
+                        <input type="number" class="form-control" id="tauxAcreInactif" step="0.01" min="0" value="24.6">
                         <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Décret n°2024-484 (évolution +1%/an jusqu'en 2029)</small>
                     </div>
                 </div>
@@ -1467,17 +1576,17 @@ tr:hover {
                     <input type="number" class="form-control" id="caInput" step="0.01" min="0" value="0">
                 </div>
 
-                <!-- Sélecteur Année ACRE -->
+                <!-- Sélecteur ACRE (depuis réforme 2020 : durée 12 mois) -->
                 <div class="form-group" style="margin-top: var(--space-16);">
                     <label class="form-label" style="margin-bottom: var(--space-8);">📅 Situation ACRE</label>
                     <div style="display: flex; gap: var(--space-16); flex-wrap: wrap;">
                         <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
                             <input type="radio" name="anneeACRE" id="acreAnnee1" value="annee1" checked style="margin-right: var(--space-8);">
-                            <span><strong>Avec ACRE</strong> <small style="color: var(--color-text-secondary);">(URSSAF 11,6%)</small></span>
+                            <span><strong>Avec ACRE</strong> <small style="color: var(--color-text-secondary);">(URSSAF 12,3% - durée 12 mois)</small></span>
                         </label>
                         <label style="display: flex; align-items: center; cursor: pointer; font-size: var(--font-size-base);">
                             <input type="radio" name="anneeACRE" id="acreAnnee2Plus" value="annee2plus" style="margin-right: var(--space-8);">
-                            <span><strong>Sans ACRE</strong> <small style="color: var(--color-text-secondary);">(URSSAF 24,6%)</small></span>
+                            <span><strong>Sans ACRE</strong> <small style="color: var(--color-text-secondary);">(URSSAF 24,6% - taux plein)</small></span>
                         </label>
                     </div>
                     <div style="margin-top: var(--space-8);">
@@ -1687,6 +1796,88 @@ tr:hover {
                     Inclut: paramètres, tableau de détail, comparaison VL/IRPP, projection 2025-2029, sources légales
                 </p>
             </div>
+
+            <!-- NOUVEAU: Calculateur TVA -->
+            <div class="card" style="margin-top: var(--space-24);">
+                <h2 class="card-title">🧮 Calculateur TVA (Anticipation assujettissement)</h2>
+                <p style="color: var(--color-text-secondary); margin-bottom: var(--space-16);">
+                    Vous êtes actuellement en <strong>franchise de TVA</strong> (CA < 37 500 €). 
+                    Utilisez cet outil pour anticiper l'impact de l'assujettissement TVA sur vos prix.
+                </p>
+
+                <!-- Sélecteur de direction de calcul -->
+                <div class="form-group">
+                    <label class="form-label">Direction du calcul</label>
+                    <div style="display: flex; gap: var(--space-16); flex-wrap: wrap; margin-bottom: var(--space-16);">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="tvaDirection" id="tvaHtToTtc" value="ht-to-ttc" checked style="margin-right: var(--space-8);">
+                            <span><strong>HT → TTC</strong> <small style="color: var(--color-text-secondary);">(Je connais mon prix HT)</small></span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="tvaDirection" id="tvaTtcToHt" value="ttc-to-ht" style="margin-right: var(--space-8);">
+                            <span><strong>TTC → HT</strong> <small style="color: var(--color-text-secondary);">(Je connais mon prix TTC)</small></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" id="tvaMontantLabel">Montant HT (€)</label>
+                        <input type="number" class="form-control" id="tvaMontantInput" step="0.01" min="0" value="7200" placeholder="Ex: 7200">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Taux de TVA (%)</label>
+                        <select class="form-control" id="tvaTauxSelect">
+                            <option value="20" selected>20% (Normal - Prestations de services)</option>
+                            <option value="10">10% (Intermédiaire - Restauration, transport)</option>
+                            <option value="5.5">5,5% (Réduit - Livres, alimentation)</option>
+                            <option value="2.1">2,1% (Spécial - Médicaments, presse)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-primary" id="calculateTvaBtn" style="width: 100%; margin-bottom: var(--space-16);">
+                    🧮 Calculer
+                </button>
+
+                <!-- Résultats TVA -->
+                <div id="tvaResults" style="display: none; padding: var(--space-16); background: var(--color-bg-1); border-radius: var(--radius-base);">
+                    <h3 style="font-size: var(--font-size-lg); margin-bottom: var(--space-16); font-weight: var(--font-weight-semibold);">Résultats</h3>
+                    <div class="summary-grid" style="margin-bottom: var(--space-16);">
+                        <div class="summary-card">
+                            <div class="summary-label">Montant HT</div>
+                            <div class="summary-value" id="tvaResultHT">0 €</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-label">TVA</div>
+                            <div class="summary-value" id="tvaResultTVA" style="color: var(--color-warning);">0 €</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-label">Montant TTC</div>
+                            <div class="summary-value" id="tvaResultTTC" style="color: var(--color-primary);">0 €</div>
+                        </div>
+                    </div>
+
+                    <div style="padding: var(--space-12); background: var(--color-warning-bg); border-left: 4px solid var(--color-warning); border-radius: var(--border-radius-sm);">
+                        <strong style="color: var(--color-warning);">⚠️ Impact assujettissement TVA :</strong>
+                        <p id="tvaImpactMessage" style="margin: var(--space-8) 0 0; font-size: var(--font-size-sm);"></p>
+                    </div>
+                </div>
+
+                <!-- Info TVA -->
+                <div style="margin-top: var(--space-16); padding: var(--space-12); background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm);">
+                    <strong>ℹ️ Rappel seuils TVA 2025 (BNC) :</strong>
+                    <ul style="margin: var(--space-8) 0 0 var(--space-20); padding: 0;">
+                        <li><strong>37 500 €</strong> : Seuil classique (franchise maintenue si 1ère fois)</li>
+                        <li><strong>39 100 €</strong> : Seuil majoré (assujettissement obligatoire dès dépassement)</li>
+                    </ul>
+                    <p style="margin: var(--space-8) 0 0;">
+                        <strong>Options si assujetti :</strong><br>
+                        • <strong>Option 1</strong> : Augmenter vos prix TTC (+20%) → Client paie la TVA<br>
+                        • <strong>Option 2</strong> : Garder vos prix TTC actuels → Vous perdez 16,67% de marge (TVA incluse dans votre prix)
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1707,6 +1898,67 @@ tr:hover {
                 <button type="button" class="btn btn-secondary" id="cancelConfirm">Annuler</button>
                 <button type="button" class="btn btn-primary" id="confirmAction">Confirmer</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Create Recurring Invoice Modal -->
+    <div id="createRecurringModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <button class="modal-close" id="closeRecurringModal">&times;</button>
+            <h2 class="card-title">🔄 Créer une facture récurrente</h2>
+            
+            <form id="recurringForm">
+                <div class="form-group">
+                    <label class="form-label">Sélectionner une facture modèle *</label>
+                    <select class="form-control" id="recurringTemplateSelect" required>
+                        <option value="">-- Choisir une facture existante --</option>
+                    </select>
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: 4px; display: block;">
+                        Cette facture servira de modèle. Les dates et numéros seront mis à jour automatiquement.
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Fréquence de génération *</label>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-12);">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="recurringFrequency" value="monthly" checked style="margin-right: var(--space-8);">
+                            <span><strong>Mensuelle</strong> <small style="color: var(--color-text-secondary);">(chaque mois)</small></span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="recurringFrequency" value="quarterly" style="margin-right: var(--space-8);">
+                            <span><strong>Trimestrielle</strong> <small style="color: var(--color-text-secondary);">(tous les 3 mois)</small></span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="recurringFrequency" value="yearly" style="margin-right: var(--space-8);">
+                            <span><strong>Annuelle</strong> <small style="color: var(--color-text-secondary);">(chaque année)</small></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Date de première génération *</label>
+                    <input type="date" class="form-control" id="recurringStartDate" required>
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: 4px; display: block;">
+                        La première facture sera générée automatiquement à cette date.
+                    </small>
+                </div>
+
+                <div style="padding: var(--space-12); background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); margin-bottom: var(--space-16);">
+                    <strong>ℹ️ Comment ça marche ?</strong>
+                    <ul style="margin: var(--space-4) 0 0; padding-left: var(--space-20); line-height: 1.6;">
+                        <li>La facture sera générée <strong>automatiquement</strong> à la date choisie</li>
+                        <li>Elle sera créée avec le statut <strong>"Brouillon"</strong> - vous pourrez la contrôler avant envoi</li>
+                        <li>Vous recevrez une <strong>notification</strong> lors de chaque génération</li>
+                        <li>Les dates et numéros seront <strong>mis à jour automatiquement</strong></li>
+                    </ul>
+                </div>
+
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-secondary" id="cancelRecurringBtn">Annuler</button>
+                    <button type="submit" class="btn btn-primary">✅ Créer récurrence</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -1814,7 +2066,6 @@ tr:hover {
                 </div>
                 <div class="action-buttons" style="margin-top: var(--space-24);">
                     <button type="button" class="btn btn-secondary" onclick="deleteTaskFromEdit()" style="margin-right: auto;">🗑️ Supprimer</button>
-                    <button type="button" class="btn btn-secondary" id="cancelEditTask">Annuler</button>
                     <button type="submit" class="btn btn-primary">💾 Mettre à jour</button>
                 </div>
             </form>

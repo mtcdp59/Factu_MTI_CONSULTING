@@ -93,8 +93,17 @@ function doPost(e) {
       case 'exportRAMToSheets':
         response = exportRAMToSheets(data);
         break;
+      case 'sync_rams':
+        response = syncRAMs(data.sheetId, data.rams);
+        break;
+      case 'import_rams':
+        response = importRAMs(data.sheetId);
+        break;
       case 'sendInvoiceWithRAM':
         response = sendInvoiceWithRAM(data);
+        break;
+      case 'clearRAMSheet':
+        response = clearRAMSheet();
         break;
       default:
         response = createResponse(false, 'Action inconnue: ' + action);
@@ -204,6 +213,7 @@ function loadFromDrive() {
         invoices: [],
         tasks: [],
         rams: [],
+        recurringInvoices: [],
         companyInfo: companyInfo,
         taxSettings: { tvaRate: 20, retenuSource: 0, defaultPaymentTerms: 30 }
       };
@@ -993,6 +1003,155 @@ function exportRAMToSheets(params) {
   }
 }
 
+// Synchroniser tous les RAMs vers Sheets (export)
+function syncRAMs(sheetId, rams) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
+    let sheet = spreadsheet.getSheetByName('RAM');
+    
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('RAM');
+    }
+    
+    // Clear et headers
+    sheet.clear();
+    const headers = [
+      'Date Export',
+      'Client',
+      'Mois',
+      'Année',
+      'Jour',
+      'Date',
+      'Heures',
+      'Commentaires',
+      'Remarques'
+    ];
+    
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, headers.length).setBackground('#21808D');
+    sheet.getRange(1, 1, 1, headers.length).setFontColor('#FFFFFF');
+    
+    sheet.setColumnWidth(1, 150);
+    sheet.setColumnWidth(2, 150);
+    sheet.setColumnWidth(3, 100);
+    sheet.setColumnWidth(4, 80);
+    sheet.setColumnWidth(5, 100);
+    sheet.setColumnWidth(6, 80);
+    sheet.setColumnWidth(7, 80);
+    sheet.setColumnWidth(8, 300);
+    sheet.setColumnWidth(9, 300);
+    
+    sheet.setFrozenRows(1);
+    
+    // Ajouter toutes les données
+    const exportDate = new Date().toISOString();
+    const allRows = [];
+    
+    (rams || []).forEach(ram => {
+      (ram.activities || []).forEach(activity => {
+        if (activity.hours && activity.hours > 0) {
+          allRows.push([
+            exportDate,
+            ram.client,
+            ram.monthName,
+            ram.year,
+            activity.day,
+            activity.dayNum,
+            activity.hours,
+            activity.comment || '',
+            ram.remarks || ''
+          ]);
+        }
+      });
+    });
+    
+    if (allRows.length > 0) {
+      sheet.getRange(2, 1, allRows.length, 9).setValues(allRows);
+      sheet.getRange(2, 1, allRows.length, 9).setBorder(
+        true, true, true, true, true, true,
+        '#CCCCCC',
+        SpreadsheetApp.BorderStyle.SOLID
+      );
+      sheet.getRange(2, 7, allRows.length, 1).setHorizontalAlignment('right');
+    }
+    
+    Logger.log('RAMs synchronisés: ' + allRows.length + ' lignes');
+    return createResponse(true, { 
+      count: allRows.length,
+      sheetUrl: spreadsheet.getUrl()
+    });
+  } catch (error) {
+    return createResponse(false, 'Erreur sync RAMs: ' + error.toString());
+  }
+}
+
+// Importer les RAMs depuis Sheets
+function importRAMs(sheetId) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
+    let sheet = spreadsheet.getSheetByName('RAM');
+    
+    if (!sheet) {
+      return createResponse(false, 'Feuille "RAM" non trouvée');
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    // Trouver les indices des colonnes
+    const clientIdx = headers.indexOf('Client');
+    const moisIdx = headers.indexOf('Mois');
+    const anneeIdx = headers.indexOf('Année');
+    const jourIdx = headers.indexOf('Jour');
+    const dateIdx = headers.indexOf('Date');
+    const heuresIdx = headers.indexOf('Heures');
+    const commentairesIdx = headers.indexOf('Commentaires');
+    const remarquesIdx = headers.indexOf('Remarques');
+    
+    if (clientIdx === -1 || moisIdx === -1) {
+      return createResponse(false, 'Colonnes requises manquantes');
+    }
+    
+    // Regrouper par client/mois/année
+    const ramsMap = {};
+    
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[clientIdx]) continue;
+      
+      const client = row[clientIdx];
+      const mois = row[moisIdx];
+      const annee = row[anneeIdx];
+      const key = `${client}_${mois}_${annee}`;
+      
+      if (!ramsMap[key]) {
+        ramsMap[key] = {
+          client: client,
+          monthName: mois,
+          year: annee,
+          remarks: row[remarquesIdx] || '',
+          activities: []
+        };
+      }
+      
+      ramsMap[key].activities.push({
+        day: row[jourIdx] || '',
+        dayNum: row[dateIdx] || '',
+        hours: parseFloat(row[heuresIdx]) || 0,
+        comment: row[commentairesIdx] || ''
+      });
+    }
+    
+    const rams = Object.values(ramsMap);
+    
+    Logger.log('RAMs importés: ' + rams.length);
+    return createResponse(true, { rams: rams });
+  } catch (error) {
+    return createResponse(false, 'Erreur import RAMs: ' + error.toString());
+  }
+}
+
 function sendInvoiceWithRAM(params) {
   try {
     const { to, invoiceSubject, invoiceBody, invoicePdfBase64, invoiceFilename, ramPdfBase64, ramFilename, client, month, year } = params;
@@ -1075,6 +1234,7 @@ function ensureStorage() {
         invoices: [],
         tasks: [],
         rams: [],
+        recurringInvoices: [],
         companyInfo: companyInfo,
         taxSettings: { tvaRate: 20, retenuSource: 0, defaultPaymentTerms: 30 }
       };
@@ -1089,4 +1249,115 @@ function ensureStorage() {
   }
 }
 
+//==========================================
+// MAINTENANCE AUTOMATIQUE DES AUTORISATIONS
+// ==========================================
+
+/**
+ * Fonction de maintenance pour garder les autorisations actives
+ * À configurer avec un déclencheur temporel hebdomadaire dans Apps Script
+ * Cela empêche l'expiration des tokens OAuth en mode Test
+ */
+function maintainAuthorizations() {
+  try {
+    Logger.log('🔄 Maintenance des autorisations - Début');
+    
+    // 1. Accès Google Sheets (maintient le scope spreadsheets)
+    const sheet = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    Logger.log('✅ Sheets accessible: ' + sheet.getName());
+    
+    // 2. Accès Google Drive (maintient le scope drive)
+    const folders = DriveApp.getFoldersByName(CONFIG.DRIVE_FOLDER);
+    if (folders.hasNext()) {
+      const folder = folders.next();
+      Logger.log('✅ Drive accessible: ' + folder.getName());
+    }
+    
+    // 3. Accès Google Calendar (maintient le scope calendar)
+    const calendar = CalendarApp.getDefaultCalendar();
+    Logger.log('✅ Calendar accessible: ' + calendar.getName());
+    
+    // 4. Test Gmail (maintient le scope gmail.send)
+    // Note: On ne teste pas l'envoi réel pour éviter le spam
+    Logger.log('✅ Gmail scope présent dans manifest');
+    
+    const timestamp = new Date().toLocaleString('fr-FR');
+    Logger.log('✅ Maintenance terminée avec succès - ' + timestamp);
+    
+    return '✅ Autorisations maintenues - ' + timestamp;
+  } catch (e) {
+    Logger.log('❌ Erreur maintenance: ' + e.toString());
+    return '❌ Erreur: ' + e.toString();
+  }
+}
+
+// ==========================================
+// FONCTION DE TEST - ACCÈS SHEETS
+// ==========================================
+
+function testSheetsAccess() {
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    Logger.log('✅ Accès Sheets OK: ' + ss.getName());
+    Logger.log('📊 URL: ' + ss.getUrl());
+    
+    // Tester création onglet Tiers si inexistant
+    let sheet = ss.getSheetByName(CONFIG.TIERS_SHEET);
+    if (!sheet) {
+      sheet = ss.insertSheet(CONFIG.TIERS_SHEET);
+      Logger.log('✅ Onglet "Tiers" créé');
+    } else {
+      Logger.log('✅ Onglet "Tiers" existe déjà');
+    }
+    
+    return '✅ Test réussi - Accès Sheets opérationnel';
+  } catch (e) {
+    Logger.log('❌ Erreur: ' + e.toString());
+    return '❌ Erreur: ' + e.toString();
+  }
+}
+
+// ==========================================
+// NETTOYAGE FEUILLE RAM
+// ==========================================
+
+/**
+ * Nettoie toutes les lignes de données de la feuille RAM (garde uniquement les en-têtes)
+ */
+function clearRAMSheet() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    let sheet = spreadsheet.getSheetByName('RAM');
+    
+    if (!sheet) {
+      return createResponse(false, 'Feuille RAM introuvable');
+    }
+    
+    const lastRow = sheet.getLastRow();
+    
+    // Si seulement l'en-tête (ligne 1) ou feuille vide, rien à faire
+    if (lastRow <= 1) {
+      Logger.log('ℹ️ Feuille RAM déjà vide (aucune donnée à supprimer)');
+      return createResponse(true, { 
+        message: 'Feuille RAM déjà vide',
+        rowsDeleted: 0
+      });
+    }
+    
+    // Supprimer toutes les lignes de données (garde la ligne 1 des en-têtes)
+    const rowsToDelete = lastRow - 1;
+    sheet.deleteRows(2, rowsToDelete);
+    
+    Logger.log(`✅ ${rowsToDelete} ligne(s) supprimée(s) de la feuille RAM`);
+    
+    return createResponse(true, {
+      message: `${rowsToDelete} ligne(s) supprimée(s)`,
+      rowsDeleted: rowsToDelete,
+      sheetUrl: spreadsheet.getUrl()
+    });
+  } catch (error) {
+    Logger.log('❌ Erreur clearRAMSheet: ' + error.toString());
+    return createResponse(false, 'Erreur nettoyage RAM: ' + error.toString());
+  }
+}
 

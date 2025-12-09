@@ -5,6 +5,56 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.2] - 2025-12-09
+
+### 🐛 Correctifs Critiques
+
+#### 1. Aperçu Facture Multi-Lignes
+**Problème** : `ReferenceError: description is not defined` (ligne 1028)  
+**Cause** : Migration système multi-lignes incomplète dans `renderInvoicePreview()`  
+**Solution** : Génération HTML via `inv.items.map()` avec fallback anciennes factures mono-ligne
+
+#### 2. Validation Numéro Facture Unique
+**Problème** : Possibilité créer doublons malgré protection double-clic  
+**Solution** : Validation `invoices.find()` avant création, message erreur explicite, exemption mode édition
+
+#### 3. Modal Planning - Bouton Annuler
+**Problème** : Bouton "Annuler" ne fermait pas la modal  
+**Solution** : **Suppression du bouton** (conserve 🗑️ Supprimer + 💾 Mettre à jour). Fermeture via croix (×) uniquement
+
+#### 4. Graphiques Filtres
+**Problème** : Graphiques ignoraient filtres UI (période, statut, client)  
+**Solution** : Usage `getFilteredInvoices()` dans `renderCAChart()` et `renderStatusChart()`, appel `renderCharts()` dans `applyFilters()`
+
+#### 5. Compteur CA Auto-Update
+**Problème** : CA non actualisé après suppression facture  
+**Solution** : Ajout `updateCADisplay()` dans `deleteInvoice()` (ligne 3290)
+
+#### 6. Protection Double-Clic Renforcée
+**Problème** : Timeout violation 1282ms, doubles créations  
+**Solution** : Flag global `isSubmittingInvoice`, texte bouton "⏳ Traitement...", réactivation en cas erreur
+
+### 🔧 Modifié
+- **Graph "CA facturé par mois"** : Affichage 12 mois (Jan-Déc) au lieu de 6 (Jul-Déc), abréviations mois (Jan, Fév, Mar...), hauteur canvas 350px (au lieu de 300px)
+- **Modal Planning** : Retrait bouton Annuler, uniquement Supprimer + Mettre à jour
+- **Export Google Sheets** : ✅ Confirmé fonctionnel (format multi-ligne `"Ligne 1 | Ligne 2"`)
+
+### 📚 Documentation
+- **Nettoyage** : Suppression `CORRECTIFS_08DEC2025.md`, `CORRECTIFS_08DEC2025_SUITE.md`, `CHANGELOG_COMPLET.md`
+- **Consolidation** : CHANGELOG.md unique, GUIDE_UTILISATEUR_COMPLET.md (toutes fonctionnalités)
+- **Mise à jour** : README.md, STRUCTURE.md, FICHE_TECHNIQUE.md
+
+### ✅ Tests Validés
+- ✅ Aperçu multi-ligne (Test 202512-006: 2 lignes @ 750€ = 1500€)
+- ✅ Doublons bloqués (validation numéro unique)
+- ✅ CA counter auto-refresh (create/modify/delete)
+- ✅ Graphs respect filtres (période, statut, client)
+- ✅ Export Sheets multi-ligne (`Description | Description 2`)
+- ✅ Modal Planning (fermeture croix, suppression bouton Annuler)
+- ✅ 12 mois affichés dans graph CA (Janvier → Décembre)
+
+---
+
 ## [2.0.0] - 2025-11-25
 
 ### ✨ Ajouté

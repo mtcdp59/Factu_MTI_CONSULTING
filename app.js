@@ -1,6 +1,8 @@
 // MTI CONSULTING - Application de facturation
 // Version v2.0 - Google Drive Storage + Gmail API + Calendar API + FullCalendar
 
+console.log('✅ app.js chargé - début du script');
+
 // Configuration production (credentials en dur comme en v42)
 const CONFIG = {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycby7tGJVMVB51juVHJUWfv-gAmf8Fkp5K8nkSTdzpherNdH1Wn2kYK_Hu08pYoOTwCqL/exec',
@@ -214,7 +216,7 @@ let editingInvoiceIndex = -1;
 // Sauvegarder toutes les données dans Google Drive
 async function saveToDrive() {
     try {
-        const data = { clients, invoices, tasks, rams, companyInfo, taxSettings };
+        const data = { clients, invoices, tasks, rams, recurringInvoices, companyInfo, taxSettings };
         const result = await callBackend('saveToDrive', { data });
         if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
         console.log('✅ Sauvegarde Drive OK');
@@ -245,6 +247,7 @@ async function loadFromDrive() {
         if (data.invoices) invoices = data.invoices;
         if (data.tasks) tasks = data.tasks;
         if (data.rams) rams = data.rams;
+        if (data.recurringInvoices) recurringInvoices = data.recurringInvoices;
         if (data.companyInfo) companyInfo = data.companyInfo;
         if (data.taxSettings) taxSettings = data.taxSettings;
 
@@ -258,6 +261,8 @@ async function loadFromDrive() {
         if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
         if (typeof renderInvoiceList === 'function') renderInvoiceList();
         if (typeof renderRAMList === 'function') renderRAMList();
+        if (typeof renderRecurringList === 'function') renderRecurringList();
+        if (typeof updateCADisplay === 'function') updateCADisplay();
 
         return true;
     } catch (error) {
@@ -276,6 +281,7 @@ let clients = [];
 let invoices = [];
 let tasks = [];
 let rams = []; // Rapports d'Activité Mensuels
+let recurringInvoices = []; // Factures récurrentes / abonnements
 
 // Calendar state
 let currentView = 'week';
@@ -302,9 +308,11 @@ let taxSettings = {
     versementLiberatoire: 2.2,
     prorationMensuelle: 8.33,
     cfeAnnuel: 600,
-    // Charges sociales URSSAF (BNC - Activités libérales)
-    acreActif: 11.6,          // Année 1 avec ACRE (50% de réduction)
-    acreInactif: 24.6,        // Standard 2025 (Décret n°2024-484)
+    // Charges sociales URSSAF (BNC - Prestations de services / Activités libérales)
+    // Source : https://www.autoentrepreneur.urssaf.fr/portail/accueil/sinformer-sur-le-statut/lessentiel-du-statut.html
+    // ACRE depuis 2020 : durée 12 mois (plus de dégressivité sur 3 ans)
+    acreActif: 12.3,          // Année 1 avec ACRE - Taux réduit BNC 2025 : 12,30%
+    acreInactif: 24.6,        // Année 2+ sans ACRE - Taux plein 2025 (évolution +1%/an jusqu'en 2029)
     // CFP (Contribution Formation Professionnelle) BNC - OBLIGATOIRE
     cfpBNC: 0.2,              // 0,2% du CA (Code du travail L6331-48)
     // Conditions versement libératoire
@@ -334,7 +342,7 @@ const defaultSettings = {
     versementLiberatoire: 2.2,
     prorationMensuelle: 8.33,
     cfeAnnuel: 600,
-    acreActif: 11.6,
+    acreActif: 12.3,
     acreInactif: 24.6,
     cfpBNC: 0.2,
     rfrMaxVL: 28797,
@@ -902,26 +910,51 @@ function setupInvoiceFormListeners() {
         previewBtn.addEventListener('click', () => {
             const clientNameEl = document.getElementById('clientName');
             const clientAddressEl = document.getElementById('clientAddress');
-            const serviceDescriptionEl = document.getElementById('serviceDescription');
-            if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput || !serviceDescriptionEl || !quantityInput || !unitPriceInput) {
-                alert('Veuillez remplir tous les champs obligatoires');
+            
+            // Vérifier les éléments de base
+            if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput) {
+                alert('❌ Erreur: Éléments du formulaire introuvables');
                 return;
             }
 
-            const clientName = clientNameEl.value;
-            const clientAddress = clientAddressEl.value;
-            const invoiceNumber = invoiceNumberInput.value;
+            const clientName = clientNameEl.value.trim();
+            const clientAddress = clientAddressEl.value.trim();
+            const invoiceNumber = invoiceNumberInput.value.trim();
             const invoiceDate = invoiceDateInput.value;
             const dueDate = dueDateInput.value;
-            const description = serviceDescriptionEl.value;
-            const quantity = quantityInput.value;
-            const unitPrice = unitPriceInput.value;
-            const total = calculateTotal();
-
-            if (!clientName || !clientAddress || !invoiceDate || !dueDate || !description || !quantity || !unitPrice) {
-                alert('Veuillez remplir tous les champs obligatoires');
+            
+            // Récupérer les items (multi-ligne) depuis currentInvoiceItems
+            const items = currentInvoiceItems;
+            
+            // Validation
+            if (!clientName || !clientAddress || !invoiceDate || !dueDate) {
+                alert('❌ Veuillez remplir tous les champs obligatoires (client, adresse, dates)');
                 return;
             }
+            
+            if (!items || items.length === 0) {
+                alert('❌ Veuillez ajouter au moins une ligne de facturation');
+                return;
+            }
+            
+            // Vérifier que chaque item est valide
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (!item.description || !item.description.trim()) {
+                    alert(`❌ La ligne ${i + 1} doit avoir une description`);
+                    return;
+                }
+                if (!item.quantity || item.quantity <= 0) {
+                    alert(`❌ La ligne ${i + 1} doit avoir une quantité > 0`);
+                    return;
+                }
+                if (!item.unitPrice || item.unitPrice <= 0) {
+                    alert(`❌ La ligne ${i + 1} doit avoir un prix unitaire > 0`);
+                    return;
+                }
+            }
+            
+            const total = calculateTotal();
 
             const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
             const totalHT = total;
@@ -951,13 +984,25 @@ function setupInvoiceFormListeners() {
                 ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
                 : '[À compléter dans Paramètres]';
 
-    // Use local logo file (MTI_CONSULTING.png) or configured data-URI
-    const logoSrc = companyInfo.logoUrl && (companyInfo.logoUrl.startsWith('data:') || !companyInfo.logoUrl.includes('github')) 
-        ? companyInfo.logoUrl 
-        : 'MTI_CONSULTING.png';
-    const logoHTML = logoSrc
-        ? `<img src="${logoSrc}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);" crossorigin="anonymous">`
-        : '';            const previewHTML = `
+            // Générer les lignes HTML pour les items multi-lignes
+            const itemsHTML = items.map(item => `
+                <tr>
+                    <td>${item.description || ''}</td>
+                    <td style="text-align: center;">${item.quantity || 0}</td>
+                    <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
+                    <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                </tr>
+            `).join('');
+
+            // Use local logo file (MTI_CONSULTING.png) or configured data-URI
+            const logoSrc = companyInfo.logoUrl && (companyInfo.logoUrl.startsWith('data:') || !companyInfo.logoUrl.includes('github')) 
+                ? companyInfo.logoUrl 
+                : 'MTI_CONSULTING.png';
+            const logoHTML = logoSrc
+                ? `<img src="${logoSrc}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);" crossorigin="anonymous">`
+                : '';
+            
+            const previewHTML = `
                 <div class="invoice-header">
                     <div class="invoice-header-left">
                         ${logoHTML}
@@ -991,12 +1036,7 @@ function setupInvoiceFormListeners() {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td>${description}</td>
-                            <td style="text-align: center;">${quantity}</td>
-                            <td style="text-align: right;">${parseFloat(unitPrice).toFixed(2)} €</td>
-                            <td style="text-align: right;">${total.toFixed(2)} €</td>
-                        </tr>
+                        ${itemsHTML}
                     </tbody>
                 </table>
 
@@ -1015,9 +1055,7 @@ function setupInvoiceFormListeners() {
                 number: invoiceNumber,
                 date: invoiceDate,
                 dueDate: dueDate,
-                description: description,
-                quantity: quantity,
-                unitPrice: unitPrice,
+                items: items,
                 total: total,
                 tvaEnabled: tvaEnabled
             }, true);
@@ -1072,12 +1110,24 @@ function renderInvoicePreview(inv, showModal) {
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>${inv.description || ''}</td>
-                    <td style="text-align: center;">${inv.quantity || 0}</td>
-                    <td style="text-align: right;">${parseFloat(inv.unitPrice || 0).toFixed(2)} €</td>
-                    <td style="text-align: right;">${(inv.total || 0).toFixed(2)} €</td>
-                </tr>
+                ${(inv.items && inv.items.length > 0) 
+                    ? inv.items.map(item => `
+                        <tr>
+                            <td>${item.description || ''}</td>
+                            <td style="text-align: center;">${item.quantity || 0}</td>
+                            <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
+                            <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                        </tr>
+                    `).join('')
+                    : `
+                        <tr>
+                            <td>${inv.description || ''}</td>
+                            <td style="text-align: center;">${inv.quantity || 0}</td>
+                            <td style="text-align: right;">${parseFloat(inv.unitPrice || 0).toFixed(2)} €</td>
+                            <td style="text-align: right;">${(inv.total || 0).toFixed(2)} €</td>
+                        </tr>
+                    `
+                }
             </tbody>
         </table>
 
@@ -1192,90 +1242,9 @@ function setupEmailPreviewHandlers() {
         if (modal) modal.classList.remove('show');
     });
 
-    const confirmEmail = document.getElementById('confirmEmail');
-    if (confirmEmail) confirmEmail.addEventListener('click', () => {
-        if (!currentInvoiceData) return;
-        const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
-
-        const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
-        const contactName = (client && client.contact_name && client.contact_name.trim() !== '') ? client.contact_name : clientName;
-        const emailTo = hasEmail ? client.email_facturation : '';
-
-        // Build mailto link
-        const subject = `Facture #${invoiceNumber} - MTI CONSULTING`;
-        const body = `Bonjour ${contactName},
-
-Veuillez trouver ci-joint la facture #${invoiceNumber} d'un montant de ${total.toFixed(2)}€ HT.
-
-Date d'émission : ${formatDateFR(invoiceDate)}
-Date d'échéance : ${formatDateFR(dueDate)}
-Conditions de paiement : 30 jours nets
-
-⚠️ Note importante : Merci de joindre le fichier PDF de la facture avant l'envoi (limitation technique des emails pré-remplis).
-
-Pour toute question, n'hésitez pas à me contacter.
-
-Cordialement,
-Mickaël TOURDOT-IGUEDJETAL
-MTI CONSULTING
-Email : mticonsulting59@gmail.com
-Téléphone : 07 77 37 17 39`;
-
-        // Prefer opening Gmail compose with generated PDF so user can attach/review the exact PDF
-        const invoiceObj = {
-            number: invoiceNumber,
-            client: clientName,
-            clientSiret: client && client.siret ? client.siret : '',
-            clientAddress: client && client.address ? client.address : '',
-            date: invoiceDate,
-            dueDate: dueDate,
-            description: '',
-            quantity: 0,
-            unitPrice: 0,
-            total: total
-        };
-
-        // Try to open Gmail compose with PDF (this also opens the PDF in a new tab and triggers download)
-        openGmailComposeWithPDF(invoiceObj, emailTo)
-            .then(() => {
-                // Mark invoice as sent if it exists in the invoices array
-                try {
-                    const idx = invoices.findIndex(inv => inv.number === invoiceNumber && inv.client === clientName);
-                    if (idx >= 0) {
-                        invoices[idx].status = 'Envoyée';
-                        saveToDrive();
-                        renderInvoiceList();
-                    }
-                } catch (e) { console.warn('Impossible de marquer la facture envoyée après ouverture compose :', e); }
-
-                // Close modal
-                const modal = document.getElementById('emailModal');
-                if (modal) modal.classList.remove('show');
-
-                setTimeout(() => {
-                    alert('Gmail ouvert en nouvel onglet. N\'oubliez pas d\'ajouter la pièce jointe PDF si nécessaire, puis envoyer.');
-                    if (confirm('Voulez-vous créer une nouvelle facture ?')) {
-                        resetInvoiceForm();
-                    }
-                }, 300);
-            })
-            .catch(err => {
-                console.error('Erreur ouverture compose Gmail depuis preview:', err);
-                // Fallback to mailto behaviour
-                const encodedSubject = encodeURIComponent(subject);
-                const encodedBody = encodeURIComponent(body);
-                const mailtoLink = `mailto:${emailTo}?subject=${encodedSubject}&body=${encodedBody}`;
-                window.location.href = mailtoLink;
-                const modal = document.getElementById('emailModal');
-                if (modal) modal.classList.remove('show');
-                setTimeout(() => {
-                    alert('Email préparé et ouvert dans votre client de messagerie. N\'oubliez pas de joindre le PDF de la facture avant l\'envoi !');
-                    if (confirm('Voulez-vous créer une nouvelle facture ?')) {
-                        resetInvoiceForm();
-                    }
-                }, 500);
-            });
-    });
+    // Note: confirmEmail listener is now managed by setupEmailPreviewHandlersForConfirmSend()
+    // to avoid duplicate executions (was causing double send). Old listener removed.
+    // See line 5729: setupEmailPreviewHandlersForConfirmSend() handles click with proper protection.
 }
 
 function showEmailPreview() {
@@ -1436,15 +1405,46 @@ window.updateInvoiceItemField = updateInvoiceItemField;
 
 // ========== END MULTI-LINE INVOICE ITEMS ==========
 
+// Flag global pour empêcher double soumission
+let isSubmittingInvoice = false;
+
 // Save invoice
 function setupInvoiceSaveHandler() {
     if (!invoiceForm) return;
     invoiceForm.addEventListener('submit', (e) => {
         e.preventDefault();
 
+        // Protection double-clic : vérifier flag global + disabled
+        if (isSubmittingInvoice) {
+            console.warn('⚠️ Soumission déjà en cours, ignorée');
+            return;
+        }
+        
+        isSubmittingInvoice = true;
+
+        // Protection double-clic : désactiver le bouton pendant le traitement
+        const submitBtn = document.getElementById('submitInvoiceBtn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.6';
+            submitBtn.style.cursor = 'not-allowed';
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '⏳ Traitement...';
+            // Restaurer texte après traitement
+            submitBtn.dataset.originalText = originalText;
+        }
+
         // Validate that at least one item exists
         if (!currentInvoiceItems || currentInvoiceItems.length === 0) {
             showToast('⚠️ Veuillez ajouter au moins une ligne de facturation', 'error');
+            // Réactiver le bouton
+            isSubmittingInvoice = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+                submitBtn.style.cursor = 'pointer';
+                submitBtn.textContent = submitBtn.dataset.originalText || '💾 Créer facture';
+            }
             return;
         }
 
@@ -1452,14 +1452,40 @@ function setupInvoiceSaveHandler() {
         const hasEmptyDescription = currentInvoiceItems.some(item => !item.description || item.description.trim() === '');
         if (hasEmptyDescription) {
             showToast('⚠️ Toutes les lignes doivent avoir une description', 'error');
+            // Réactiver le bouton
+            isSubmittingInvoice = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+                submitBtn.style.cursor = 'pointer';
+                submitBtn.textContent = submitBtn.dataset.originalText || '💾 Créer facture';
+            }
             return;
         }
 
         // Calculate total from items
         const totalHT = currentInvoiceItems.reduce((sum, item) => sum + (item.total || 0), 0);
 
+        const invoiceNumber = invoiceNumberInput ? invoiceNumberInput.value : getNextInvoiceNumber();
+        
+        // Validation : vérifier que le numéro de facture est unique (sauf en mode édition)
+        if (!isEditMode) {
+            const duplicateInvoice = invoices.find(inv => inv.number === invoiceNumber);
+            if (duplicateInvoice) {
+                showToast(`❌ Le numéro de facture "${invoiceNumber}" existe déjà. Veuillez modifier le numéro.`, 'error');
+                isSubmittingInvoice = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                    submitBtn.style.cursor = 'pointer';
+                    submitBtn.textContent = submitBtn.dataset.originalText || '💾 Créer facture';
+                }
+                return;
+            }
+        }
+
         const invoiceData = {
-            number: invoiceNumberInput ? invoiceNumberInput.value : getNextInvoiceNumber(),
+            number: invoiceNumber,
             client: document.getElementById('clientName') ? document.getElementById('clientName').value : '',
             clientSiret: document.getElementById('clientSiret') ? document.getElementById('clientSiret').value : '',
             clientAddress: document.getElementById('clientAddress') ? document.getElementById('clientAddress').value : '',
@@ -1551,9 +1577,23 @@ function setupInvoiceSaveHandler() {
         renderInvoiceList();
         applyFilters();
         renderCharts();
+        
+        // Update CA counter (fix: compteur ne s'actualise pas après création)
+        if (typeof updateCADisplay === 'function') {
+            updateCADisplay();
+        }
 
         // Persist changes
         saveToDrive();
+
+        // Réactiver le bouton après traitement
+        isSubmittingInvoice = false;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
+            submitBtn.style.cursor = 'pointer';
+            submitBtn.textContent = submitBtn.dataset.originalText || '💾 Créer facture';
+        }
     });
 }
 
@@ -2772,17 +2812,22 @@ function editTask(index) {
     document.getElementById('editTaskDuration').value = task.duration;
     document.getElementById('editTaskType').value = task.type;
     document.getElementById('editTaskDescription').value = task.description;
-    document.getElementById('editTaskModal').classList.add('show');
+    
+    const modal = document.getElementById('editTaskModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('show');
+    }
 }
 
 window.editTask = editTask;
 
 document.getElementById('closeEditTaskModal')?.addEventListener('click', () => {
-    document.getElementById('editTaskModal')?.classList.remove('show');
-});
-
-document.getElementById('cancelEditTask')?.addEventListener('click', () => {
-    document.getElementById('editTaskModal')?.classList.remove('show');
+    const modal = document.getElementById('editTaskModal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+    }
 });
 
 document.getElementById('editTaskForm')?.addEventListener('submit', (e) => {
@@ -2798,7 +2843,11 @@ document.getElementById('editTaskForm')?.addEventListener('submit', (e) => {
     };
 
     renderCalendar();
-    document.getElementById('editTaskModal')?.classList.remove('show');
+    const modal = document.getElementById('editTaskModal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+    }
     showToast('Tâche mise à jour');
     saveToDrive();
 });
@@ -2943,6 +2992,7 @@ function applyFilters() {
     const filtered = getFilteredInvoices();
     renderInvoiceTable(filtered);
     updateSummary(filtered);
+    renderCharts(); // FIX: Actualiser les graphiques après filtrage
 }
 
 function renderInvoiceTable(filteredInvoices) {
@@ -2987,6 +3037,7 @@ function renderInvoiceList() {
         const row = document.createElement('tr');
         row.innerHTML = '<td colspan="6" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucune facture créée</td>';
         tbody.appendChild(row);
+        updateCAYearOptions(); // Mettre \u00e0 jour les ann\u00e9es m\u00eame s'il n'y a pas de factures
         return;
     }
 
@@ -3008,6 +3059,9 @@ function renderInvoiceList() {
         `;
         tbody.appendChild(row);
     });
+    
+    // Mettre \u00e0 jour les ann\u00e9es disponibles dans le compteur CA
+    updateCAYearOptions();
 }
 
 // Edit invoice in main form (FACTURES tab)
@@ -3215,6 +3269,11 @@ function deleteInvoice(index) {
             applyFilters();
             renderCharts();
             showToast('✅ Facture supprimée');
+            
+            // FIX: Actualiser le compteur CA après suppression
+            if (typeof updateCADisplay === 'function') {
+                updateCADisplay();
+            }
 
             // Auto-sync after deletion
             autoSync('delete');
@@ -3453,7 +3512,7 @@ function saveSettings() {
     taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib')?.value) || 2.2;
     taxSettings.prorationMensuelle = parseFloat(document.getElementById('prorationMensuelle')?.value) || 8.33;
     taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
-    taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif')?.value) || 11.6;
+    taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif')?.value) || 12.3;
     taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif')?.value) || 24.6;
     taxSettings.cfpBNC = parseFloat(document.getElementById('tauxCFPBNC')?.value) || 0.2;
     taxSettings.rfrMaxVL = parseFloat(document.getElementById('rfrMaxVL')?.value) || 28797;
@@ -3764,9 +3823,12 @@ function calculateTaxes() {
 
     const ca = parseFloat(caInput?.value) || 0;
     
-    // Déterminer année ACRE (radio buttons)
+    // Déterminer situation ACRE (2 options depuis réforme 2020)
     const acreAnnee1Radio = document.getElementById('acreAnnee1');
-    const acreActive = acreAnnee1Radio ? acreAnnee1Radio.checked : true;
+    const acreActive = acreAnnee1Radio ? acreAnnee1Radio.checked : false;
+    
+    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+    const chargesLabel = acreActive ? 'ACRE Année 1 (12 mois)' : 'Sans ACRE (taux plein)'
     
     // Déterminer période affichage (mensuel ou annuel)
     const periodeMensuelRadio = document.getElementById('periodeMensuel');
@@ -3780,9 +3842,7 @@ function calculateTaxes() {
     }
 
     // 1. Charges sociales URSSAF
-    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
     const charges = ca * chargesRate;
-    const chargesLabel = acreActive ? `ACRE Année 1` : `Standard 2025`;
 
     // 2. CFP (Contribution Formation Professionnelle) - OBLIGATOIRE
     const cfp = ca * (taxSettings.cfpBNC / 100);
@@ -3826,7 +3886,7 @@ function calculateTaxes() {
                 <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(charges * multiplicateur).toFixed(2)} €</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--color-border);">
-                <td style="padding: var(--space-12);">CFP (Formation professionnelle)</td>
+                <td style="padding: var(--space-12);">CFP <small style="color: var(--color-text-secondary);">(Formation professionnelle)</small></td>
                 <td style="padding: var(--space-12); text-align: center;">${taxSettings.cfpBNC}%</td>
                 <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
                 <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(cfp * multiplicateur).toFixed(2)} €</td>
@@ -4047,23 +4107,24 @@ if (resetSimulationBtn) {
 const CFE_CACHE_KEY = 'mti_cfe_api_cache';
 const CFE_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 jours
 
-// Base de données codes INSEE principales communes (fallback)
+// Base de données codes INSEE + codes postaux principales communes (fallback)
 const inseeCodesDB = {
-    'paris': '75056',
-    'lyon': '69123',
-    'marseille': '13055',
-    'toulouse': '31555',
-    'nice': '06088',
-    'nantes': '44109',
-    'montpellier': '34172',
-    'strasbourg': '67482',
-    'bordeaux': '33063',
-    'lille': '59350',
-    'rennes': '35238',
-    'reims': '51454',
-    'tourcoing': '59599',
-    'roubaix': '59512',
-    'la madeleine': '59368'
+    'paris': { insee: '75056', cp: '75000' },
+    'lyon': { insee: '69123', cp: '69000' },
+    'marseille': { insee: '13055', cp: '13000' },
+    'toulouse': { insee: '31555', cp: '31000' },
+    'nice': { insee: '06088', cp: '06000' },
+    'nantes': { insee: '44109', cp: '44000' },
+    'montpellier': { insee: '34172', cp: '34000' },
+    'strasbourg': { insee: '67482', cp: '67000' },
+    'bordeaux': { insee: '33063', cp: '33000' },
+    'lille': { insee: '59350', cp: '59000' },
+    'rennes': { insee: '35238', cp: '35000' },
+    'reims': { insee: '51454', cp: '51100' },
+    'tourcoing': { insee: '59599', cp: '59200' },
+    'roubaix': { insee: '59512', cp: '59100' },
+    'la madeleine': { insee: '59368', cp: '59110' },
+    'madeleine': { insee: '59368', cp: '59110' } // Alias pour recherche partielle
 };
 
 // Base de données CFE fallback (estimations si API échoue)
@@ -4095,11 +4156,17 @@ async function getCFEFromAPI(commune) {
         return { taux: cached.taux, source: 'API (cache)', inseeCode: cached.inseeCode };
     }
     
-    // 2. Rechercher code INSEE
+    // 2. Rechercher code INSEE (recherche par nom ou code postal)
     let inseeCode = null;
-    for (const [ville, code] of Object.entries(inseeCodesDB)) {
+    for (const [ville, data] of Object.entries(inseeCodesDB)) {
+        // Recherche par nom de ville (partielle)
         if (communeLower.includes(ville) || ville.includes(communeLower)) {
-            inseeCode = code;
+            inseeCode = data.insee;
+            break;
+        }
+        // Recherche par code postal
+        if (data.cp && communeLower.replace(/\s/g, '') === data.cp.replace(/\s/g, '')) {
+            inseeCode = data.insee;
             break;
         }
     }
@@ -4173,16 +4240,46 @@ async function searchCommunesAPI(query) {
     autocompleteDiv.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--color-text-secondary);">🔄 Recherche...</div>';
     
     try {
-        // API Open Data Soft - Recherche communes
-        const url = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com&where=search(libcom,'${encodeURIComponent(query)}')&group_by=libcom,insee_com&limit=10&refine=exercice:"2024"`;
-        const response = await fetch(url);
-        const data = await response.json();
+        // API Open Data Soft - Recherche communes avec support jokers (*)
+        // Remplacer les jokers utilisateur (%, *) par des espaces pour recherche partielle
+        const cleanQuery = query.replace(/[%*]/g, ' ');
         
-        if (data.results && data.results.length > 0) {
-            communesSearchCache[query] = data.results;
-            displayCommunesResults(data.results);
+        // Recherche par nom de commune (partielle, insensible à la casse)
+        const searchByName = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com,code_postal&where=search(libcom,'${encodeURIComponent(cleanQuery)}')&group_by=libcom,insee_com,code_postal&limit=10&refine=exercice:"2024"`;
+        
+        // Si la requête ressemble à un code postal (5 chiffres), recherche aussi par CP
+        let searchByCP = null;
+        if (/^\d{5}$/.test(query.replace(/\s/g, ''))) {
+            searchByCP = `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-entreprises/records?select=libcom,insee_com,code_postal&where=code_postal='${query.replace(/\s/g, '')}'&group_by=libcom,insee_com,code_postal&limit=10&refine=exercice:"2024"`;
+        }
+        
+        // Lancer les recherches en parallèle
+        const promises = [fetch(searchByName)];
+        if (searchByCP) promises.push(fetch(searchByCP));
+        
+        const responses = await Promise.all(promises);
+        const dataResults = await Promise.all(responses.map(r => r.json()));
+        
+        // Fusionner les résultats (dédupliquer par INSEE)
+        const allResults = [];
+        const seenInsee = new Set();
+        
+        dataResults.forEach(data => {
+            if (data.results) {
+                data.results.forEach(r => {
+                    if (!seenInsee.has(r.insee_com)) {
+                        seenInsee.add(r.insee_com);
+                        allResults.push(r);
+                    }
+                });
+            }
+        });
+        
+        if (allResults.length > 0) {
+            communesSearchCache[query] = allResults;
+            displayCommunesResults(allResults);
         } else {
-            autocompleteDiv.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--color-text-secondary);">Aucune commune trouvée</div>';
+            autocompleteDiv.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--color-text-secondary);">Aucune commune trouvée<br><small>Astuce: Essayez une recherche partielle (ex: "MADEL" pour La Madeleine) ou un code postal (59110)</small></div>';
         }
     } catch (error) {
         console.error('Erreur recherche communes:', error);
@@ -4195,11 +4292,15 @@ function displayCommunesResults(results) {
     if (!autocompleteDiv) return;
     
     autocompleteDiv.style.display = 'block';
-    autocompleteDiv.innerHTML = results.map(r => `
+    autocompleteDiv.innerHTML = results.map(r => {
+        const codePostal = r.code_postal || '';
+        const displayCP = codePostal ? ` - CP ${codePostal}` : '';
+        return `
         <div class="commune-result" data-commune="${r.libcom}" data-insee="${r.insee_com}" style="padding: 12px; cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background 0.2s;">
-            <strong>${r.libcom}</strong> <span style="color: var(--color-text-secondary); font-size: 12px;">(${r.insee_com})</span>
+            <strong>${r.libcom}</strong> <span style="color: var(--color-text-secondary); font-size: 12px;">(INSEE ${r.insee_com}${displayCP})</span>
         </div>
-    `).join('');
+    `;
+    }).join('');
     
     // Event listeners pour sélection
     document.querySelectorAll('.commune-result').forEach(el => {
@@ -4957,14 +5058,16 @@ function renderCAChart() {
     const ctx = canvas.getContext('2d');
     const rect = canvas.parentElement.getBoundingClientRect();
     canvas.width = rect.width - 48;
-    canvas.height = 300;
+    canvas.height = 350;
 
-    // Get last 6 months data (example labels - consider dynamic if needed)
-    const months = ['Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-    const monthValues = [7, 8, 9, 10, 11, 12];
-    const data = [0, 0, 0, 0, 0, 0];
+    // Get full year data (12 months)
+    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const monthValues = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-    invoices.forEach(inv => {
+    // FIX: Utiliser getFilteredInvoices() au lieu de invoices directement
+    const filteredInvoices = getFilteredInvoices();
+    filteredInvoices.forEach(inv => {
         const invDate = new Date(inv.date);
         const monthIndex = monthValues.indexOf(invDate.getMonth() + 1);
         if (monthIndex !== -1 && invDate.getFullYear() === 2025) {
@@ -5021,7 +5124,9 @@ function renderStatusChart() {
         'Retard': 0
     };
 
-    invoices.forEach(inv => {
+    // FIX: Utiliser getFilteredInvoices() au lieu de invoices directement
+    const filteredInvoices = getFilteredInvoices();
+    filteredInvoices.forEach(inv => {
         statusCounts[inv.status] = (statusCounts[inv.status] || 0) + 1;
     });
 
@@ -5135,16 +5240,44 @@ async function syncToGoogleSheets() {
         showToast('⏳ Synchronisation en cours...', 'info');
 
         // Prepare invoice data for sync
-        const invoiceData = invoices.map(inv => ({
-            number: inv.number,
-            client: inv.client,
-            date: inv.date,
-            dueDate: inv.dueDate,
-            total: inv.total,
-            status: inv.status,
-            montantRecu: inv.montantRecu || 0,
-            dateReception: inv.dateReception || ''
-        }));
+        const invoiceData = invoices.map(inv => {
+            // Gestion multi-lignes : concat\u00e9ner les descriptions
+            let description = '';
+            let quantity = 0;
+            let unitPrice = 0;
+            
+            if (inv.items && inv.items.length > 0) {
+                // Nouvelle structure multi-lignes
+                description = inv.items.map(item => item.description).join(' | ');
+                quantity = inv.items.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
+                // Prix unitaire moyen pond\u00e9r\u00e9
+                const totalQuantity = quantity;
+                if (totalQuantity > 0) {
+                    unitPrice = inv.total / totalQuantity;
+                }
+            } else {
+                // Ancienne structure mono-ligne (compatibilit\u00e9)
+                description = inv.description || '';
+                quantity = inv.quantity || 0;
+                unitPrice = inv.unitPrice || 0;
+            }
+            
+            return {
+                number: inv.number,
+                client: inv.client,
+                clientSiret: inv.clientSiret || '',
+                clientAddress: inv.clientAddress || '',
+                date: inv.date,
+                dueDate: inv.dueDate,
+                description: description,
+                quantity: quantity,
+                unitPrice: unitPrice,
+                total: inv.total,
+                status: inv.status,
+                montantRecu: inv.montantRecu || 0,
+                dateReception: inv.dateReception || ''
+            };
+        });
 
         // Call backend and surface any errors (avoid using mode: 'no-cors')
         try {
@@ -5604,7 +5737,22 @@ function setupEmailPreviewHandlersForConfirmSend() {
         const newConfirm = confirmEmail.cloneNode(true);
         confirmEmail.parentNode.replaceChild(newConfirm, confirmEmail);
         newConfirm.addEventListener('click', async () => {
-            if (!currentInvoiceData) return;
+            // Protection double-clic
+            if (newConfirm.disabled) return;
+            newConfirm.disabled = true;
+            newConfirm.style.opacity = '0.6';
+            newConfirm.style.cursor = 'not-allowed';
+            const originalText = newConfirm.textContent;
+            newConfirm.textContent = '⏳ Envoi en cours...';
+
+            if (!currentInvoiceData) {
+                // Réactiver si données manquantes
+                newConfirm.disabled = false;
+                newConfirm.style.opacity = '1';
+                newConfirm.style.cursor = 'pointer';
+                newConfirm.textContent = originalText;
+                return;
+            }
             const { client } = currentInvoiceData;
             const to = client && client.email_facturation ? client.email_facturation : '';
             const subject = `Facture ${currentInvoiceData.invoiceNumber} - MTI CONSULTING`;
@@ -5630,6 +5778,12 @@ function setupEmailPreviewHandlersForConfirmSend() {
             } catch (err) {
                 console.error('Envoi via Drive failed:', err);
                 showToast('❌ Erreur lors de l\'envoi de l\'email. Vérifiez la console pour plus de détails.', 'error');
+            } finally {
+                // Réactiver le bouton après traitement
+                newConfirm.disabled = false;
+                newConfirm.style.opacity = '1';
+                newConfirm.style.cursor = 'pointer';
+                newConfirm.textContent = originalText;
             }
             const modal = document.getElementById('emailModal');
             if (modal) modal.classList.remove('show');
@@ -7027,6 +7181,29 @@ async function exportRAMToSheets(ram) {
     }
 }
 
+// Nettoyer toutes les lignes RAM dans Google Sheets
+async function clearRAMsInSheets() {
+    if (!confirm('⚠️ Attention !\n\nCette action va SUPPRIMER TOUTES les lignes RAM dans Google Sheets (historique compris).\n\nLes RAMs dans votre application locale ne seront PAS supprimés.\n\nVoulez-vous continuer ?')) {
+        return;
+    }
+    
+    try {
+        showToast('⏳ Nettoyage en cours...', 'info');
+        const result = await callBackend('clearRAMSheet');
+        
+        if (!result.success) {
+            throw new Error(result.data || 'Erreur lors du nettoyage');
+        }
+        
+        showToast('✅ Feuille RAM nettoyée avec succès', 'success');
+    } catch (error) {
+        console.error('Erreur clearRAMsInSheets:', error);
+        showToast('❌ Erreur lors du nettoyage : ' + error.message, 'error');
+    }
+}
+
+window.clearRAMsInSheets = clearRAMsInSheets;
+
 // Afficher la liste des RAMs enregistrés (table comme les factures)
 function renderRAMList() {
     const tbody = document.getElementById('ramTableBody');
@@ -7786,3 +7963,808 @@ async function exportClientsToSheets() {
         }
     }
 }
+
+// ==========================================
+// RAM SYNC AVEC GOOGLE SHEETS
+// ==========================================
+
+// Exporter tous les RAMs vers Sheets
+async function exportRAMsToSheets() {
+    if (isSyncing) {
+        alert('⏳ Une synchronisation est déjà en cours...');
+        return;
+    }
+    
+    if (rams.length === 0) {
+        alert('ℹ️ Aucun RAM à exporter');
+        return;
+    }
+    
+    const confirm = window.confirm(`Exporter ${rams.length} RAM(s) vers Google Sheets ?\n\nCela écrasera le contenu existant de la feuille RAM.`);
+    if (!confirm) return;
+    
+    isSyncing = true;
+    try {
+        const result = await callBackend('sync_rams', { sheetId: CONFIG.SHEETS_ID, rams });
+        if (!result || result.success === false) {
+            throw new Error(result?.data || 'Erreur serveur lors de l\'export');
+        }
+        
+        alert(`✅ ${result.data.count} ligne(s) exportée(s) vers Sheets`);
+        window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
+    } catch (error) {
+        console.error('exportRAMsToSheets error:', error);
+        alert(`❌ Erreur export RAMs : ${error.message || error}`);
+    } finally {
+        isSyncing = false;
+    }
+}
+
+// Importer les RAMs depuis Sheets
+async function importRAMsFromSheets() {
+    if (isSyncing) {
+        alert('⏳ Une synchronisation est déjà en cours...');
+        return;
+    }
+    
+    const confirm = window.confirm('Importer les RAMs depuis Google Sheets ?\n\nCela écrasera les RAMs locaux non sauvegardés.');
+    if (!confirm) return;
+    
+    isSyncing = true;
+    try {
+        const result = await callBackend('import_rams', { sheetId: CONFIG.SHEETS_ID });
+        if (!result || result.success === false) {
+            throw new Error(result?.data || 'Erreur serveur lors de l\'import');
+        }
+        
+        rams = result.data.rams || [];
+        saveData();
+        displayRAMList();
+        
+        alert(`✅ ${rams.length} RAM(s) importé(s) depuis Sheets`);
+    } catch (error) {
+        console.error('importRAMsFromSheets error:', error);
+        alert(`❌ Erreur import RAMs : ${error.message || error}`);
+    } finally {
+        isSyncing = false;
+    }
+}
+
+
+// ===================================================================
+// PHASE 1 - NOUVELLES FONCTIONNALITÉS (Décembre 2025)
+// ===================================================================
+
+// 1. COMPTEUR CA ANNUEL AVEC ALERTES SEUILS
+// -----------------------------------------------------------
+/**
+ * Calcule le CA annuel total pour une année donnée (factures payées uniquement)
+ * @param {number} annee - Année à analyser (ex: 2025)
+ * @returns {number} CA total en euros
+ */
+function getCAnnuel(annee = new Date().getFullYear()) {
+    return invoices
+        .filter(inv => {
+            if (!inv.date) return false;
+            const invYear = new Date(inv.date).getFullYear();
+            return invYear === annee && inv.status === 'paid';
+        })
+        .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
+}
+
+/**
+ * Calcule le CA annuel cumulé (toutes factures, même non payées)
+ * @param {number} annee - Année à analyser
+ * @returns {number} CA cumulé en euros
+ */
+function getCACumule(annee = new Date().getFullYear()) {
+    return invoices
+        .filter(inv => {
+            if (!inv.date) return false;
+            const invYear = new Date(inv.date).getFullYear();
+            return invYear === annee && inv.status !== 'cancelled';
+        })
+        .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
+}
+
+/**
+ * Calcule le CA par mois pour une année donnée
+ * @param {number} annee - Année à analyser
+ * @returns {Object} { mois: CA } (ex: { '2025-01': 7200, '2025-02': 7200, ... })
+ */
+function getCAParMois(annee = new Date().getFullYear()) {
+    const caParMois = {};
+    
+    invoices
+        .filter(inv => {
+            if (!inv.date) return false;
+            const invYear = new Date(inv.date).getFullYear();
+            return invYear === annee && inv.status !== 'cancelled';
+        })
+        .forEach(inv => {
+            const moisKey = inv.date.slice(0, 7); // Format: '2025-01'
+            caParMois[moisKey] = (caParMois[moisKey] || 0) + parseFloat(inv.total || 0);
+        });
+    
+    return caParMois;
+}
+
+/**
+ * Vérifie les seuils critiques (TVA, Micro-entreprise) et affiche des alertes
+ * @param {number} ca - CA annuel à vérifier
+ * @returns {Object} { alerte, message, niveau } où niveau = 'ok'|'warning'|'danger'
+ */
+function checkSeuils(ca = null) {
+    if (ca === null) ca = getCACumule();
+    
+    const seuilTVA = 37500;
+    const seuilTVAMajore = 39100;
+    const seuilMicro = taxSettings.caMaxBNC || 77700;
+    const seuilMicroMajore = seuilMicro * 1.1;
+    
+    // Seuil micro-entreprise (critique)
+    if (ca >= seuilMicro) {
+        if (ca >= seuilMicroMajore) {
+            return {
+                alerte: true,
+                message: `🚨 CA ${ca.toFixed(0)}€ > ${seuilMicroMajore.toFixed(0)}€ : Dépassement plafond micro-entreprise ! Passage au régime réel obligatoire.`,
+                niveau: 'danger'
+            };
+        }
+        return {
+            alerte: true,
+            message: `⚠️ CA ${ca.toFixed(0)}€ > ${seuilMicro.toFixed(0)}€ : Dépassement plafond micro-entreprise (tolérance 110% jusqu'à ${seuilMicroMajore.toFixed(0)}€)`,
+            niveau: 'warning'
+        };
+    }
+    
+    // Seuil TVA (important)
+    if (ca >= seuilTVA) {
+        if (ca >= seuilTVAMajore) {
+            return {
+                alerte: true,
+                message: `🚨 CA ${ca.toFixed(0)}€ > ${seuilTVAMajore.toFixed(0)}€ : Assujettissement TVA obligatoire dès le 1er jour du mois de dépassement !`,
+                niveau: 'danger'
+            };
+        }
+        return {
+            alerte: true,
+            message: `⚠️ CA ${ca.toFixed(0)}€ > ${seuilTVA.toFixed(0)}€ : Dépassement seuil TVA (franchise maintenue si 1ère fois, limite ${seuilTVAMajore.toFixed(0)}€)`,
+            niveau: 'warning'
+        };
+    }
+    
+    // Approche seuil TVA (anticipation)
+    if (ca >= 35000) {
+        return {
+            alerte: true,
+            message: `ℹ️ CA ${ca.toFixed(0)}€ approche du seuil TVA (${seuilTVA.toFixed(0)}€). Anticipez l'assujettissement.`,
+            niveau: 'info'
+        };
+    }
+    
+    return { alerte: false, message: '', niveau: 'ok' };
+}
+
+
+// 2. CALCULATEUR TVA
+// -----------------------------------------------------------
+/**
+ * Calcule HT → TTC avec TVA
+ * @param {number} ht - Montant hors taxes
+ * @param {number} tauxTVA - Taux de TVA (20, 10, 5.5, 2.1)
+ * @returns {Object} { ht, tva, ttc }
+ */
+function calculateTVA_HT_to_TTC(ht, tauxTVA = 20) {
+    const tva = ht * (tauxTVA / 100);
+    const ttc = ht + tva;
+    return { 
+        ht: parseFloat(ht.toFixed(2)), 
+        tva: parseFloat(tva.toFixed(2)), 
+        ttc: parseFloat(ttc.toFixed(2)) 
+    };
+}
+
+/**
+ * Calcule TTC → HT avec TVA
+ * @param {number} ttc - Montant toutes taxes comprises
+ * @param {number} tauxTVA - Taux de TVA (20, 10, 5.5, 2.1)
+ * @returns {Object} { ht, tva, ttc }
+ */
+function calculateTVA_TTC_to_HT(ttc, tauxTVA = 20) {
+    const ht = ttc / (1 + tauxTVA / 100);
+    const tva = ttc - ht;
+    return { 
+        ht: parseFloat(ht.toFixed(2)), 
+        tva: parseFloat(tva.toFixed(2)), 
+        ttc: parseFloat(ttc.toFixed(2)) 
+    };
+}
+
+/**
+ * Taux TVA français (2025)
+ */
+const tauxTVAFrance = {
+    normal: 20,        // Prestations de services, biens
+    intermediaire: 10, // Restauration, transports, hôtellerie
+    reduit: 5.5,       // Livres, alimentation, énergie
+    special: 2.1       // Médicaments remboursés, presse
+};
+
+
+// 3. FACTURES RÉCURRENTES / ABONNEMENTS
+// -----------------------------------------------------------
+/**
+ * Structure d'une facture récurrente:
+ * {
+ *   id: string,
+ *   templateInvoice: object (copie d'une facture existante),
+ *   frequency: 'monthly' | 'quarterly' | 'yearly',
+ *   nextDate: string (ISO date),
+ *   active: boolean,
+ *   createdDate: string,
+ *   lastGeneratedDate: string (date de la dernière génération)
+ * }
+ */
+
+/**
+ * Crée une facture récurrente à partir d'une facture existante
+ * @param {object} invoice - Facture modèle
+ * @param {string} frequency - Fréquence: 'monthly', 'quarterly', 'yearly'
+ * @param {string} startDate - Date de première génération (format YYYY-MM-DD) - optionnel
+ * @returns {object} Facture récurrente créée
+ */
+function createRecurringInvoice(invoice, frequency = 'monthly', startDate = null) {
+    if (!invoice) throw new Error('Facture modèle requise');
+    
+    // Utiliser la date fournie ou calculer la prochaine date automatiquement
+    const nextDate = startDate || calculateNextDate(new Date(), frequency);
+    
+    const recurring = {
+        id: 'REC-' + Date.now(),
+        templateInvoice: JSON.parse(JSON.stringify(invoice)), // Copie profonde
+        frequency: frequency,
+        nextDate: nextDate,
+        active: true,
+        createdDate: new Date().toISOString().split('T')[0],
+        lastGeneratedDate: null
+    };
+    
+    recurringInvoices.push(recurring);
+    saveToDrive();
+    
+    return recurring;
+}
+
+/**
+ * Calcule la prochaine date d'échéance selon la fréquence
+ * @param {Date} currentDate - Date de référence
+ * @param {string} frequency - Fréquence
+ * @returns {string} Prochaine date (ISO format)
+ */
+function calculateNextDate(currentDate, frequency) {
+    const date = new Date(currentDate);
+    
+    switch(frequency) {
+        case 'monthly':
+            date.setMonth(date.getMonth() + 1);
+            break;
+        case 'quarterly':
+            date.setMonth(date.getMonth() + 3);
+            break;
+        case 'yearly':
+            date.setFullYear(date.getFullYear() + 1);
+            break;
+        default:
+            date.setMonth(date.getMonth() + 1);
+    }
+    
+    return date.toISOString().split('T')[0];
+}
+
+/**
+ * Génère une facture à partir d'un modèle récurrent
+ * @param {string} recurringId - ID de la facture récurrente
+ * @returns {object} Nouvelle facture générée
+ */
+function generateFromRecurring(recurringId) {
+    const recurring = recurringInvoices.find(r => r.id === recurringId);
+    if (!recurring) throw new Error('Facture récurrente introuvable');
+    if (!recurring.active) throw new Error('Facture récurrente inactive');
+    
+    // Copier le modèle
+    const newInvoice = JSON.parse(JSON.stringify(recurring.templateInvoice));
+    
+    // Mettre à jour les champs
+    newInvoice.date = new Date().toISOString().split('T')[0];
+    newInvoice.number = getNextInvoiceNumber();
+    newInvoice.status = 'draft';
+    newInvoice.recurringSource = recurringId; // Traçabilité
+    
+    // Calculer nouvelle échéance (30 jours par défaut)
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
+    newInvoice.dueDate = dueDate.toISOString().split('T')[0];
+    
+    // Ajouter aux factures
+    invoices.push(newInvoice);
+    
+    // Mettre à jour la récurrence
+    recurring.lastGeneratedDate = newInvoice.date;
+    recurring.nextDate = calculateNextDate(new Date(), recurring.frequency);
+    
+    saveToDrive();
+    
+    return newInvoice;
+}
+
+/**
+ * Vérifie les factures récurrentes à générer (à exécuter quotidiennement)
+ * @returns {Array} Liste des factures générées
+ */
+function checkRecurringInvoices() {
+    const today = new Date().toISOString().split('T')[0];
+    const generated = [];
+    
+    recurringInvoices
+        .filter(r => r.active && r.nextDate <= today)
+        .forEach(r => {
+            try {
+                const invoice = generateFromRecurring(r.id);
+                generated.push(invoice);
+                console.log(`✅ Facture récurrente générée: ${invoice.number} (source: ${r.id})`);
+            } catch (error) {
+                console.error(`❌ Erreur génération récurrence ${r.id}:`, error);
+            }
+        });
+    
+    return generated;
+}
+
+/**
+ * Désactive une facture récurrente
+ * @param {string} recurringId - ID de la facture récurrente
+ */
+function deactivateRecurring(recurringId) {
+    const recurring = recurringInvoices.find(r => r.id === recurringId);
+    if (recurring) {
+        recurring.active = false;
+        saveToDrive();
+    }
+}
+
+/**
+ * Supprime une facture récurrente
+ * @param {string} recurringId - ID de la facture récurrente
+ */
+function deleteRecurring(recurringId) {
+    const index = recurringInvoices.findIndex(r => r.id === recurringId);
+    if (index !== -1) {
+        recurringInvoices.splice(index, 1);
+        saveToDrive();
+    }
+}
+
+
+// ===================================================================
+// UI HANDLERS - NOUVELLES FONCTIONNALITÉS PHASE 1
+// ===================================================================
+
+/**
+ * Met à jour l'affichage du compteur CA annuel dans l'onglet Suivi
+ */
+function updateCADisplay(annee = new Date().getFullYear()) {
+    const caCumule = getCACumule(annee);
+    const caPaye = getCAnnuel(annee);
+    const seuilTVA = 37500;
+    const seuilMicro = 77700;
+    
+    // Mise à jour des valeurs
+    document.getElementById('caCumule').textContent = caCumule.toFixed(2) + ' €';
+    document.getElementById('caPaye').textContent = caPaye.toFixed(2) + ' €';
+    document.getElementById('seuilTVA').textContent = ((caCumule / seuilTVA) * 100).toFixed(1) + '%';
+    document.getElementById('seuilMicro').textContent = ((caCumule / seuilMicro) * 100).toFixed(1) + '%';
+    document.getElementById('caAnnee').textContent = annee;
+    
+    // Mise à jour de la barre de progression (max = 77700)
+    const progressPercent = Math.min((caCumule / seuilMicro) * 100, 100);
+    document.getElementById('caProgressBar').style.width = progressPercent + '%';
+    
+    // Vérification des seuils et affichage alerte
+    const seuil = checkSeuils(caCumule);
+    const alertDiv = document.getElementById('caAlert');
+    
+    if (seuil.alerte) {
+        alertDiv.style.display = 'block';
+        alertDiv.textContent = seuil.message;
+        
+        // Couleurs selon niveau
+        switch(seuil.niveau) {
+            case 'danger':
+                alertDiv.style.background = 'var(--color-error-bg)';
+                alertDiv.style.borderLeft = '4px solid var(--color-error)';
+                alertDiv.style.color = 'var(--color-error)';
+                break;
+            case 'warning':
+                alertDiv.style.background = 'var(--color-warning-bg)';
+                alertDiv.style.borderLeft = '4px solid var(--color-warning)';
+                alertDiv.style.color = 'var(--color-warning)';
+                break;
+            case 'info':
+                alertDiv.style.background = 'var(--color-info-bg)';
+                alertDiv.style.borderLeft = '4px solid var(--color-primary)';
+                alertDiv.style.color = 'var(--color-primary)';
+                break;
+        }
+    } else {
+        alertDiv.style.display = 'none';
+    }
+}
+
+/**
+ * Met \u00e0 jour la liste des ann\u00e9es disponibles dans le s\u00e9lecteur CA
+ */
+function updateCAYearOptions() {
+    const yearSelect = document.getElementById('caYearSelect');
+    if (!yearSelect) return;
+    
+    // Extraire toutes les ann\u00e9es des factures
+    const years = new Set();
+    invoices.forEach(inv => {
+        if (inv.date) {
+            const year = parseInt(inv.date.split('-')[0]);
+            if (!isNaN(year)) years.add(year);
+        }
+    });
+    
+    // Ajouter l'ann\u00e9e actuelle
+    years.add(new Date().getFullYear());
+    
+    // Trier et cr\u00e9er les options
+    const sortedYears = Array.from(years).sort((a, b) => b - a); // D\u00e9croissant
+    const currentValue = yearSelect.value;
+    
+    yearSelect.innerHTML = '';
+    sortedYears.forEach(year => {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        yearSelect.appendChild(option);
+    });
+    
+    // Restaurer la s\u00e9lection pr\u00e9c\u00e9dente si elle existe toujours
+    if (sortedYears.includes(parseInt(currentValue))) {
+        yearSelect.value = currentValue;
+    } else {
+        yearSelect.value = new Date().getFullYear();
+    }
+}
+
+/**
+ * Initialise les event listeners pour le compteur CA annuel
+ */
+function initCACounterListeners() {
+    const yearSelect = document.getElementById('caYearSelect');
+    if (yearSelect) {
+        yearSelect.addEventListener('change', (e) => {
+            updateCADisplay(parseInt(e.target.value));
+        });
+    }
+    
+    // Mettre \u00e0 jour les options d'ann\u00e9es au chargement
+    updateCAYearOptions();
+}
+
+/**
+ * Initialise les event listeners pour le calculateur TVA
+ */
+function initTVACalculatorListeners() {
+    const calculateBtn = document.getElementById('calculateTvaBtn');
+    const htToTtcRadio = document.getElementById('tvaHtToTtc');
+    const ttcToHtRadio = document.getElementById('tvaTtcToHt');
+    const montantLabel = document.getElementById('tvaMontantLabel');
+    
+    // Change label selon direction
+    if (htToTtcRadio) {
+        htToTtcRadio.addEventListener('change', () => {
+            if (montantLabel) montantLabel.textContent = 'Montant HT (€)';
+        });
+    }
+    
+    if (ttcToHtRadio) {
+        ttcToHtRadio.addEventListener('change', () => {
+            if (montantLabel) montantLabel.textContent = 'Montant TTC (€)';
+        });
+    }
+    
+    // Calcul TVA
+    if (calculateBtn) {
+        calculateBtn.addEventListener('click', () => {
+            const montant = parseFloat(document.getElementById('tvaMontantInput').value) || 0;
+            const taux = parseFloat(document.getElementById('tvaTauxSelect').value) || 20;
+            const direction = document.querySelector('input[name="tvaDirection"]:checked').value;
+            
+            let result;
+            if (direction === 'ht-to-ttc') {
+                result = calculateTVA_HT_to_TTC(montant, taux);
+            } else {
+                result = calculateTVA_TTC_to_HT(montant, taux);
+            }
+            
+            // Affichage des résultats
+            document.getElementById('tvaResultHT').textContent = result.ht.toFixed(2) + ' €';
+            document.getElementById('tvaResultTVA').textContent = result.tva.toFixed(2) + ' €';
+            document.getElementById('tvaResultTTC').textContent = result.ttc.toFixed(2) + ' €';
+            
+            // Message d'impact
+            const impactMsg = direction === 'ht-to-ttc' 
+                ? `Si vous facturez actuellement ${result.ht.toFixed(2)}€ TTC (franchise TVA), vous devrez facturer ${result.ttc.toFixed(2)}€ TTC avec TVA (+${result.tva.toFixed(2)}€ pour le client) OU garder ${result.ht.toFixed(2)}€ TTC et perdre ${((result.tva / result.ttc) * 100).toFixed(1)}% de marge.`
+                : `Votre prix actuel ${result.ttc.toFixed(2)}€ TTC correspond à ${result.ht.toFixed(2)}€ HT + ${result.tva.toFixed(2)}€ TVA. Si vous gardez ce prix TTC après assujettissement, vous perdrez ${result.tva.toFixed(2)}€ (collecté pour l'État).`;
+            
+            document.getElementById('tvaImpactMessage').textContent = impactMsg;
+            document.getElementById('tvaResults').style.display = 'block';
+        });
+    }
+}
+
+/**
+ * Exécute la vérification quotidienne des factures récurrentes
+ * (À appeler au chargement de l'app)
+ */
+function autoCheckRecurringInvoices() {
+    const generated = checkRecurringInvoices();
+    
+    if (generated.length > 0) {
+        const msg = `✅ ${generated.length} facture(s) récurrente(s) générée(s) automatiquement :\n` +
+                    generated.map(inv => `• ${inv.number} - ${inv.client}`).join('\n');
+        
+        alert(msg);
+        
+        // Rafraîchir l'affichage
+        if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
+        if (typeof renderInvoiceList === 'function') renderInvoiceList();
+    }
+}
+
+/**
+ * Affiche la liste des factures récurrentes dans le tableau
+ */
+function renderRecurringList() {
+    const tbody = document.getElementById('recurringListBody');
+    if (!tbody) return;
+    
+    if (!recurringInvoices || recurringInvoices.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">
+                    Aucune facture récurrente. Créez-en une à partir d'une facture existante.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = recurringInvoices.map(rec => {
+        const template = rec.templateInvoice;
+        const frequencyLabels = {
+            'monthly': 'Mensuelle',
+            'quarterly': 'Trimestrielle',
+            'yearly': 'Annuelle'
+        };
+        
+        return `
+            <tr style="background: ${rec.active ? 'inherit' : 'var(--color-gray-50)'};">
+                <td style="font-family: monospace; font-size: var(--font-size-sm);">${rec.id}</td>
+                <td><strong>${template.client || 'N/A'}</strong></td>
+                <td style="text-align: right; font-weight: var(--font-weight-semibold);">${parseFloat(template.total || 0).toFixed(2)} €</td>
+                <td>${frequencyLabels[rec.frequency] || rec.frequency}</td>
+                <td>${new Date(rec.nextDate).toLocaleDateString('fr-FR')}</td>
+                <td>${rec.lastGeneratedDate ? new Date(rec.lastGeneratedDate).toLocaleDateString('fr-FR') : '-'}</td>
+                <td>
+                    <span style="padding: 4px 8px; border-radius: var(--border-radius-sm); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); background: ${rec.active ? 'var(--color-success-bg)' : 'var(--color-gray-100)'}; color: ${rec.active ? 'var(--color-success)' : 'var(--color-text-secondary)'};">
+                        ${rec.active ? '✓ Active' : '✗ Inactive'}
+                    </span>
+                </td>
+                <td>
+                    <div style="display: flex; gap: var(--space-8);">
+                        ${rec.active ? `
+                            <button class="btn btn-secondary" style="font-size: var(--font-size-xs); padding: 4px 8px;" onclick="generateRecurringNow('${rec.id}')">
+                                ▶️ Générer
+                            </button>
+                            <button class="btn btn-secondary" style="font-size: var(--font-size-xs); padding: 4px 8px;" onclick="toggleRecurring('${rec.id}')">
+                                ⏸ Pause
+                            </button>
+                        ` : `
+                            <button class="btn btn-primary" style="font-size: var(--font-size-xs); padding: 4px 8px;" onclick="toggleRecurring('${rec.id}')">
+                                ▶️ Activer
+                            </button>
+                        `}
+                        <button class="btn btn-danger" style="font-size: var(--font-size-xs); padding: 4px 8px;" onclick="confirmDeleteRecurring('${rec.id}')">
+                            🗑️
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * Génère immédiatement une facture récurrente (action manuelle)
+ */
+function generateRecurringNow(recurringId) {
+    try {
+        const invoice = generateFromRecurring(recurringId);
+        alert(`✅ Facture générée : ${invoice.number}\nClient : ${invoice.client}\nMontant : ${invoice.total}€`);
+        
+        // Rafraîchir les affichages
+        if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
+        if (typeof renderInvoiceList === 'function') renderInvoiceList();
+        renderRecurringList();
+        updateCADisplay();
+    } catch (error) {
+        alert(`❌ Erreur : ${error.message}`);
+    }
+}
+
+/**
+ * Active/désactive une facture récurrente
+ */
+function toggleRecurring(recurringId) {
+    const recurring = recurringInvoices.find(r => r.id === recurringId);
+    if (recurring) {
+        recurring.active = !recurring.active;
+        saveToDrive();
+        renderRecurringList();
+        
+        const status = recurring.active ? 'activée' : 'désactivée';
+        alert(`Facture récurrente ${status}`);
+    }
+}
+
+/**
+ * Confirmation avant suppression d'une récurrence
+ */
+function confirmDeleteRecurring(recurringId) {
+    const recurring = recurringInvoices.find(r => r.id === recurringId);
+    if (!recurring) return;
+    
+    const confirm = window.confirm(
+        `Supprimer la facture récurrente ?\n\n` +
+        `Client : ${recurring.templateInvoice.client}\n` +
+        `Fréquence : ${recurring.frequency}\n` +
+        `Montant : ${recurring.templateInvoice.total}€\n\n` +
+        `Cette action est irréversible.`
+    );
+    
+    if (confirm) {
+        deleteRecurring(recurringId);
+        renderRecurringList();
+        alert('✅ Facture récurrente supprimée');
+    }
+}
+
+/**
+ * Initialise les listeners pour la gestion des factures récurrentes
+ */
+function initRecurringInvoicesListeners() {
+    // Bouton "Créer récurrence"
+    const createBtn = document.getElementById('createRecurringBtn');
+    if (createBtn) {
+        createBtn.addEventListener('click', () => {
+            // Ouvrir la modal et remplir le select avec les factures existantes
+            const modal = document.getElementById('createRecurringModal');
+            const select = document.getElementById('recurringTemplateSelect');
+            const dateInput = document.getElementById('recurringStartDate');
+            
+            if (select) {
+                select.innerHTML = '<option value="">-- Choisir une facture existante --</option>';
+                invoices.forEach((inv, idx) => {
+                    select.innerHTML += `<option value="${idx}">${inv.number || 'N/A'} - ${inv.client} - ${inv.total}€</option>`;
+                });
+            }
+            
+            // Initialiser la date à demain par défaut
+            if (dateInput) {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                dateInput.value = tomorrow.toISOString().split('T')[0];
+                dateInput.min = new Date().toISOString().split('T')[0]; // Empêcher les dates passées
+            }
+            
+            if (modal) modal.style.display = 'flex';
+        });
+    }
+    
+    // Fermer modal
+    const closeBtn = document.getElementById('closeRecurringModal');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            const modal = document.getElementById('createRecurringModal');
+            if (modal) modal.style.display = 'none';
+        });
+    }
+    
+    // Annuler
+    const cancelBtn = document.getElementById('cancelRecurringBtn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            const modal = document.getElementById('createRecurringModal');
+            if (modal) modal.style.display = 'none';
+        });
+    }
+    
+    // Soumettre le formulaire
+    const form = document.getElementById('recurringForm');
+    if (form) {
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const templateIdx = parseInt(document.getElementById('recurringTemplateSelect').value);
+            const frequency = document.querySelector('input[name="recurringFrequency"]:checked').value;
+            const startDate = document.getElementById('recurringStartDate').value;
+            
+            if (isNaN(templateIdx) || templateIdx < 0 || templateIdx >= invoices.length) {
+                alert('❌ Veuillez sélectionner une facture modèle');
+                return;
+            }
+            
+            if (!startDate) {
+                alert('❌ Veuillez sélectionner une date de première génération');
+                return;
+            }
+            
+            // Vérifier que la date n'est pas dans le passé
+            const selectedDate = new Date(startDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (selectedDate < today) {
+                alert('❌ La date de génération ne peut pas être dans le passé');
+                return;
+            }
+            
+            try {
+                const recurring = createRecurringInvoice(invoices[templateIdx], frequency, startDate);
+                
+                const freqText = { monthly: 'Mensuelle', quarterly: 'Trimestrielle', yearly: 'Annuelle' }[frequency];
+                alert(`✅ Facture récurrente créée !\n\nClient : ${recurring.templateInvoice.client}\nFréquence : ${freqText}\nProchaine génération : ${new Date(recurring.nextDate).toLocaleDateString('fr-FR')}\n\nℹ️ La facture sera générée automatiquement en statut "Brouillon".`);
+                
+                // Fermer modal et rafraîchir
+                const modal = document.getElementById('createRecurringModal');
+                if (modal) modal.style.display = 'none';
+                
+                renderRecurringList();
+                updateCADisplay(); // Rafraîchir le compteur CA
+            } catch (error) {
+                alert(`❌ Erreur : ${error.message}`);
+            }
+        });
+    }
+}
+
+// Initialiser les listeners au chargement du DOM
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        initCACounterListeners();
+        initTVACalculatorListeners();
+        initRecurringInvoicesListeners();
+        autoCheckRecurringInvoices();
+        
+        // Mise à jour initiale du CA
+        setTimeout(() => {
+            updateCADisplay();
+            renderRecurringList();
+        }, 1000);
+    });
+} else {
+    // DOM déjà chargé
+    initCACounterListeners();
+    initTVACalculatorListeners();
+    initRecurringInvoicesListeners();
+    autoCheckRecurringInvoices();
+    setTimeout(() => {
+        updateCADisplay();
+        renderRecurringList();
+    }, 1000);
+}
+
