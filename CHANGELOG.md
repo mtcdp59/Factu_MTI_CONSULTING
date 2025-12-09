@@ -5,6 +5,90 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.3] - 2025-12-09
+
+### 🐛 Correctifs Critiques RAM & API
+
+#### 1. API Data.gouv CFE - Champ `code_postal` Supprimé
+**Problème** : `400 Bad Request - Unknown field: code_postal` (décembre 2025)  
+**Cause** : Data.gouv a retiré le champ `code_postal` de l'API Fiscalité Locale  
+**Solution** : 
+- Suppression `code_postal` des clauses `select` et `group_by`
+- Désactivation recherche par code postal
+- Conservation recherche par nom commune (champ `libcom`)
+
+#### 2. Édition RAM Bloquée par Validation
+**Problème** : Message `⚠️ Un RAM existe déjà` lors modification RAM existant  
+**Cause** : Validation sans distinction mode création/édition  
+**Solution** :
+- Détection `window.editingRAMIndex` dans `generateRAMFromModal()` et `saveRAMFromForm()`
+- Exclusion RAM en cours d'édition de la validation duplicate
+- Conservation demande confirmation si remplacement autre RAM
+
+#### 3. Date Création "Non renseignée"
+**Problème** : `createdAt` disparaissait après modification RAM  
+**Cause** : Mise à jour objet RAM écrasait `createdAt`  
+**Solution** :
+- Préservation `createdAt` lors édition (`if (!ram.createdAt) ram.createdAt = new Date().toISOString()`)
+- Ajout `updatedAt` pour traçabilité modifications
+- Fallback affichage : `ram.createdAt && !isNaN(new Date(ram.createdAt)) ? ... : 'Non renseignée'`
+
+#### 4. Fonctions RAM Non Exposées
+**Problème** : Boutons "📥 Importer depuis Sheets" et "📤 Exporter vers Sheets" ne fonctionnaient pas  
+**Cause** : Fonctions `exportRAMsToSheets()` et `importRAMsFromSheets()` non exposées à `window`  
+**Solution** : Ajout `window.exportRAMsToSheets` et `window.importRAMsFromSheets`
+
+#### 5. Async/Await Incohérences
+**Problème** : 
+- `deleteRAM()` utilisait `await syncToDrive()` sans être déclarée `async`
+- `generateRAMFromModal()` utilisait `saveToDrive()` au lieu de `await syncToDrive()`
+**Solution** :
+- `async function deleteRAM(index)` avec `await syncToDrive()`
+- `generateRAMFromModal()` utilise `await syncToDrive()` au lieu de `saveToDrive()`
+- Cohérence globale: toujours `await syncToDrive()` pour sauvegardes RAM
+
+#### 6. PDF RAM - Optimisation Mise en Page (Visas sur Page 1)
+**Problème** : Visas systématiquement en page 2 même sans remarques  
+**Cause** : Condition saut de page forcé (`if sigY + 30 > 270`) déclenchée incorrectement  
+**Analyse** :
+- `autoTable` gère automatiquement les sauts de page (31 jours sur page 1)
+- `finalY` représente position sur dernière page du tableau, pas position absolue
+- La condition forçait un `addPage()` inutile même avec espace disponible
+
+**Solution Complète (3 phases)** :
+1. **En-tête ultra-compact** : 
+   - Titre 12pt (au lieu de 14pt), Y=42mm (au lieu de 48mm) → gain 6mm
+   - Mois 10pt (au lieu de 11pt), Y=49mm (au lieu de 56mm) → gain 7mm
+   - Client 8pt (au lieu de 9pt), Y=55mm (au lieu de 64mm) → gain 9mm
+   - Facture Y=60mm (au lieu de 69mm) → gain 9mm
+2. **Tableau repositionné** : `startY: 65/60mm` (au lieu de 75/70mm) → gain 10mm
+3. **Tableau adaptatif** : Si remarques → `fontSize: 6.5`, `cellPadding: 1.2` (au lieu de 7/1.5)
+4. **Suppression saut de page forcé** : `autoTable` gère les débordements, visas suivent naturellement
+
+**Résultat** :
+- RAM 31 jours sans remarques : ~228mm (< 277mm limite) → **1 page avec visas** ✅
+- RAM 31 jours + remarques (3 lignes) : ~236mm → **1 page avec visas** ✅
+- RAM débordant (remarques longues) : Visas sur dernière page du tableau (naturel)
+
+### 🔧 Modifié
+- **Validation RAM** : Confirmation utilisateur au lieu de blocage strict
+- **Tracking modifications** : Ajout champ `updatedAt` sur RAMs édités
+- **Backend** : 1,364 lignes (confirmé production-ready)
+
+### 📚 Documentation
+- **Ajout section RAM Workflow** dans `.github/copilot-instructions.md`
+- **Patterns async** : `await syncToDrive()` obligatoire pour persistance
+- **Edit Mode** : `window.editingRAMIndex` pour RAMs (shared modal + form)
+
+### ✅ Tests à Valider (Localhost)
+- ✅ Créer RAM depuis liste factures
+- ✅ Modifier RAM existant (bouton "✏️ Modifier")
+- ✅ Vérifier dates affichées correctement
+- ✅ Supprimer RAM (sync Drive)
+- ✅ Importer/Exporter RAMs via Sheets
+
+---
+
 ## [2.1.2] - 2025-12-09
 
 ### 🐛 Correctifs Critiques

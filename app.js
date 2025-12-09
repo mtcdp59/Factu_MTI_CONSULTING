@@ -6601,7 +6601,12 @@ async function generateRAMForInvoice(index) {
 window.generateRAMForInvoice = generateRAMForInvoice;
 
 // Afficher le modal de saisie du RAM
-function showRAMModal(invoice) {
+function showRAMModal(invoice, ramIndex = null) {
+    // Stocker l'index si on édite un RAM existant
+    if (ramIndex !== null) {
+        window.editingRAMIndex = ramIndex;
+    }
+    
     const invoiceDate = new Date(invoice.date);
     const month = invoiceDate.getMonth();
     const year = invoiceDate.getFullYear();
@@ -6771,12 +6776,24 @@ async function generateRAMFromModal() {
     const month = parseInt(document.getElementById('ramMonth').value);
     const year = parseInt(document.getElementById('ramYear').value);
     
-    // Vérifier si un RAM existe déjà pour ce client et ce mois
-    const existingRAM = rams.find(r => r.client === client && r.month === month && r.year === year);
-    if (existingRAM) {
+    // Vérifier si un RAM existe déjà pour CE CLIENT et ce mois/année
+    const existingRAMIndex = rams.findIndex(r => r.client === client && r.month === month && r.year === year);
+    
+    // Si on est en mode édition (window.editingRAMIndex défini), vérifier que ce n'est pas le même RAM
+    const isEditingThisRAM = (window.editingRAMIndex >= 0 && existingRAMIndex === window.editingRAMIndex);
+    
+    if (existingRAMIndex !== -1 && !isEditingThisRAM) {
+        // Un autre RAM existe déjà pour ce client/mois/année
         const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
-        showToast(`⚠️ Un RAM existe déjà pour ${client} - ${monthName} ${year}`, 'error');
-        return;
+        if (!confirm(`⚠️ Un RAM existe déjà pour "${client}" - ${monthName} ${year}.\n\nVoulez-vous le remplacer ?`)) {
+            closeRAMModal();
+            return;
+        }
+        // Supprimer l'ancien pour le remplacer
+        rams.splice(existingRAMIndex, 1);
+    } else if (isEditingThisRAM) {
+        // On édite le RAM existant, le supprimer pour le remplacer
+        rams.splice(existingRAMIndex, 1);
     }
     
     // Récupérer toutes les lignes d'activité du calendrier
@@ -6820,9 +6837,28 @@ async function generateRAMFromModal() {
         invoiceNumber: '' // À lier avec une facture si besoin
     };
     
-    // Afficher l'aperçu
+    // Enregistrer directement le RAM (sans étape aperçu)
+    rams.push(ram);
+    localStorage.setItem('mti_rams', JSON.stringify(rams));
+    await syncToDrive();
+
+    // Réinitialiser le mode édition
+    window.editingRAMIndex = -1;
+
     closeRAMModal();
-    showRAMPreview(ram);
+
+    // Basculer vers l'onglet RAM et afficher la liste
+    document.querySelector('[data-tab="ram"]')?.click();
+    renderRAMList();    showToast(`✅ RAM créé avec succès pour ${client} - ${monthName} ${year}`, 'success');
+    
+    // Générer automatiquement le PDF
+    try {
+        await generateRAMPDF(ram);
+        showToast('📄 PDF généré avec succès', 'success');
+    } catch (error) {
+        console.error('Erreur génération PDF:', error);
+        showToast('⚠️ RAM enregistré mais erreur génération PDF', 'warning');
+    }
 }
 
 window.generateRAMFromModal = generateRAMFromModal;
@@ -7234,7 +7270,7 @@ function renderRAMList() {
             <td>${ram.monthName} ${ram.year}</td>
             <td>${totalHours.toFixed(2)}h</td>
             <td>${ram.invoiceNumber || '-'}</td>
-            <td>${new Date(ram.createdAt).toLocaleDateString('fr-FR')}</td>
+            <td>${ram.createdAt && !isNaN(new Date(ram.createdAt)) ? new Date(ram.createdAt).toLocaleDateString('fr-FR') : 'Non renseignée'}</td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editRAMInForm(${index})" title="Modifier">✏️ Modifier</button>
                 <button class="btn btn-sm btn-secondary" onclick="deleteRAM(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
@@ -7513,13 +7549,14 @@ async function saveRAMFromForm() {
     const year = parseInt(yearInput.value);
     
     // Vérifier si un RAM existe déjà pour ce client et ce mois (sauf en mode édition)
-    if (!isEditMode) {
-        const existingRAM = rams.find(r => r.client === client && r.month === month && r.year === year);
-        if (existingRAM) {
-            const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
-            showToast(`⚠️ Un RAM existe déjà pour ${client} - ${monthName} ${year}`, 'error');
-            return;
-        }
+    const existingRAMIndex = rams.findIndex(r => r.client === client && r.month === month && r.year === year);
+    const isEditingThisRAM = (window.editingRAMIndex >= 0 && existingRAMIndex === window.editingRAMIndex);
+    
+    if (existingRAMIndex !== -1 && !isEditingThisRAM) {
+        // Un autre RAM existe déjà
+        const monthName = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][month];
+        showToast(`⚠️ Un RAM existe déjà pour ${client} - ${monthName} ${year}`, 'error');
+        return;
     }
     const invoiceNumber = invoiceInput ? invoiceInput.value.trim() : '';
     const remarks = remarksInput ? remarksInput.value.trim() : '';
@@ -7554,7 +7591,7 @@ async function saveRAMFromForm() {
         
         // Mode édition ou création
         if (window.editingRAMIndex >= 0) {
-            // Mise à jour
+            // Mise à jour (préserver id et createdAt)
             const ram = rams[window.editingRAMIndex];
             ram.client = client;
             ram.month = month;
@@ -7563,6 +7600,9 @@ async function saveRAMFromForm() {
             ram.activities = activities;
             ram.remarks = remarks;
             ram.invoiceNumber = invoiceNumber;
+            // Préserver createdAt et id, ajouter updatedAt
+            if (!ram.createdAt) ram.createdAt = new Date().toISOString();
+            ram.updatedAt = new Date().toISOString();
         } else {
             // Création
             const ram = {
@@ -7605,12 +7645,12 @@ async function saveRAMFromForm() {
 window.saveRAMFromForm = saveRAMFromForm;
 
 // Supprimer un RAM
-function deleteRAM(index) {
+async function deleteRAM(index) {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce rapport d\'activité ?')) return;
     
     rams.splice(index, 1);
     localStorage.setItem('mti_rams', JSON.stringify(rams));
-    syncToDrive();
+    await syncToDrive();
     renderRAMList();
     showToast('✅ RAM supprimé', 'success');
 }
@@ -7754,20 +7794,20 @@ async function generateRAMPDF(ram) {
     doc.text(`${companyInfo.postalCode} ${companyInfo.city}`, 45, 29);
     doc.text(`SIRET : ${companyInfo.siret}`, 45, 33);
     
-    // Titre (centré et plus compact, couleur noire comme factures)
-    doc.setFontSize(14);
+    // Titre (centré et ultra-compact pour garder visas page 1)
+    doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text('RAPPORT D\'ACTIVITÉ MENSUELLE', 105, 48, { align: 'center' });
+    doc.text('RAPPORT D\'ACTIVITÉ MENSUELLE', 105, 42, { align: 'center' });
     
-    // Mois et client (plus compact)
-    doc.setFontSize(11);
-    doc.text(`${monthName} ${year}`, 105, 56, { align: 'center' });
-    doc.setFontSize(9);
+    // Mois et client (ultra-compact, espacement réduit)
+    doc.setFontSize(10);
+    doc.text(`${monthName} ${year}`, 105, 49, { align: 'center' });
+    doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.text(`Client : ${client}`, 105, 64, { align: 'center' });
+    doc.text(`Client : ${client}`, 105, 55, { align: 'center' });
     if (invoiceNumber) {
-        doc.text(`Facture : ${invoiceNumber}`, 105, 69, { align: 'center' });
+        doc.text(`Facture : ${invoiceNumber}`, 105, 60, { align: 'center' });
     }
     
     // Tableau des activités (optimisé pour A4)
@@ -7792,15 +7832,21 @@ async function generateRAMPDF(ram) {
             });
         });
         
+        // Ajuster taille tableau selon présence remarques (pour tout tenir sur 1 page)
+        const hasRemarks = remarks && remarks.trim().length > 0;
+        const tableFontSize = hasRemarks ? 6.5 : 7;
+        const tableCellPadding = hasRemarks ? 1.2 : 1.5;
+        const tableHeaderFontSize = hasRemarks ? 7.5 : 8;
+        
         doc.autoTable({
-            startY: invoiceNumber ? 75 : 70,
+            startY: invoiceNumber ? 65 : 60,
             head: [['Jour', 'Date', 'Heures', 'Commentaires']],
             body: tableData.map(row => [row.day, row.date, row.hours, row.comment]),
             foot: [['', 'TOTAL', monthTotal.toFixed(1) + 'h', '']],
             theme: 'grid',
             styles: { 
-                fontSize: 7,
-                cellPadding: 1.5,
+                fontSize: tableFontSize,
+                cellPadding: tableCellPadding,
                 lineColor: [200, 200, 200],
                 lineWidth: 0.1,
                 overflow: 'linebreak',
@@ -7810,14 +7856,14 @@ async function generateRAMPDF(ram) {
                 fillColor: [33, 128, 141],
                 textColor: 255,
                 fontStyle: 'bold',
-                fontSize: 8,
+                fontSize: tableHeaderFontSize,
                 halign: 'center'
             },
             footStyles: {
                 fillColor: [240, 240, 240],
                 textColor: 0,
                 fontStyle: 'bold',
-                fontSize: 8
+                fontSize: tableHeaderFontSize
             },
             columnStyles: {
                 0: { cellWidth: 22, halign: 'left' },
@@ -7842,6 +7888,7 @@ async function generateRAMPDF(ram) {
     const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 5 : 220;
     
     // Remarques (compactes)
+    let remarksHeight = 0;
     if (remarks) {
         doc.setFontSize(8);
         doc.setFont(undefined, 'bold');
@@ -7850,12 +7897,22 @@ async function generateRAMPDF(ram) {
         doc.setFontSize(7);
         const remarksLines = doc.splitTextToSize(remarks, 175);
         doc.text(remarksLines, 15, finalY + 4);
-        const remarksHeight = Math.min(remarksLines.length * 3, 15);
-        doc.rect(15, finalY - 2, 180, remarksHeight + 6);
+        // Hauteur réelle basée sur le nombre de lignes (3mm par ligne + marges)
+        remarksHeight = remarksLines.length * 3 + 6;
+        doc.rect(15, finalY - 2, 180, remarksHeight);
     }
     
     // Signatures (en bas de page, plus compact)
-    const sigY = remarks ? finalY + 20 : finalY + 5;
+    // Position adaptée à la hauteur réelle des remarques
+    let sigY = remarks ? finalY + remarksHeight + 5 : finalY + 5;
+    
+    // SUPPRESSION DU SAUT DE PAGE FORCÉ
+    // jsPDF autoTable gère automatiquement les sauts de page du tableau
+    // finalY représente la position sur la dernière page du tableau
+    // Les visas doivent simplement continuer sur cette même page
+    // Pas besoin de condition : si le tableau tient sur 1 page, les visas aussi
+    // Si le tableau déborde sur page 2, les visas suivent naturellement
+    
     doc.setFontSize(8);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(0, 0, 0);
@@ -8015,8 +8072,9 @@ async function importRAMsFromSheets() {
         }
         
         rams = result.data.rams || [];
-        saveData();
-        displayRAMList();
+        localStorage.setItem('mti_rams', JSON.stringify(rams));
+        saveToDrive();
+        renderRAMList();
         
         alert(`✅ ${rams.length} RAM(s) importé(s) depuis Sheets`);
     } catch (error) {
@@ -8027,6 +8085,8 @@ async function importRAMsFromSheets() {
     }
 }
 
+window.exportRAMsToSheets = exportRAMsToSheets;
+window.importRAMsFromSheets = importRAMsFromSheets;
 
 // ===================================================================
 // PHASE 1 - NOUVELLES FONCTIONNALITÉS (Décembre 2025)
