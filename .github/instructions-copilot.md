@@ -41,7 +41,7 @@ Application web de gestion freelance pour MTI CONSULTING. Construite en JavaScri
 
 ## Calculateur Fiscal (Onglet Calculs) - Taux Officiels 2025
 **Sources légales vérifiées :**
-- **URSSAF BNC** : 11,6% (ACRE année 1) / 24,6% (standard 2025) - Décret n°2024-484 du 30/05/2024
+- **URSSAF BNC** : 12,3% (ACRE année 1) / 24,6% (standard 2025) - Décret n°2024-484 du 30/05/2024
 - **CFP (Formation Pro)** : 0,2% obligatoire - Code du travail L6331-48
 - **Versement Libératoire** : 2,2% (BNC) - Conditions : RFR ≤ 28,797€/part (2026), CA ≤ 77,700€
 - **IRPP Progressif** : Barème 2025 (0% / 11% / 30% / 41% / 45%) - service-public.gouv.fr

@@ -3,11 +3,12 @@
 ```
 Factu_MTI_CONSULTING/
 │
-├── 📄 index.html                   # Application principale (UI complète)
-├── 📄 app.js                       # Logique métier (~6600 lignes)
+├── 📄 index.html                   # Application principale (UI complète - ~1984 lignes)
+├── 📄 app.js                       # Logique métier (~8828 lignes)
 ├── 📄 README.md                    # Documentation utilisateur
 ├── 📄 STRUCTURE.md                 # Ce fichier
 ├── 📄 CHANGELOG.md                 # Historique des versions
+├── 📄 TAUX_OFFICIELS_2025.md       # Taux fiscaux officiels 2025
 ├── 📄 .gitignore                   # Fichiers à ignorer par Git
 │
 ├── 📁 assets/                      # Ressources statiques
@@ -32,14 +33,14 @@ Factu_MTI_CONSULTING/
 │   └── CORS_URGENCE.md            # Solutions CORS (historique)
 │
 ├── 📁 backend/                     # Code backend
-│   └── AppScript.js               # Google Apps Script (~1080 lignes, v42 style)
+│   └── AppScript.js               # Google Apps Script (~1364 lignes, v42 style)
 │
 ├── 📁 scripts/                     # Scripts utilitaires
 │   ├── start-server.bat           # Lancement serveur (Windows)
 │   └── start-server.ps1           # Lancement serveur (PowerShell)
 │
 └── 📁 .github/                     # Configuration GitHub
-    └── copilot-instructions.md    # Conventions projet (AI agents)
+    └── instructions-copilot.md    # Conventions projet (AI agents - français)
 ```
 
 ## 📝 Description des dossiers
@@ -99,7 +100,7 @@ app.js
 README.md
   ├─> docs/BAREME_IRPP.md
   ├─> docs/FICHE_TECHNIQUE.md
-  └─> .github/copilot-instructions.md
+  └─> .github/instructions-copilot.md
 
 scripts/start-server.*
   └─> index.html (lance serveur HTTP)
@@ -108,10 +109,10 @@ scripts/start-server.*
 ## 📊 Statistiques
 
 - **Fichiers principaux** : 2 (index.html + app.js)
-- **Lignes de code** : ~8100 (6600 JS + 1500 HTML/CSS)
-- **Backend** : 1 fichier Google Apps Script (~1080 lignes, v42 style)
-- **Assets** : 8 fichiers (1 logo + 7 icons)
-- **Documentation** : 7 fichiers markdown
+- **Lignes de code** : ~10,812 (8828 JS + 1984 HTML/CSS)
+- **Backend** : 1 fichier Google Apps Script (~1364 lignes, v42 style)
+- **Assets** : 8+ fichiers (1 logo + 7+ icons)
+- **Documentation** : 12+ fichiers markdown
 - **Architecture** : Frontend-only (vanilla JS) + Google Apps Script backend
 - **Déploiement** : GitHub Pages (production), localhost (dev)
 
@@ -129,21 +130,23 @@ scripts/start-server.*
 - `displayInvoices()`, `filterInvoices()` : Liste et recherche
 - `getCurrentInvoiceForPreview()` : Prévisualisation facture
 
-### RAM (Rapports d'Activité Mensuelle) - v2.1
-- `generateRAMPDF(ram)` : Génération PDF A4 format professionnel
+### RAM (Rapports d'Activité Mensuelle) - v2.1.3
+- `generateRAMPDF(ram)` : Génération PDF A4 format professionnel optimisé (visas page 1)
 - `saveRAMFromForm()` : Sauvegarde RAM depuis formulaire (onglet RAM)
 - `generateRAMFromModal()` : Création RAM depuis modal (onglet Factures)
 - `sendRAMEmail(ramId)` : Envoi RAM seul par email
 - `sendInvoiceWithRAM(invoiceIndex)` : Envoi combiné facture + RAM
 - `exportRAMToSheets(ram)` : Export automatique vers Google Sheets
+- `exportRAMsToSheets()`, `importRAMsFromSheets()` : Sync batch RAMs (exposés à window)
 - `showRAMPreview(ram)` : Prévisualisation RAM
 - `populateRAMInvoiceSelect()` : Dropdown factures intelligent (filtré par client et période)
 - `setupRAMFormListeners()` : Auto-update dropdown lors changement client/mois/année
-- `editRAM(ramId)`, `deleteRAM(ramId)` : CRUD RAMs
+- `editRAM(ramId)`, `deleteRAM(ramId)` : CRUD RAMs (async avec syncToDrive)
 - `displayRAMs()` : Affichage liste RAMs avec boutons actions
 - `fetchImageAsDataUri(url)` : Helper chargement images sans CORS
-- **Structure RAM** : `{ id, client, month, year, monthName, activities[], remarks, invoiceNumber, createdAt }`
-- **Duplicate Prevention** : Validation client+mois+année avant création
+- **Structure RAM** : `{ id, client, month, year, monthName, activities[], remarks, invoiceNumber, createdAt, updatedAt }`
+- **Duplicate Prevention** : Validation client+mois+année avant création (mode édition via window.editingRAMIndex)
+- **PDF Optimisé** : En-tête compact (12/10/8pt), tableau adaptatif, visas sur page 1 (~236mm < 277mm)
 - **Triple-layer Storage** : localStorage + Google Drive + Google Sheets
 
 ### Calculs Fiscaux
@@ -177,5 +180,5 @@ scripts/start-server.*
 
 ---
 
-**Dernière mise à jour** : Décembre 2025  
-**Version** : 2.1
+**Dernière mise à jour** : 10 Décembre 2025  
+**Version** : 2.1.3

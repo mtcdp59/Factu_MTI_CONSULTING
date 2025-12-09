@@ -2,7 +2,7 @@
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.1.2-blue)
+![Version](https://img.shields.io/badge/version-2.1.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
 
@@ -32,7 +32,7 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 - ✅ **Validation stricte** : Empêche les factures vides
 
 ### 📊 Calculateur de Charges et Impôts (Taux Officiels 2025)
-- ✅ **Taux URSSAF vérifiés** : 11,6% (ACRE) / 24,6% (Standard 2025) - Décret n°2024-484
+- ✅ **Taux URSSAF vérifiés** : 12,3% (ACRE) / 24,6% (Standard 2025) - Décret n°2024-484
 - ✅ **CFP obligatoire** : 0,2% (Code du travail L6331-48)
 - ✅ **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
 - ✅ **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
@@ -71,11 +71,13 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 ### 📄 Rapports d'Activité Mensuelle (RAM)
 - ✅ **Génération calendrier 30 jours** : Interface complète mois/année
 - ✅ **Saisie détaillée** : Heures, commentaires, remarques par jour
-- ✅ **PDF format professionnel** : Format A4 portrait identique aux factures
+- ✅ **PDF format professionnel optimisé** : Format A4 portrait identique aux factures
   - Logo MTI CONSULTING 35×18mm
   - Couleurs corporate #21808D (bleu MTI)
   - Weekends grisés automatiquement
   - Tableau optimisé 4 colonnes (Jour/Date/Heures/Commentaires)
+  - **Mise en page optimisée** : RAM 31 jours + remarques courtes tient sur 1 page avec visas
+  - Tableau adaptatif (taille réduite si remarques présentes)
   - Signature PandaDoc intégrée
 - ✅ **Envoi email** : RAM seul ou combiné facture + RAM
 - ✅ **Export Google Sheets** : Synchronisation automatique vers onglet RAM

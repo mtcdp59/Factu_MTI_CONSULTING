@@ -1,5 +1,5 @@
 // MTI CONSULTING - Application de facturation
-// Version v2.0 - Google Drive Storage + Gmail API + Calendar API + FullCalendar
+// Version 2.1.3 - Google Drive Storage + Gmail API + Calendar API + FullCalendar + RAMs
 
 console.log('✅ app.js chargé - début du script');
 

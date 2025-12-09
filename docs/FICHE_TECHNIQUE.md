@@ -2,8 +2,8 @@
 
 **Application de gestion freelance (BNC) - Single Page Application**
 
-**Version** : 2.1  
-**Date** : Décembre 2025  
+**Version** : 2.1.3  
+**Date** : 10 Décembre 2025  
 **Langage** : JavaScript (ES6+), HTML5, CSS3  
 **Statut** : Production
 
@@ -26,16 +26,16 @@ Application web **sans framework**, **sans build**, avec un seul fichier HTML co
 ```
 Factu_MTI_CONSULTING/
 │
-├── index.html                      # UI complète (1484 lignes)
+├── index.html                      # UI complète (~1984 lignes)
 │   ├── <head>                      # Meta, favicon, CSS inline
 │   ├── <style>                     # Tous les styles (lignes 7-680)
 │   ├── <body>                      # Structure HTML
-│   │   ├── Navigation (tabs)      # Clients, Factures, Tâches, Calculs, Agenda, Paramètres
-│   │   ├── Modals                 # Preview facture, confirmation, edit
+│   │   ├── Navigation (tabs)      # Clients, Factures, Tâches, RAMs, Calculs, Agenda, Paramètres
+│   │   ├── Modals                 # Preview facture, confirmation, edit, RAM
 │   │   └── Scripts externes       # CDN libraries
 │   └── <script src="app.js">      # Logique métier
 │
-├── app.js                          # Logique complète (~7800 lignes)
+├── app.js                          # Logique complète (~8828 lignes)
 │   ├── CONFIG (lignes 4-14)       # Backend URL, OAuth2 credentials (hardcodés v42 style)
 │   ├── Data structures (267-280)  # clients[], invoices[], tasks[], rams[] (vides par défaut)
 │   ├── Company info (361-371)     # companyInfo avec toutes les valeurs par défaut (SIRET, adresse, IBAN, BIC)
@@ -48,17 +48,24 @@ Factu_MTI_CONSULTING/
 │   └── Init sequence (4700-4850)  # DOMContentLoaded, data loading
 │
 ├── backend/
-│   ├── AppScript.js                # Google Apps Script backend (1092 lignes)
+│   ├── AppScript.js                # Google Apps Script backend (~1364 lignes)
 │   └── appsscript.json             # Manifest OAuth scopes + advanced services
 │
-├── MTI_CONSULTING.png              # Logo (180×90px)
-├── favicon.*                       # Favicons multi-formats
-├── site.webmanifest                # PWA manifest
+├── assets/
+│   ├── images/
+│   │   └── MTI_CONSULTING.png      # Logo (180×90px)
+│   └── icons/                      # Favicons multi-formats + site.webmanifest
+│
 ├── README.md                       # Documentation utilisateur
-├── BAREME_IRPP.md                  # Doc calculateur fiscal
+├── CHANGELOG.md                    # Historique des versions
+├── STRUCTURE.md                    # Structure projet
+├── TAUX_OFFICIELS_2025.md          # Taux fiscaux officiels 2025
 ├── docs/                           # Documentation technique complète
+│   ├── FICHE_TECHNIQUE.md          # Ce fichier
+│   ├── BAREME_IRPP.md              # Doc calculateur fiscal
+│   └── ...                         # Autres guides
 └── .github/
-    └── copilot-instructions.md     # Conventions projet
+    └── instructions-copilot.md     # Conventions projet (AI agents - français)
 ```
 
 ---
@@ -88,13 +95,13 @@ const CONFIG = {
 - ✅ Modifiables via l'onglet **Paramètres** (sauvegarde dans localStorage)
 - ✅ GitHub Pages fonctionne immédiatement sans configuration
 - ✅ Backend Google Apps Script sans gestion CORS (retours directs)
-- ✅ Backend propre (1092 lignes, aucune fonction de test résiduelle)
+- ✅ Backend propre (~1364 lignes, production-ready)
 
 ### 2. Fonction d'initialisation (app.js ligne ~4900)
 
 ```javascript
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 Initialisation MTI CONSULTING v2.1...');
+    console.log('🚀 Initialisation MTI CONSULTING v2.1.3...');
     
     // 1. Vérification backend storage
     const storageCheck = await callBackend('ensureStorage');
