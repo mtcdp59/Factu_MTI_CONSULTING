@@ -103,7 +103,7 @@ L'application est **pré-configurée** avec les credentials Google API de MTI CO
 - ✅ Google Calendar intégré
 - ✅ Toutes les fonctionnalités disponibles
 
-ℹ️ Les credentials sont hardcodés dans `app.js` (architecture simplifiée) et peuvent être modifiés dans l'onglet **Paramètres** si besoin.
+ℹ️ Les credentials sont hardcodés dans `app.js` (v42 style) et peuvent être modifiés dans l'onglet **Paramètres** si besoin.
 
 ---
 
@@ -333,7 +333,7 @@ Google Drive (persistence cloud)
 - **Fonctionnalités** : 45+
 - **API intégrées** : Google Drive, Gmail, Calendar, Sheets
 - **Format de données** : JSON + Google Sheets
-- **Architecture** : Frontend vanilla JS + Google Apps Script backend (credentials hardcodés)
+- **Architecture** : Frontend vanilla JS + Google Apps Script backend (v42 style)
 - **Compatibilité** : Navigateurs modernes (ES6+)
 - **Déploiement** : GitHub Pages (gratuit)
 - **Sources légales** : URSSAF, Legifrance, service-public.gouv.fr (taux officiels 2025)

@@ -36,7 +36,7 @@ Factu_MTI_CONSULTING/
 │   └── <script src="app.js">      # Logique métier
 │
 ├── app.js                          # Logique complète (~8828 lignes)
-│   ├── CONFIG (lignes 6-16)       # Backend URL, OAuth2 credentials (hardcodés)
+│   ├── CONFIG (lignes 4-14)       # Backend URL, OAuth2 credentials (hardcodés v42 style)
 │   ├── Data structures (267-280)  # clients[], invoices[], tasks[], rams[] (vides par défaut)
 │   ├── Company info (361-371)     # companyInfo avec toutes les valeurs par défaut (SIRET, adresse, IBAN, BIC)
 │   ├── Google APIs (400-800)      # Calendar, Drive, Gmail, Sheets integration
@@ -72,7 +72,7 @@ Factu_MTI_CONSULTING/
 
 ## 🔑 Points d'entrée et Configuration
 
-### 1. Configuration Backend (app.js - Credentials Hardcodés)
+### 1. Configuration Backend (app.js - v42 style)
 
 **Credentials hardcodés dans app.js (lignes 4-14)** :
 ```javascript
@@ -89,12 +89,12 @@ const CONFIG = {
 };
 ```
 
-**Architecture Simplifiée** :
+**Architecture v42** :
 - ✅ Pas de fichier `config.js` externe
 - ✅ Credentials hardcodés directement dans `app.js`
 - ✅ Modifiables via l'onglet **Paramètres** (sauvegarde dans localStorage)
 - ✅ GitHub Pages fonctionne immédiatement sans configuration
-- ✅ Backend Google Apps Script avec `ContentService` (pas de `setHeader()` CORS)
+- ✅ Backend Google Apps Script sans gestion CORS (retours directs)
 - ✅ Backend propre (~1364 lignes, production-ready)
 
 ### 2. Fonction d'initialisation (app.js ligne ~4900)
