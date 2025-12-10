@@ -170,7 +170,7 @@ L'application est **pré-configurée** avec les credentials Google API de MTI CO
 
 **Section 2 : Calculs Fiscaux et Sociaux (Taux Officiels 2025)**
 - **Cotisations sociales URSSAF BNC** :
-  - Taux avec ACRE Année 1 : 11,6% (Décret n°2024-484)
+  - Taux avec ACRE Année 1 : 12,3% (Décret n°2024-484)
   - Taux standard 2025 : 24,6% (évolution +1%/an jusqu'en 2029)
 - **CFP (Formation Pro)** : 0,2% obligatoire (Code du travail L6331-48)
 - **Versement libératoire** : 2,2% (BNC)

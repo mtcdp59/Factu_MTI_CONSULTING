@@ -10,7 +10,7 @@ Tous les taux utilisés sont conformes aux textes officiels :
 
 | Paramètre | Valeur | Source légale | Date |
 |-----------|--------|---------------|------|
-| **URSSAF ACRE** | 11,6% | Exonération 50% | 2025 |
+| **URSSAF ACRE** | 12,3% | Exonération 50% | 2025 |
 | **URSSAF Standard** | 24,6% | Décret n°2024-484 | 30/05/2024 |
 | **CFP BNC** | 0,2% | Code du travail L6331-48 | - |
 | **Versement Libératoire** | 2,2% | Taux fixe BNC | 2025 |
@@ -76,7 +76,7 @@ Si l'API échoue ou la commune n'est pas référencée :
 ### 1. Paramètres de Simulation
 
 #### 📅 Situation ACRE
-- **Radio buttons** : "Avec ACRE" (11,6%) / "Sans ACRE" (24,6%)
+- **Radio buttons** : "Avec ACRE" (12,3%) / "Sans ACRE" (24,6%)
 - **Date de début d'activité** : Input date pour calcul automatique période ACRE
 - **Calcul automatique** : Fin de période = fin du 3ème trimestre civil suivant le début
 - **Affichage dynamique** :
@@ -263,7 +263,7 @@ Format 4 colonnes : **Poste | Taux | Base | Montant**
 ### Charges Sociales URSSAF
 
 ```javascript
-const tauxURSSAF = acreActive ? 0.116 : 0.246; // 11,6% ou 24,6%
+const tauxURSSAF = acreActive ? 0.123 : 0.246; // 12,3% ou 24,6%
 const chargesURSSAF = CA × tauxURSSAF;
 ```
 
@@ -399,13 +399,13 @@ Tous les taux sont modifiables dans **Paramètres → Calculs Fiscaux et Sociaux
 
 **Paramètres :**
 - CA mensuel : 3,000€
-- ACRE : Avec (11,6%)
+- ACRE : Avec (12,3%)
 - Régime : IRPP Progressif
 - CFE : 600€/an (Paris : 2,433€)
 - RFR : 20,000€ (éligible VL)
 
 **Résultats attendus :**
-- URSSAF : 3,000 × 0.116 = 348€
+- URSSAF : 3,000 × 0.123 = 369€
 - CFP : 3,000 × 0.002 = 6€
 - IRPP : (3,000 × 12 × 0.66) / 12 = 1,980€ (base imposable) → ~180€/mois
 - CFE : 2,433 / 12 = 202.75€
