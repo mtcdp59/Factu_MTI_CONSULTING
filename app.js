@@ -40,7 +40,7 @@ function saveConfigToStorage(config) {
 }
 
 // Configuration chargée (credentials en dur dans CONFIG ci-dessus)
-console.log('✅ Configuration chargée depuis app.js (v42 style)');
+console.log('✅ Configuration chargée depuis app.js (architecture simplifiée)');
 
 function getConfiguredCalendarId() {
     return localStorage.getItem('mti_calendar_id') || CONFIG.CALENDAR_ID;
@@ -3424,7 +3424,7 @@ function setupFilterListeners() {
 // Charger la configuration technique dans l'UI (pré-remplit avec les valeurs de CONFIG)
 function loadTechnicalConfig() {
     if (document.getElementById('configBackendURL')) {
-        // Pré-remplir avec les valeurs hardcodées de CONFIG (v42 style)
+        // Pré-remplir avec les valeurs hardcodées de CONFIG (architecture simplifiée)
         document.getElementById('configBackendURL').value = CONFIG.BACKEND_URL || '';
         document.getElementById('configClientID').value = CONFIG.GOOGLE_CLIENT_ID || '';
         document.getElementById('configClientSecret').value = CONFIG.GOOGLE_CLIENT_SECRET || '';

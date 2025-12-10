@@ -1,7 +1,7 @@
 # Instructions Copilot pour MTI CONSULTING
 
 ## Vue d'Ensemble du Projet
-Application web de gestion freelance pour MTI CONSULTING. Construite en JavaScript vanilla (`app.js`) et un seul fichier HTML (`index.html`). Stockage des données dans Google Drive via un backend Google Apps Script (style v42 - pas de gestion CORS).
+Application web de gestion freelance pour MTI CONSULTING. Construite en JavaScript vanilla (`app.js`) et un seul fichier HTML (`index.html`). Stockage des données dans Google Drive via un backend Google Apps Script (architecture simplifiée - pas de gestion CORS).
 
 **Fonctionnalités Majeures :**
 - Gestion Clients, Factures & Tâches
