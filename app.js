@@ -5021,7 +5021,7 @@ function exportSimulateurPDF() {
     pdf.text('PARAMÈTRES DE SIMULATION', 10, 40);
     pdf.setFontSize(10);
     pdf.text(`Chiffre d'affaires: ${ca.toFixed(2)} € ${isMensuel ? '(mensuel)' : '(annuel)'}`, 15, 48);
-    pdf.text(`Situation ACRE: ${acreActive ? 'Année 1 (11,6%)' : 'Année 2+ (24,6%)'}`, 15, 54);
+    pdf.text(`Situation ACRE: ${acreActive ? 'Année 1 (12,3%)' : 'Année 2+ (24,6%)'}`, 15, 54);
     pdf.text(`CFE annuelle: ${taxSettings.cfeAnnuel} €`, 15, 60);
     
     // Tableau de détail
