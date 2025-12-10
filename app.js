@@ -3,7 +3,7 @@
 
 console.log('✅ app.js chargé - début du script');
 
-// Configuration production (credentials en dur comme en v42)
+// Configuration production (credentials hardcodés - architecture simplifiée)
 const CONFIG = {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycby7tGJVMVB51juVHJUWfv-gAmf8Fkp5K8nkSTdzpherNdH1Wn2kYK_Hu08pYoOTwCqL/exec',
     DRIVE_FILE_NAME: 'mti_data.json',

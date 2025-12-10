@@ -3,7 +3,7 @@
 .env.local
 config.js
 
-# Note: Architecture v42 (credentials hardcodés dans app.js)
+# Note: Architecture simplifiée (credentials hardcodés dans app.js)
 # config.example.js et config.production.js sont obsolètes mais conservés pour historique
 # L'application n'utilise plus de fichiers config externes
 

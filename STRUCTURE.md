@@ -33,7 +33,7 @@ Factu_MTI_CONSULTING/
 │   └── CORS_URGENCE.md            # Solutions CORS (historique)
 │
 ├── 📁 backend/                     # Code backend
-│   └── AppScript.js               # Google Apps Script (~1364 lignes, v42 style)
+│   └── AppScript.js               # Google Apps Script (~1364 lignes)
 │
 ├── 📁 scripts/                     # Scripts utilitaires
 │   ├── start-server.bat           # Lancement serveur (Windows)
@@ -69,10 +69,10 @@ Documentation complète du projet :
 - **DEMARRAGE.md** : Quick start
 
 ### `backend/`
-Code backend Google Apps Script (v42 style) :
-- **AppScript.js** : API REST pour Drive/Gmail/Calendar/Sheets (~1080 lignes)
+Code backend Google Apps Script :
+- **AppScript.js** : API REST pour Drive/Gmail/Calendar/Sheets (~1364 lignes)
 - Actions : saveData, loadData, savePdfToDrive, sendRAMEmail, exportRAMToSheets, sendInvoiceWithRAM
-- Architecture simple : pas de gestion CORS, retours de réponses directs
+- Architecture simple : `ContentService` pour réponses JSON, pas de gestion CORS via `setHeader()`
 - Déployé sur Google Apps Script en tant que Web App (accès: Tout le monde)
 
 ### `scripts/`
@@ -110,7 +110,7 @@ scripts/start-server.*
 
 - **Fichiers principaux** : 2 (index.html + app.js)
 - **Lignes de code** : ~10,812 (8828 JS + 1984 HTML/CSS)
-- **Backend** : 1 fichier Google Apps Script (~1364 lignes, v42 style)
+- **Backend** : 1 fichier Google Apps Script (~1364 lignes)
 - **Assets** : 8+ fichiers (1 logo + 7+ icons)
 - **Documentation** : 12+ fichiers markdown
 - **Architecture** : Frontend-only (vanilla JS) + Google Apps Script backend

@@ -8,14 +8,14 @@ Application web de gestion freelance pour MTI CONSULTING. Construite en JavaScri
 - Rapports d'Activité Mensuels (RAM) avec génération PDF et automatisation email
 - **Calculateur de Charges Avancé** (taux officiels 2025) avec simulation, projection et outils de comparaison
 
-## Architecture & Flux de Données (Style v42)
+## Architecture & Flux de Données (Architecture Simplifiée)
 - **Frontend uniquement** : Pas de Node.js, pas de build system, pas de package manager.
 - **Stockage de Données** : Google Drive (`mti_data.json`) via backend Google Apps Script.
 - **Synchronisation** : Communique avec le backend Google Apps Script (`BACKEND_URL` hardcodé dans `app.js`) pour toutes les opérations.
 - **Infos Société** : Valeurs par défaut hardcodées pour MTI CONSULTING dans `app.js` (nom, SIRET, adresse, IBAN, BIC, etc.).
 - **Paramètres Fiscaux** : Basés sur les **taux officiels 2025** (URSSAF, CFP, VL, IRPP), entièrement personnalisables via l'onglet Paramètres.
-- **Configuration** : Credentials hardcodés dans `app.js` (style v42), modifiables via l'onglet Paramètres (sauvegarde dans localStorage).
-- **Backend** : Google Apps Script sans gestion CORS (retours de réponses directs via `ContentService`).
+- **Configuration** : Credentials hardcodés dans `app.js` (pas de fichiers config externes), modifiables via l'onglet Paramètres (sauvegarde dans localStorage).
+- **Backend** : Google Apps Script retourne réponses via `ContentService` (pas de gestion CORS avec `setHeader()`).
 
 ## Workflows Développeurs
 - **Pas de build** : Ouvrir directement `index.html` dans un navigateur pour lancer l'app.
@@ -162,13 +162,39 @@ async function validateSIRET(siret) {
 4. Sauvegarde dans localStorage + export Google Sheets optionnel
 5. Affichage dans tableau clients avec colonnes enrichies
 
-## Architecture Style v42
-- **Pas de gestion CORS** : Backend retourne réponses directement sans appels `setHeader()`
-- **Credentials hardcodés** : Toute la config dans `app.js` (lignes 4-14), modifiable via UI
+## Architecture Simplifiée (Credentials Hardcodés)
+
+**Choix d'architecture : Simplicité et Accessibilité**
+
+Ce projet utilise une architecture intentionnellement simplifiée, adaptée à un usage personnel et déploiement rapide :
+
+- **Pas de fichiers config externes** : Credentials directement dans `app.js` (lignes 6-16)
+  - ✅ **Avantages** : Démarrage instantané, aucune étape de configuration, déploiement GitHub Pages immédiat
+  - ⚠️ **Considération** : Pour usage personnel ou équipe réduite. Pour usage public, migrer vers variables d'environnement
+  
+- **Modifiables via UI** : Onglet Paramètres permet de surcharger la config (sauvegarde localStorage)
+  - L'utilisateur peut personnaliser BACKEND_URL, CLIENT_ID, etc. sans toucher au code
+  - Changements persistés localement, ne nécessitent pas de redéploiement
+  
 - **Données initiales vides** : `clients = []`, `invoices = []`, `tasks = []`, `rams = []` (chargées depuis Drive au démarrage)
+
 - **Defaults infos société** : Infos complètes MTI CONSULTING hardcodées (SIRET, adresse, IBAN, BIC)
+  - Prêt à l'emploi pour l'entreprise cible, personnalisable via Paramètres
+  
 - **Defaults taux fiscaux** : Taux officiels 2025 dans objet `taxSettings`
-- **Prêt GitHub Pages** : Fonctionne immédiatement sans fichiers de configuration
+  - Basé sur sources gouvernementales vérifiées (Décret n°2024-484 du 30/05/2024)
+  
+- **Backend léger** : `ContentService` pour réponses JSON (pas de `setHeader()` CORS)
+  - Simplifie déploiement Google Apps Script
+  - Fonctionne nativement sans configuration CORS complexe
+  
+- **Prêt GitHub Pages** : Fonctionne immédiatement sans build step, package manager ou configuration
+
+**Quand envisager une migration vers architecture externe :**
+- 🔄 Usage multi-tenant (plusieurs entreprises)
+- 🔄 Équipe > 5 développeurs
+- 🔄 Besoin de secrets rotatifs (sécurité renforcée)
+- 🔄 Déploiement CI/CD avec environnements multiples (dev/staging/prod)
 
 ## Intégration API CFE (Open Data Soft)
 ```js
