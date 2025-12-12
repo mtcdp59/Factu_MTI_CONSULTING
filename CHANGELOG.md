@@ -5,6 +5,114 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.4] - 2025-12-12
+
+### ✨ Nouveaux Modules : Devis + Option B (Calculs Dynamiques API URSSAF)
+
+#### 🆕 Module Devis
+**Fonctionnalités principales** :
+- ✅ **Création devis** : Formulaire complet avec numérotation auto (`DEVIS-YYYY-NNN`)
+- ✅ **Génération PDF** : Devis professionnels avec logo et branding (`generateQuotePDFBase64`)
+- ✅ **Conversion devis → facture** : 1 clic pour créer facture depuis devis (`convertQuoteToInvoice`)
+- ✅ **Liaison bidirectionnelle** : Champ `sourceQuoteNumber` sur factures + `linkedInvoiceNumber` sur devis
+- ✅ **Statuts** : Brouillon, Envoyé, Accepté, Refusé
+- ✅ **Intégration tiers** : Sélection client avec auto-remplissage SIRET + adresse
+- ✅ **Synchronisation Drive** : Devis sauvegardés automatiquement
+- ✅ **KPIs Dashboard** : Fonction `updateDevisKPIs()` appelée après modifications factures
+
+**Fichiers** :
+- `app.js` : Lignes 9653 (PDF), 10290 (conversion), 284 (variable `quotes`)
+- `index.html` : Lignes 943-1030 (onglet Devis), 719-720 (navigation)
+
+**UI** :
+- Badge "Depuis devis XXX" sur factures (ligne 1103-1104, 3080)
+- Badge cliquable dans liste factures (`openQuoteByNumber`)
+- Mention dans PDF facture (ligne 6495)
+- Indicateur mode édition (ligne 946-948)
+
+**Documentation** :
+- Création `docs/FEATURES_DEVIS_v2.1.4.md`
+
+---
+
+#### 🆕 Option B - Calculs Dynamiques API URSSAF (Nouveau)
+**Fonctionnalités principales** :
+- ✅ **API Mon-entreprise URSSAF** : Intégration complète pour calculs cotisations temps réel
+- ✅ **Calculs dynamiques** : Cotisations URSSAF + CFP calculées via API (plus de taux en dur)
+- ✅ **Gestion ACRE** : Exonération 1ère année (12 mois) automatique
+- ✅ **Cache intelligent** : 5 minutes pour éviter appels répétés
+- ✅ **Fallback robuste** : Valeurs locales si API indisponible (12,5% / 24,8%)
+- ✅ **Taux officiels 2025** : 12,3% URSSAF + 0,2% CFP = 12,5% total (ACRE actif)
+
+**Fonctions** :
+- `calculateCotisationsDynamically()` ligne ~4190 : Appel API pour calcul exact
+- `calculateCotisationsWithFallback()` ligne ~4275 : Wrapper avec cache + fallback
+- `finalizeTaxCalculation()` ligne ~4307 : Finalisation calculs fiscaux
+
+**Cache** :
+- Variable `cotisationsCache` ligne ~3953
+- TTL 5 minutes (300 000 ms)
+- Clé composite : `${ca}_${hasACRE}_${creationDate}`
+
+**Validation** :
+- CA 7200 EUR/mois → 900 EUR/mois (12,5%) ✅
+- CA 86 400 EUR/an → 10 800 EUR/an ✅
+- Conforme déclaration URSSAF réelle (8 déc 2025)
+
+---
+
+#### 🐛 Corrections Bugs Production (Option B)
+
+**Bug #5 - Structure API incompatible** :
+- **Problème** : Code attendait `data.evaluations` (ancien format objet), API retourne `data.evaluate` (nouveau format tableau)
+- **Solution** : Gestion dual format avec fallback (`data?.evaluate || data?.evaluations || null`)
+- **Résultat** : API fonctionne correctement (10 800 EUR/an validé)
+
+**Bug #6 - Logs console bruyants** :
+- **Problème** : 3× warnings `API response is null` au chargement (CA=0)
+- **Solution** : Log silencieux si `err.message === 'API response is null'` → `console.log` au lieu de `console.warn`
+- **Résultat** : Console propre au chargement
+
+**Bug #7 - Alertes seuils absentes simulateur** :
+- **Problème** : `checkSeuils()` appelée seulement dans Dashboard, pas Simulateur → Dépassement 86 400 EUR non signalé
+- **Solution** : Ajout zone alerte `#seuilsAlert` en haut simulateur + appel `checkSeuils(ca * 12)` dans `finalizeTaxCalculation()`
+- **Résultat** : Alerte rouge visible si dépassement micro-entreprise
+
+#### Clarifications Techniques (Option B)
+**CFP (Contribution Formation Professionnelle)** :
+- Taux URSSAF : **12,3%** (cotisations sociales seules)
+- CFP : **+0,2%** (formation obligatoire)
+- **Total API : 12,5%** ✅ (incluant CFP automatiquement)
+- Validation : CA 7200 EUR/mois → 900 EUR/mois (12,5%) → 10 800 EUR/an ✅
+
+#### Fichiers Modifiés
+**app.js** :
+- Lignes ~3920, ~4190 : Gestion dual format API (tableau vs objet)
+- Ligne ~4229 : Logs silencieux si CA=0
+- Ligne ~4390 : Vérification seuils dans `finalizeTaxCalculation()`
+- Lignes 9653-9700 : Génération PDF devis
+- Lignes 10290-10340 : Conversion devis → facture
+- Ligne 284 : Variable globale `quotes`
+
+**index.html** :
+- Ligne ~1810 : Zone alerte déplacée en haut simulateur (très visible, box-shadow)
+- Ligne ~1820 : Texte ACRE "URSSAF 12,3% - durée 12 mois"
+- Lignes 943-1030 : Onglet Devis complet
+- Lignes 719-720 : Navigation "📝 Devis"
+
+**Documentation** :
+- Création `docs/BUGFIX_OPTION_B_v1.0.2.md` (bugs API)
+- Création `docs/FEATURES_DEVIS_v2.1.4.md` (module devis)
+
+### 🎯 Validation
+- ✅ Tests : 4/4 scénarios API passés
+- ✅ API : 100% conforme déclaration URSSAF réelle (8 déc 2025)
+- ✅ Devis : Génération PDF fonctionnelle, conversion facture OK
+- ✅ Code : Compilable sans erreur
+- ✅ UX : Alertes visibles, console propre, module devis intégré
+
+---
+
 ## [2.1.3] - 2025-12-09
 
 ### 🐛 Correctifs Critiques RAM & API

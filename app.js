@@ -216,7 +216,7 @@ let editingInvoiceIndex = -1;
 // Sauvegarder toutes les données dans Google Drive
 async function saveToDrive() {
     try {
-        const data = { clients, invoices, tasks, rams, recurringInvoices, companyInfo, taxSettings };
+        const data = { clients, invoices, quotes, tasks, rams, recurringInvoices, companyInfo, taxSettings };
         const result = await callBackend('saveToDrive', { data });
         if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
         console.log('✅ Sauvegarde Drive OK');
@@ -245,6 +245,7 @@ async function loadFromDrive() {
         const data = result.data;
         if (data.clients) clients = data.clients;
         if (data.invoices) invoices = data.invoices;
+        if (data.quotes) quotes = data.quotes;
         if (data.tasks) tasks = data.tasks;
         if (data.rams) rams = data.rams;
         if (data.recurringInvoices) recurringInvoices = data.recurringInvoices;
@@ -260,6 +261,7 @@ async function loadFromDrive() {
         if (typeof populateClientSelects === 'function') populateClientSelects();
         if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
         if (typeof renderInvoiceList === 'function') renderInvoiceList();
+        if (typeof renderQuoteList === 'function') renderQuoteList();
         if (typeof renderRAMList === 'function') renderRAMList();
         if (typeof renderRecurringList === 'function') renderRecurringList();
         if (typeof updateCADisplay === 'function') updateCADisplay();
@@ -279,6 +281,7 @@ let lastSyncTime = null;
 // Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
 let clients = [];
 let invoices = [];
+let quotes = []; // Devis
 let tasks = [];
 let rams = []; // Rapports d'Activité Mensuels
 let recurringInvoices = []; // Factures récurrentes / abonnements
@@ -311,13 +314,17 @@ let taxSettings = {
     // Charges sociales URSSAF (BNC - Prestations de services / Activités libérales)
     // Source : https://www.autoentrepreneur.urssaf.fr/portail/accueil/sinformer-sur-le-statut/lessentiel-du-statut.html
     // ACRE depuis 2020 : durée 12 mois (plus de dégressivité sur 3 ans)
-    acreActif: 12.3,          // Année 1 avec ACRE - Taux réduit BNC 2025 : 12,30%
+    acreActif: 12.3,          // Année 1 avec ACRE - Taux réduit BNC 2025 : 12,30% (hors CFP)
     acreInactif: 24.6,        // Année 2+ sans ACRE - Taux plein 2025 (évolution +1%/an jusqu'en 2029)
     // CFP (Contribution Formation Professionnelle) BNC - OBLIGATOIRE
     cfpBNC: 0.2,              // 0,2% du CA (Code du travail L6331-48)
     // Conditions versement libératoire
     rfrMaxVL: 28797,          // RFR max par part pour VL 2026 (27478€ pour 2025)
+    // Seuils fiscaux annuels
+    seuilTVAAnnuel: 37500,    // Franchise TVA (prestations de services)
+    seuilTVAMajore: 39100,    // Seuil majoré TVA (tolérance 2 ans)
     caMaxBNC: 77700,          // Plafond CA BNC pour micro-entreprise
+    objectifCAMensuel: 6000,  // Objectif CA mensuel personnalisable (€)
     // Barème IRPP progressif 2025 (tranches annuelles - célibataire 1 part)
     // Source : https://www.service-public.gouv.fr/particuliers/vosdroits/F1419
     irppBareme: [
@@ -346,7 +353,10 @@ const defaultSettings = {
     acreInactif: 24.6,
     cfpBNC: 0.2,
     rfrMaxVL: 28797,
+    seuilTVAAnnuel: 37500,
+    seuilTVAMajore: 39100,
     caMaxBNC: 77700,
+    objectifCAMensuel: 6000,
     irppBareme: [
         { min: 0, max: 11497, taux: 0 },
         { min: 11498, max: 29315, taux: 11 },
@@ -610,6 +620,7 @@ function setupLegacyBindings() {
 function populateClientSelects() {
     const clientSelect = document.getElementById('clientSelect');
     const clientFilterSelect = document.getElementById('clientFilterSelect');
+    const quoteClientSelect = document.getElementById('quoteClientSelect');
 
     if (clientSelect) {
         clientSelect.innerHTML = '<option value="">Saisie manuelle</option>';
@@ -618,6 +629,16 @@ function populateClientSelects() {
             option.value = index;
             option.textContent = client.name;
             clientSelect.appendChild(option);
+        });
+    }
+    
+    if (quoteClientSelect) {
+        quoteClientSelect.innerHTML = '<option value="">Saisie manuelle</option>';
+        clients.forEach((client, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = client.name;
+            quoteClientSelect.appendChild(option);
         });
     }
 
@@ -1079,6 +1100,10 @@ function renderInvoicePreview(inv, showModal) {
     const tva = tvaEnabled ? totalHT * 0.20 : 0;
     const totalTTC = totalHT + tva;
 
+    const sourceQuoteBadge = inv.sourceQuoteNumber
+        ? `<div style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(37, 99, 235, 0.12); color: #1d4ed8; font-size: 12px; font-weight: 700;">Depuis devis ${inv.sourceQuoteNumber}</div>`
+        : '';
+
     const previewHTML = `
         <div class="invoice-header">
             <div class="invoice-header-left">
@@ -1096,6 +1121,7 @@ function renderInvoicePreview(inv, showModal) {
         <div class="invoice-details">
             <h2 class="invoice-number">FACTURE N° ${inv.number || ''}</h2>
             <div style="font-size: 13px;"><div>Date: ${formatDateFR(inv.date)}</div><div>Échéance: ${formatDateFR(inv.dueDate)}</div></div>
+            ${sourceQuoteBadge}
         </div>
 
         <hr class="separator">
@@ -1291,6 +1317,7 @@ document.getElementById('cancelEditBtn')?.addEventListener('click', () => {
 // ========== MULTI-LINE INVOICE ITEMS MANAGEMENT ==========
 
 let currentInvoiceItems = [];
+let currentInvoiceSourceQuoteNumber = '';
 
 function addInvoiceItem() {
     const item = {
@@ -1496,7 +1523,8 @@ function setupInvoiceSaveHandler() {
             description: currentInvoiceItems[0]?.description || '',
             quantity: currentInvoiceItems[0]?.quantity || 0,
             unitPrice: currentInvoiceItems[0]?.unitPrice || 0,
-            total: totalHT
+            total: totalHT,
+            sourceQuoteNumber: currentInvoiceSourceQuoteNumber || ''
         };
 
         if (isEditMode && editingInvoiceIndex >= 0) {
@@ -1610,6 +1638,9 @@ function resetInvoiceForm() {
         const cancelBtn = document.getElementById('cancelEditBtn');
         if (cancelBtn) cancelBtn.style.display = 'none';
     }
+
+    // Réinitialiser l'origine devis éventuelle
+    currentInvoiceSourceQuoteNumber = '';
 
     if (invoiceForm) invoiceForm.reset();
     const clientSelect = document.getElementById('clientSelect');
@@ -2993,6 +3024,8 @@ function applyFilters() {
     renderInvoiceTable(filtered);
     updateSummary(filtered);
     renderCharts(); // FIX: Actualiser les graphiques après filtrage
+    try { updateDashboard(); } catch (e) { console.warn('updateDashboard error', e); }
+    try { updateAlerts(); } catch (e) { console.warn('updateAlerts error', e); }
 }
 
 function renderInvoiceTable(filteredInvoices) {
@@ -3035,7 +3068,7 @@ function renderInvoiceList() {
 
     if (invoices.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="6" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucune facture créée</td>';
+        row.innerHTML = '<td colspan="7" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucune facture créée</td>';
         tbody.appendChild(row);
         updateCAYearOptions(); // Mettre \u00e0 jour les ann\u00e9es m\u00eame s'il n'y a pas de factures
         return;
@@ -3043,9 +3076,13 @@ function renderInvoiceList() {
 
     invoices.forEach((invoice, index) => {
         const row = document.createElement('tr');
+        const sourceQuoteBadge = invoice.sourceQuoteNumber
+            ? `<a href="#" onclick="openQuoteByNumber('${invoice.sourceQuoteNumber}')" title="Ouvrir le devis d'origine" style="text-decoration: none; display: inline-block; padding: 4px 8px; border-radius: 999px; background: rgba(37, 99, 235, 0.12); color: #1d4ed8; font-size: 12px; font-weight: 700;">${invoice.sourceQuoteNumber}</a>`
+            : `<span style="color: var(--color-text-secondary); font-size: 12px;">—</span>`;
         row.innerHTML = `
             <td><strong>${invoice.number}</strong></td>
             <td>${invoice.client}</td>
+            <td>${sourceQuoteBadge}</td>
             <td>${formatDateFR(invoice.date)}</td>
             <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
             <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
@@ -3068,6 +3105,9 @@ function renderInvoiceList() {
 function editInvoiceInForm(index) {
     const invoice = invoices[index];
     if (!invoice) return;
+
+    // Conserver l'origine devis si présente
+    currentInvoiceSourceQuoteNumber = invoice.sourceQuoteNumber || '';
 
     // Set edit mode
     isEditMode = true;
@@ -3129,6 +3169,60 @@ function editInvoiceInForm(index) {
 
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/**
+ * Filtre la liste des factures selon la recherche
+ */
+function filterInvoiceList() {
+    const searchInput = document.getElementById('invoiceSearchInput');
+    if (!searchInput) return;
+    
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    const tbody = document.getElementById('invoiceListBody');
+    if (!tbody) return;
+    
+    // Si vide, afficher toutes les factures
+    if (searchTerm === '') {
+        renderInvoiceList();
+        return;
+    }
+    
+    // Filtrer les factures
+    const filtered = invoices.filter(invoice => 
+        invoice.number.toLowerCase().includes(searchTerm) ||
+        invoice.client.toLowerCase().includes(searchTerm)
+    );
+    
+    // Afficher les résultats filtrés
+    tbody.innerHTML = '';
+    
+    if (filtered.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="6" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucun résultat trouvé</td>';
+        tbody.appendChild(row);
+        return;
+    }
+    
+    filtered.forEach((invoice) => {
+        const index = invoices.indexOf(invoice);
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong>${invoice.number}</strong></td>
+            <td>${invoice.client}</td>
+            <td>${formatDateFR(invoice.date)}</td>
+            <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
+            <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
+                <button class="btn btn-sm btn-secondary" onclick="deleteInvoiceFromList(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+                <button class="btn btn-sm btn-primary" onclick="generateRAMForInvoice(${index})" title="Générer Rapport d'Activité Mensuelle" style="margin-left: var(--space-4);">📊 RAM</button>
+                <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
+                ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button class="btn btn-sm btn-success" onclick="sendInvoiceWithRAM(${index})" title="Envoyer Facture + RAM ensemble" style="margin-left: var(--space-4);">📧+📊 Facture+RAM</button>` : ''}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
 }
 
 // Cancel edit mode
@@ -3223,6 +3317,7 @@ document.getElementById('editInvoiceForm')?.addEventListener('submit', (e) => {
     document.getElementById('editInvoiceModal')?.classList.remove('show');
     renderInvoiceList();
     applyFilters();
+    try { updateDevisKPIs(); } catch (err) { console.warn('updateDevisKPIs after invoice edit failed', err); }
     showToast('Facture mise à jour');
 
     // Auto-sync after edit
@@ -3242,6 +3337,7 @@ function deleteInvoiceFromList(index) {
             renderInvoiceList();
             applyFilters();
             renderCharts();
+            try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
             showToast('✅ Facture supprimée');
 
             // Auto-sync after deletion
@@ -3302,6 +3398,7 @@ async function duplicateInvoice(index) {
     await saveToDrive();
     renderInvoiceList();
     applyFilters();
+    try { updateDevisKPIs(); } catch (err) { console.warn('updateDevisKPIs after duplicate failed', err); }
     showToast('Facture dupliquée');
 }
 
@@ -3329,6 +3426,7 @@ function updateMontantRecu(index, value) {
     }
 
     applyFilters();
+    try { updateDevisKPIs(); } catch (err) { console.warn('updateDevisKPIs after payment update failed', err); }
 
     // Auto-sync after payment update
     autoSync('payment');
@@ -3338,6 +3436,7 @@ function updateMontantRecu(index, value) {
 function updateDateReception(index, value) {
     invoices[index].dateReception = value;
     applyFilters();
+    try { updateDevisKPIs(); } catch (err) { console.warn('updateDevisKPIs after reception date update failed', err); }
 
     // Auto-sync after date update
     autoSync('payment');
@@ -3412,11 +3511,15 @@ window.sendInvoiceEmail = sendInvoiceEmail;
 
 // Filter event listeners
 function setupFilterListeners() {
-    document.getElementById('periodFilter')?.addEventListener('change', applyFilters);
-    document.getElementById('startDateFilter')?.addEventListener('change', applyFilters);
-    document.getElementById('endDateFilter')?.addEventListener('change', applyFilters);
-    document.getElementById('clientFilterSelect')?.addEventListener('change', applyFilters);
-    document.getElementById('statusFilter')?.addEventListener('change', applyFilters);
+    const applyFiltersAndKPIs = () => {
+        applyFilters();
+        try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+    };
+    document.getElementById('periodFilter')?.addEventListener('change', applyFiltersAndKPIs);
+    document.getElementById('startDateFilter')?.addEventListener('change', applyFiltersAndKPIs);
+    document.getElementById('endDateFilter')?.addEventListener('change', applyFiltersAndKPIs);
+    document.getElementById('clientFilterSelect')?.addEventListener('change', applyFiltersAndKPIs);
+    document.getElementById('statusFilter')?.addEventListener('change', applyFiltersAndKPIs);
 }
 
 // PARAMÈTRES - Settings Management
@@ -3491,9 +3594,33 @@ function loadCompanySettings() {
         document.getElementById('tauxAcreInactif').value = taxSettings.acreInactif;
         document.getElementById('tauxCFPBNC').value = taxSettings.cfpBNC;
         document.getElementById('rfrMaxVL').value = taxSettings.rfrMaxVL;
+        document.getElementById('seuilTVAAnnuel').value = taxSettings.seuilTVAAnnuel || 37500;
+        document.getElementById('seuilTVAMajore').value = taxSettings.seuilTVAMajore || 39100;
         document.getElementById('caMaxBNC').value = taxSettings.caMaxBNC;
         document.getElementById('tauxVersementLib').value = taxSettings.versementLiberatoire;
-        document.getElementById('cfeAnnuel').value = taxSettings.cfeAnnuel;
+        // Note: cfeAnnuel is no longer loaded from DOM in Paramètres, managed via Calculs commune search
+    }
+    
+    // Charger l'objectif CA mensuel
+    if (document.getElementById('objectifCAMensuel')) {
+        document.getElementById('objectifCAMensuel').value = taxSettings.objectifCAMensuel || 6000;
+        
+        // Mettre à jour les seuils fiscaux affichés (référence mensuelle)
+        const seuilTVAMensuel = (taxSettings.seuilTVAAnnuel || 37500) / 12;
+        const seuilMicroMensuel = (taxSettings.caMaxBNC || 77700) / 12;
+        
+        if (document.getElementById('seuilTVAMensuel')) {
+            document.getElementById('seuilTVAMensuel').textContent = seuilTVAMensuel.toFixed(0);
+        }
+        if (document.getElementById('seuilTVAAnnuel')) {
+            document.getElementById('seuilTVAAnnuel').textContent = (taxSettings.seuilTVAAnnuel || 37500).toLocaleString('fr-FR');
+        }
+        if (document.getElementById('seuilMicroMensuel')) {
+            document.getElementById('seuilMicroMensuel').textContent = seuilMicroMensuel.toFixed(0);
+        }
+        if (document.getElementById('seuilMicroAnnuel')) {
+            document.getElementById('seuilMicroAnnuel').textContent = (taxSettings.caMaxBNC || 77700).toLocaleString('fr-FR');
+        }
     }
 }
 
@@ -3510,13 +3637,15 @@ function saveSettings() {
     }
     taxSettings.tauxIS = parseFloat(document.getElementById('tauxIS')?.value) || 0;
     taxSettings.versementLiberatoire = parseFloat(document.getElementById('tauxVersementLib')?.value) || 2.2;
-    taxSettings.prorationMensuelle = parseFloat(document.getElementById('prorationMensuelle')?.value) || 8.33;
-    taxSettings.cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
+    // Note: cfeAnnuel is now managed only via commune search in Calculs tab, not in Paramètres
     taxSettings.acreActif = parseFloat(document.getElementById('tauxAcreActif')?.value) || 12.3;
     taxSettings.acreInactif = parseFloat(document.getElementById('tauxAcreInactif')?.value) || 24.6;
     taxSettings.cfpBNC = parseFloat(document.getElementById('tauxCFPBNC')?.value) || 0.2;
     taxSettings.rfrMaxVL = parseFloat(document.getElementById('rfrMaxVL')?.value) || 28797;
+    taxSettings.seuilTVAAnnuel = parseFloat(document.getElementById('seuilTVAAnnuel')?.value) || 37500;
+    taxSettings.seuilTVAMajore = parseFloat(document.getElementById('seuilTVAMajore')?.value) || 39100;
     taxSettings.caMaxBNC = parseFloat(document.getElementById('caMaxBNC')?.value) || 77700;
+    taxSettings.objectifCAMensuel = parseFloat(document.getElementById('objectifCAMensuel')?.value) || 6000;
     // Le barème IRPP est déjà dans taxSettings.irppBareme (mis à jour par updateIRPPTranche)
 
     // Show confirmation
@@ -3536,27 +3665,19 @@ function saveSettings() {
 function resetSettings() {
     document.getElementById('tauxIS').value = defaultSettings.tauxIS;
     document.getElementById('tauxVersementLib').value = defaultSettings.versementLiberatoire;
-    document.getElementById('prorationMensuelle').value = defaultSettings.prorationMensuelle;
-    document.getElementById('cfeAnnuel').value = defaultSettings.cfeAnnuel;
     document.getElementById('tauxAcreActif').value = defaultSettings.acreActif;
     document.getElementById('tauxAcreInactif').value = defaultSettings.acreInactif;
     document.getElementById('tauxCFPBNC').value = defaultSettings.cfpBNC;
     document.getElementById('rfrMaxVL').value = defaultSettings.rfrMaxVL;
+    document.getElementById('seuilTVAAnnuel').value = defaultSettings.seuilTVAAnnuel || 37500;
+    document.getElementById('seuilTVAMajore').value = defaultSettings.seuilTVAMajore || 39100;
     document.getElementById('caMaxBNC').value = defaultSettings.caMaxBNC;
+    document.getElementById('objectifCAMensuel').value = defaultSettings.objectifCAMensuel || 6000;
     
     // Réinitialiser le barème IRPP
     taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
     taxSettings.bncAbattement = defaultSettings.bncAbattement;
     renderIRPPBareme();
-
-    updateCFEMensuel();
-}
-
-function updateCFEMensuel() {
-    const cfeAnnuel = parseFloat(document.getElementById('cfeAnnuel')?.value) || 600;
-    const cfeMensuel = cfeAnnuel / 12;
-    const el = document.getElementById('cfeMensuel');
-    if (el) el.textContent = cfeMensuel.toFixed(2);
 }
 
 // ========== GESTION UI BARÈME IRPP ==========
@@ -3666,7 +3787,6 @@ window.removeIRPPTranche = removeIRPPTranche;
 if (document.getElementById('saveSettings')) {
     document.getElementById('saveSettings').addEventListener('click', saveSettings);
     document.getElementById('resetSettings').addEventListener('click', resetSettings);
-    document.getElementById('cfeAnnuel')?.addEventListener('input', updateCFEMensuel);
     document.getElementById('resetIRPPBareme')?.addEventListener('click', resetIRPPBareme);
 }
 
@@ -3765,8 +3885,370 @@ if (document.getElementById('logoUrl')) {
 // CALCULS - Tax Calculator
 const caInput = document.getElementById('caInput');
 
-function calculateTaxes() {
-    // Sécurité : initialiser le barème IRPP si absent
+// ================= URSSAF Mon-entreprise API Integration =================
+// Minimal client to evaluate official rules and fetch thresholds.
+// Docs: https://mon-entreprise.urssaf.fr/documentation/dirigeant/auto%E2%80%91entrepreneur
+// OpenAPI: https://mon-entreprise.urssaf.fr/api/v1/openapi.json
+
+const MON_ENTREPRISE_API_BASE = 'https://mon-entreprise.urssaf.fr/api/v1';
+
+/**
+ * Evaluate Publicodes expressions via Mon-entreprise API
+ * @param {Object} situation - Publicodes situation (inputs)
+ * @param {Array<string>} expressions - List of expressions (rules) to evaluate
+ * @returns {Promise<Object>} Map of expression -> { value, unit, nodeValue }
+ */
+async function evaluateMonEntreprise(situation, expressions, attempt = 1) {
+    try {
+        const res = await fetch(`${MON_ENTREPRISE_API_BASE}/evaluate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ situation, expressions })
+        });
+        if (res.status === 429 && attempt < 3) {
+            // Rate limited; exponential backoff
+            const delay = Math.pow(2, attempt - 1) * 1000;
+            console.warn(`Rate limited on evaluate, retry after ${delay}ms`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return evaluateMonEntreprise(situation, expressions, attempt + 1);
+        }
+        if (!res.ok) {
+            console.warn(`URSSAF API HTTP error: ${res.status} ${res.statusText}`);
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        console.log('URSSAF API raw response:', data);
+        
+        // L'API retourne soit 'evaluate' (nouveau format) soit 'evaluations' (ancien format)
+        const evaluations = data?.evaluate || data?.evaluations || null;
+        return evaluations;
+    } catch (err) {
+        console.warn('URSSAF evaluate error, using local values', err);
+        return null; // caller handles fallback
+    }
+}
+
+/**
+ * Fetch rule details with exponential backoff
+ * @param {string} rule - Publicodes rule name
+ */
+async function fetchUrssafRule(rule, attempt = 1) {
+    try {
+        const res = await fetch(`${MON_ENTREPRISE_API_BASE}/rules/${encodeURIComponent(rule)}`);
+        if (res.status === 429 && attempt < 3) {
+            // Rate limited; exponential backoff
+            const delay = Math.pow(2, attempt - 1) * 1000;
+            console.warn(`Rate limited on ${rule}, retry after ${delay}ms`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return fetchUrssafRule(rule, attempt + 1);
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (err) {
+        console.warn('URSSAF rule fetch failed', rule, err);
+        return null;
+    }
+}
+
+// Cache for thresholds to avoid repeated calls
+let urssafThresholdCache = {
+    fetchedAt: null,
+    data: null
+};
+
+// Cache for dynamic cotisations calculation (Option B)
+let cotisationsCache = {
+    key: null,          // Composite key: "ca_hasACRE_creationDate"
+    data: null,         // { montantAnnuel, taux }
+    fetchedAt: null     // Timestamp
+};
+
+/**
+ * Load fiscal thresholds (TVA, micro-BNC) from URSSAF API when possible.
+ * Updates `taxSettings` and refreshes dependent UI.
+ */
+async function loadFiscalThresholdsFromAPI() {
+    // If cached within 24h, reuse
+    const now = Date.now();
+    if (urssafThresholdCache.fetchedAt && (now - urssafThresholdCache.fetchedAt) < 24 * 60 * 60 * 1000) {
+        const d = urssafThresholdCache.data;
+        if (d) {
+            taxSettings.seuilTVAAnnuel = d.seuilTVAAnnuel ?? taxSettings.seuilTVAAnnuel;
+            taxSettings.seuilTVAMajore = d.seuilTVAMajore ?? taxSettings.seuilTVAMajore;
+            taxSettings.caMaxBNC = d.caMaxBNC ?? taxSettings.caMaxBNC;
+            try { updateAlerts(); } catch {}
+            return d;
+        }
+    }
+
+    // Publicodes rules to query (names from Mon-entreprise models)
+    // Note: Rules names may change; we attempt resilient mapping.
+    const candidateRules = [
+        'entreprise . franchise de TVA . seuil',
+        'entreprise . franchise de TVA . seuil majoré',
+        'dirigeant . auto-entrepreneur . seuil micro-BNC'
+    ];
+
+    // Try to evaluate rules directly (no situation dependency for thresholds)
+    let thresholds = { seuilTVAAnnuel: null, seuilTVAMajore: null, caMaxBNC: null };
+    for (const rule of candidateRules) {
+        try {
+            const info = await Promise.race([
+                fetchUrssafRule(rule),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+            ]);
+            if (info?.rule) {
+                const val = info?.rule?.nodeValue ?? info?.rule?.value;
+                const unit = info?.rule?.unit || info?.rule?.rawNode?.unit;
+                if (val) {
+                    if (rule.includes('franchise de TVA') && rule.includes('majoré')) thresholds.seuilTVAMajore = Number(val);
+                    else if (rule.includes('franchise de TVA')) thresholds.seuilTVAAnnuel = Number(val);
+                    else if (rule.includes('micro-BNC')) thresholds.caMaxBNC = Number(val);
+                }
+            }
+        } catch (err) {
+            console.warn(`Rule fetch timeout/error for ${rule}:`, err.message);
+        }
+    }
+
+    // If direct rule fetch failed, fallback via evaluate with explicit expressions
+    if (!thresholds.seuilTVAAnnuel || !thresholds.seuilTVAMajore || !thresholds.caMaxBNC) {
+        try {
+            const evals = await Promise.race([
+                evaluateMonEntreprise({}, [
+                    'entreprise . franchise de TVA . seuil',
+                    'entreprise . franchise de TVA . seuil majoré',
+                    'dirigeant . auto-entrepreneur . seuil micro-BNC'
+                ]),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+            ]);
+            if (evals) {
+                thresholds.seuilTVAAnnuel = thresholds.seuilTVAAnnuel ?? Number(evals['entreprise . franchise de TVA . seuil']?.nodeValue || evals['entreprise . franchise de TVA . seuil']?.value);
+                thresholds.seuilTVAMajore = thresholds.seuilTVAMajore ?? Number(evals['entreprise . franchise de TVA . seuil majoré']?.nodeValue || evals['entreprise . franchise de TVA . seuil majoré']?.value);
+                thresholds.caMaxBNC = thresholds.caMaxBNC ?? Number(evals['dirigeant . auto-entrepreneur . seuil micro-BNC']?.nodeValue || evals['dirigeant . auto-entrepreneur . seuil micro-BNC']?.value);
+            }
+        } catch (err) {
+            console.warn('URSSAF evaluate timeout/error:', err.message);
+        }
+    }
+
+    // Apply if present; keep current if not
+    const applied = {
+        seuilTVAAnnuel: thresholds.seuilTVAAnnuel || taxSettings.seuilTVAAnnuel,
+        seuilTVAMajore: thresholds.seuilTVAMajore || taxSettings.seuilTVAMajore,
+        caMaxBNC: thresholds.caMaxBNC || taxSettings.caMaxBNC
+    };
+    taxSettings.seuilTVAAnnuel = applied.seuilTVAAnnuel;
+    taxSettings.seuilTVAMajore = applied.seuilTVAMajore;
+    taxSettings.caMaxBNC = applied.caMaxBNC;
+
+    urssafThresholdCache = { fetchedAt: now, data: applied };
+
+    // Update UI pieces that depend on thresholds
+    try { updateAlerts(); } catch {}
+    // Update Paramètres fields if present
+    const seuilBaseEl = document.getElementById('seuilTVAAnnuel');
+    const seuilMajEl = document.getElementById('seuilTVAMajore');
+    const caMaxBNCEl = document.getElementById('caMaxBNC');
+    if (seuilBaseEl) seuilBaseEl.value = String(taxSettings.seuilTVAAnnuel);
+    if (seuilMajEl) seuilMajEl.value = String(taxSettings.seuilTVAMajore);
+    if (caMaxBNCEl) caMaxBNCEl.value = String(taxSettings.caMaxBNC);
+
+    // Persist to Drive if values changed (optional but recommended)
+    const hasChanges = thresholds.seuilTVAAnnuel || thresholds.seuilTVAMajore || thresholds.caMaxBNC;
+    if (hasChanges) {
+        try {
+            await saveToDrive();
+            console.log('✅ Seuils URSSAF persistés dans Drive');
+        } catch (err) {
+            console.warn('Échec sauvegarde Drive des seuils URSSAF:', err);
+        }
+    }
+
+    return applied;
+}
+
+// Helper to initialize API-driven thresholds on app start
+async function initUrssafIntegration() {
+    // Add timeout to avoid excessive concurrent requests
+    await Promise.race([
+        Promise.all([
+            loadFiscalThresholdsFromAPI(),
+            loadAdditionalFiscalParamsFromAPI()
+        ]),
+        new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
+    ]).catch(err => {
+        console.warn('URSSAF init timeout, using local values', err);
+    });
+}
+
+// Call integration early after initial render if available in DOM lifecycle
+document.addEventListener('DOMContentLoaded', () => {
+    // Fire and forget; UI falls back silently on local values
+    // Add 1 second delay to avoid 429 rate limiting
+    setTimeout(() => initUrssafIntegration(), 1000);
+    // Bind manual refresh if button exists in settings
+    const btn = document.getElementById('refreshFiscalThresholdsBtn');
+    if (btn) {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const oldText = btn.textContent;
+            btn.textContent = '🔄 Rafraîchissement...';
+            const result = await loadFiscalThresholdsFromAPI();
+            btn.textContent = oldText;
+            btn.disabled = false;
+            if (result) {
+                showToast('Seuils fiscaux mis à jour depuis URSSAF', 'success');
+            } else {
+                showToast('Impossible de mettre à jour les seuils (réseau/API). Valeurs locales conservées.', 'warning');
+            }
+        });
+    }
+});
+
+// Expose manual refresh to legacy inline handlers if needed
+window.refreshFiscalThresholds = async function() {
+    const res = await loadFiscalThresholdsFromAPI();
+    if (res) showToast('Seuils fiscaux mis à jour depuis URSSAF', 'success');
+    else showToast('Échec mise à jour seuils. Valeurs locales conservées.', 'warning');
+}
+
+/**
+ * Charger d'autres paramètres fiscaux depuis l'API si disponibles.
+ * Exemples: taux de versement libératoire, abattement BNC.
+ * Met à jour taxSettings avec fallback silencieux.
+ */
+async function loadAdditionalFiscalParamsFromAPI() {
+    // Tentatives de récupération de paramètres additionnels
+    const expressions = [
+        'dirigeant . auto-entrepreneur . impôt . versement libératoire . taux',
+        'dirigeant . BNC . abattement'
+    ];
+
+    const evals = await evaluateMonEntreprise({}, expressions);
+    if (!evals) return null;
+
+    const vlTaux = evals['dirigeant . auto-entrepreneur . impôt . versement libératoire . taux']?.nodeValue ?? evals['dirigeant . auto-entrepreneur . impôt . versement libératoire . taux']?.value;
+    const bncAbatt = evals['dirigeant . BNC . abattement']?.nodeValue ?? evals['dirigeant . BNC . abattement']?.value;
+
+    if (vlTaux) taxSettings.versementLiberatoire = Number(vlTaux); // en %
+    if (bncAbatt) taxSettings.bncAbattement = Number(bncAbatt);    // en %
+
+    // Rafraîchir les sections dépendantes
+    try { updateAlerts(); } catch {}
+
+    // Synchroniser les champs Paramètres si présents
+    const vlEl = document.getElementById('versementLiberatoire');
+    const bncEl = document.getElementById('bncAbattement');
+    if (vlEl) vlEl.value = String(taxSettings.versementLiberatoire);
+    if (bncEl) bncEl.value = String(taxSettings.bncAbattement);
+
+    return { vlTaux, bncAbatt };
+}
+
+/**
+ * Calcule dynamiquement les cotisations sociales via API URSSAF.
+ * Option B: Utilise le simulateur officiel Mon-entreprise pour obtenir
+ * les taux exacts incluant cotisations + CFP (Contribution Formation Professionnelle).
+ * 
+ * @param {number} ca - Chiffre d'affaires annuel
+ * @param {boolean} hasACRE - Si l'auto-entrepreneur bénéficie de l'ACRE
+ * @param {string} creationDate - Date de création au format 'DD/MM/YYYY'
+ * @returns {Promise<{montantAnnuel: number, taux: number}>} Cotisations annuelles et taux effectif
+ */
+async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
+    // Validation de la date
+    if (!creationDate || !creationDate.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+        console.warn('Date invalide:', creationDate);
+        throw new Error('Date création invalide (format attendu: DD/MM/YYYY)');
+    }
+    
+    // Construction de la situation Publicodes
+    const situation = {
+        "entreprise . catégorie juridique": "'EI'",
+        "entreprise . catégorie juridique . EI . auto-entrepreneur": "oui",
+        "dirigeant . auto-entrepreneur": "oui",
+        "dirigeant . auto-entrepreneur . chiffre d'affaires": ca,
+        "entreprise . activité . nature": "'libérale'",
+        "entreprise . activité . nature . libérale . réglementée": "non",
+        "entreprise . date de création": creationDate,
+        "dirigeant . auto-entrepreneur . éligible à l'ACRE": hasACRE ? "oui" : "non",
+        "dirigeant . exonérations . ACRE": hasACRE ? "oui" : "non"
+    };
+
+    try {
+        // Appel API avec la règle complète incluant CFP
+        console.log('Appel API URSSAF avec situation:', { ca, hasACRE, creationDate });
+        const response = await evaluateMonEntreprise(situation, [
+            "dirigeant . auto-entrepreneur . cotisations et contributions"
+        ]);
+
+        if (!response) {
+            throw new Error('API response is null');
+        }
+
+        // L'API retourne soit un tableau (nouveau format) soit un objet (ancien format)
+        let evaluation;
+        if (Array.isArray(response)) {
+            // Nouveau format: evaluate: [{dottedName: "...", nodeValue: ...}] OU [{nodeValue: ...}]
+            console.log('API response array:', JSON.stringify(response, null, 2));
+            
+            const ruleKey = "dirigeant . auto-entrepreneur . cotisations et contributions";
+            
+            // Si un seul élément dans le tableau, c'est probablement la réponse directe
+            if (response.length === 1) {
+                evaluation = response[0];
+            } else {
+                // Sinon chercher par dottedName
+                evaluation = response.find(item => item.dottedName === ruleKey);
+                if (!evaluation) {
+                    console.warn('Rule not found in API response:', ruleKey);
+                    console.warn('Available rules:', response.map(r => r.dottedName || r));
+                    throw new Error('Rule not found in API response');
+                }
+            }
+        } else {
+            // Ancien format: {ruleKey: {nodeValue: ...}}
+            const ruleKey = "dirigeant . auto-entrepreneur . cotisations et contributions";
+            evaluation = response[ruleKey];
+        }
+        
+        if (!evaluation || typeof evaluation.nodeValue !== 'number') {
+            console.warn('Response structure:', response);
+            throw new Error('Invalid API response structure');
+        }
+
+        // L'API retourne les cotisations mensuelles
+        const montantMensuel = evaluation.nodeValue;
+        if (isNaN(montantMensuel)) {
+            throw new Error('Invalid nodeValue from API');
+        }
+
+        const montantAnnuel = montantMensuel * 12;
+        const taux = ca > 0 ? (montantAnnuel / ca) * 100 : 0;
+
+        console.log(`✅ Cotisations dynamiques calculées: ${montantAnnuel.toFixed(2)} EUR/an (${taux.toFixed(2)}%)`);
+
+        return { montantAnnuel, taux };
+    } catch (err) {
+        // Log silencieux si API null (normal avec CA=0), sinon warning
+        if (err.message === 'API response is null') {
+            console.log('ℹ️ Calcul local (CA faible ou API indisponible)');
+        } else {
+            console.warn('⚠️ Échec calcul dynamique cotisations:', err.message);
+        }
+        
+        // Fallback sur valeurs en dur (12,5% ACRE / 24,8% standard)
+        // Note: ACRE est une exonération 1ère année uniquement (depuis réforme 2020)
+        const tauxFallback = hasACRE ? 12.5 : 24.8;
+        const montantAnnuel = ca * (tauxFallback / 100);
+
+        return { montantAnnuel, taux: tauxFallback };
+    }
+
+    return { versementLiberatoire: taxSettings.versementLiberatoire, bncAbattement: taxSettings.bncAbattement };
+}
+
 function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
     const { vl, irpp } = scenarios;
     const isMensuel = multiplicateur === 1;
@@ -3812,7 +4294,9 @@ function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
 }
 
 function calculateTaxes() {
-    // Sécurité : initialiser le barème IRPP si absentgify(defaultSettings.irppBareme));
+    // Sécurité : initialiser le barème IRPP si absent
+    if (!taxSettings.irppBareme || taxSettings.irppBareme.length === 0) {
+        taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
     }
     if (!taxSettings.bncAbattement) {
         taxSettings.bncAbattement = defaultSettings.bncAbattement;
@@ -3827,7 +4311,82 @@ function calculateTaxes() {
     const acreAnnee1Radio = document.getElementById('acreAnnee1');
     const acreActive = acreAnnee1Radio ? acreAnnee1Radio.checked : false;
     
-    const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+    // Si CA est 0 ou invalide, utiliser directement les valeurs locales (pas d'appel API)
+    if (!ca || ca <= 0) {
+        const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+        finalizeTaxCalculation(ca, acreActive, ca * chargesRate, chargesRate * 100);
+        return;
+    }
+    
+    // Obtenir date création pour calculs API
+    const creationDateInput = document.getElementById('dateDebutActivite');
+    let creationDate = creationDateInput && creationDateInput.value ? creationDateInput.value : null;
+    
+    // Convertir format YYYY-MM-DD (HTML5 date) vers DD/MM/YYYY (Publicodes)
+    if (creationDate && creationDate.includes('-')) {
+        const parts = creationDate.split('-');
+        creationDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+    } else if (!creationDate) {
+        // Par défaut: 1er janvier année en cours
+        creationDate = `01/01/${new Date().getFullYear()}`;
+    }
+    
+    // Calcul charges sociales : Option B (API dynamique) avec fallback
+    calculateCotisationsWithFallback(ca * 12, acreActive, creationDate).then(result => {
+        // Une fois les cotisations calculées, finaliser les calculs
+        finalizeTaxCalculation(ca, acreActive, result.montantAnnuel / 12, result.taux);
+    }).catch(err => {
+        console.error('Erreur calcul cotisations:', err);
+        // Fallback immédiat sur valeurs en dur
+        const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+        finalizeTaxCalculation(ca, acreActive, ca * chargesRate, chargesRate * 100);
+    });
+}
+
+/**
+ * Calcule cotisations avec cache et fallback automatique.
+ * Tente API d'abord, puis fallback sur valeurs locales si échec.
+ */
+async function calculateCotisationsWithFallback(caAnnuel, hasACRE, creationDate) {
+    // Vérifier cache (5 min de validité)
+    const cacheKey = `${caAnnuel}_${hasACRE}_${creationDate}`;
+    const now = Date.now();
+    if (cotisationsCache.key === cacheKey && 
+        cotisationsCache.fetchedAt && 
+        (now - cotisationsCache.fetchedAt) < 5 * 60 * 1000) {
+        return cotisationsCache.data;
+    }
+    
+    // Tenter calcul dynamique API
+    try {
+        const result = await calculateCotisationsDynamically(caAnnuel, hasACRE, creationDate);
+        
+        // Mettre en cache
+        cotisationsCache = {
+            key: cacheKey,
+            data: result,
+            fetchedAt: now
+        };
+        
+        return result;
+    } catch (err) {
+        // Fallback sur valeurs en dur
+        const tauxFallback = hasACRE ? taxSettings.acreActif : taxSettings.acreInactif;
+        return {
+            montantAnnuel: caAnnuel * (tauxFallback / 100),
+            taux: tauxFallback
+        };
+    }
+}
+
+/**
+ * Finalise les calculs fiscaux avec les cotisations obtenues.
+ * @param {number} ca - CA mensuel
+ * @param {boolean} acreActive - ACRE actif ou non
+ * @param {number} chargesMensuelles - Montant charges mensuelles (incluant CFP si API)
+ * @param {number} tauxEffectif - Taux effectif en %
+ */
+function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif) {
     const chargesLabel = acreActive ? 'ACRE Année 1 (12 mois)' : 'Sans ACRE (taux plein)'
     
     // Déterminer période affichage (mensuel ou annuel)
@@ -3835,17 +4394,53 @@ function calculateTaxes() {
     const isMensuel = periodeMensuelRadio ? periodeMensuelRadio.checked : true;
     const multiplicateur = isMensuel ? 1 : 12;
     
+    // Vérifier seuils avec CA annuel
+    const seuil = checkSeuils(ca * 12);
+    const alertDiv = document.getElementById('seuilsAlert');
+    
+    if (alertDiv && seuil.alerte) {
+        alertDiv.style.display = 'block';
+        alertDiv.textContent = seuil.message;
+        
+        // Couleurs selon niveau
+        switch(seuil.niveau) {
+            case 'danger':
+                alertDiv.style.background = 'var(--color-error-bg)';
+                alertDiv.style.borderLeft = '4px solid var(--color-error)';
+                alertDiv.style.color = 'var(--color-error)';
+                break;
+            case 'warning':
+                alertDiv.style.background = 'var(--color-warning-bg)';
+                alertDiv.style.borderLeft = '4px solid var(--color-warning)';
+                alertDiv.style.color = 'var(--color-warning)';
+                break;
+            case 'info':
+                alertDiv.style.background = 'var(--color-info-bg)';
+                alertDiv.style.borderLeft = '4px solid var(--color-primary)';
+                alertDiv.style.color = 'var(--color-primary)';
+                break;
+        }
+    } else if (alertDiv) {
+        alertDiv.style.display = 'none';
+    }
+    
     // Mise à jour label période
     const periodeLabel = document.getElementById('periodeLabel');
     if (periodeLabel) {
         periodeLabel.textContent = isMensuel ? '(Mensuelles)' : '(Annuelles)';
     }
 
-    // 1. Charges sociales URSSAF
-    const charges = ca * chargesRate;
+    // 1. Charges sociales URSSAF (incluent CFP si calculées par API)
+    // Note: Si API utilisée, chargesMensuelles inclut déjà CFP (0,2%)
+    // Si fallback, CFP ajouté séparément ci-dessous
+    const charges = chargesMensuelles;
 
     // 2. CFP (Contribution Formation Professionnelle) - OBLIGATOIRE
-    const cfp = ca * (taxSettings.cfpBNC / 100);
+    // Note: CFP déjà inclus dans calcul API, mais pas dans fallback
+    // Pour simplifier, on le compte séparément uniquement si fallback
+    const cfp = (tauxEffectif === taxSettings.acreActif || tauxEffectif === taxSettings.acreInactif) 
+        ? ca * (taxSettings.cfpBNC / 100)  // Fallback: ajouter CFP
+        : 0;  // API: CFP déjà inclus dans charges
 
     // 3. CFE mensuel
     const cfe = taxSettings.cfeAnnuel / 12;
@@ -3881,13 +4476,13 @@ function calculateTaxes() {
         detailBody.innerHTML = `
             <tr style="border-bottom: 1px solid var(--color-border);">
                 <td style="padding: var(--space-12);">Charges sociales URSSAF <small style="color: var(--color-text-secondary);">(${chargesLabel})</small></td>
-                <td style="padding: var(--space-12); text-align: center;">${(chargesRate * 100).toFixed(1)}%</td>
+                <td style="padding: var(--space-12); text-align: center;">${tauxEffectif.toFixed(1)}%</td>
                 <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
                 <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(charges * multiplicateur).toFixed(2)} €</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--color-border);">
                 <td style="padding: var(--space-12);">CFP <small style="color: var(--color-text-secondary);">(Formation professionnelle)</small></td>
-                <td style="padding: var(--space-12); text-align: center;">${taxSettings.cfpBNC}%</td>
+                <td style="padding: var(--space-12); text-align: center;">${cfp > 0 ? taxSettings.cfpBNC : '0.0'}%</td>
                 <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
                 <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(cfp * multiplicateur).toFixed(2)} €</td>
             </tr>
@@ -5633,6 +6228,7 @@ async function saveInvoicesAndRefreshUI() {
     try { renderInvoiceList(); } catch (e) {}
     try { applyFilters(); } catch (e) {}
     try { renderCharts(); } catch (e) {}
+    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
 }
 
 function getCurrentInvoiceForPreview() {
@@ -5655,7 +6251,8 @@ function getCurrentInvoiceForPreview() {
             quantity: currentInvoiceItems[0]?.quantity || 0,
             unitPrice: currentInvoiceItems[0]?.unitPrice || 0,
             total: calculateTotal(),
-            clientEmail: (clients.find(c => c.name === (clientNameEl ? clientNameEl.value : '')) || {}).email_facturation || ''
+            clientEmail: (clients.find(c => c.name === (clientNameEl ? clientNameEl.value : '')) || {}).email_facturation || '',
+            sourceQuoteNumber: currentInvoiceSourceQuoteNumber || ''
         };
         
         return invoice;
@@ -5798,7 +6395,7 @@ function setupEmailPreviewHandlersForConfirmSend() {
 }
 
 // PDF Download functionality using iframe print fallback
-function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled, items}) {
+function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled, items, sourceQuoteNumber}) {
     // Support multi-line items or legacy single-line
     const invoiceItems = items && items.length > 0 ? items : [
         { description: description || '', quantity: quantity || 0, unitPrice: unitPrice || 0, total: total || 0 }
@@ -5895,6 +6492,7 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
                 <div style="font-size: 13px;">
                     <div>Date: ${formatDateFR(invoiceDate)}</div>
                     <div>Échéance: ${formatDateFR(dueDate)}</div>
+                    ${sourceQuoteNumber ? `<div style="margin-top: 6px; color: #21808D; font-weight: bold;">Créée depuis le devis ${sourceQuoteNumber}</div>` : ''}
                 </div>
             </div>
 
@@ -5984,6 +6582,7 @@ function downloadInvoicePDF() {
         dueDate, 
         total, 
         tvaEnabled,
+        sourceQuoteNumber: currentInvoiceSourceQuoteNumber || '',
         items: currentInvoiceItems,
         // Legacy fields for backward compatibility (use first item)
         description: currentInvoiceItems[0]?.description || '',
@@ -6112,6 +6711,15 @@ function initApp() {
     setupEmailPreviewHandlers();
     setupFilterListeners();
     setupLegacyBindings();
+    
+    // Initialize quote form
+    initQuoteForm();
+    
+    // Initialize quote preview-confirm button
+    const previewConfirmQuoteBtn = document.getElementById('previewConfirmQuoteSendBtn');
+    if (previewConfirmQuoteBtn) {
+        previewConfirmQuoteBtn.addEventListener('click', previewAndConfirmQuoteSend);
+    }
 
     setDefaultDates();
     if (invoiceNumberInput) invoiceNumberInput.value = getNextInvoiceNumber(invoiceDateInput ? invoiceDateInput.value : null);
@@ -6125,13 +6733,15 @@ function initApp() {
     renderCalendar();
     renderClientsTable();
     renderInvoiceList();
+    renderQuoteList(); // Render quotes list
     renderRAMList();  // Afficher les RAMs chargés depuis localStorage
     populateClientSelects();
     checkOverdueInvoices();
     applyFilters();
+    updateDevisKPIs(); // Initialiser les stats Devis au chargement
     renderCharts();
     calculateTaxes();
-    updateCFEMensuel();
+    // Note: updateCFEMensuel() removed - CFE is now managed only via commune search in Calculs tab
     loadCompanySettings();
     renderIRPPBareme(); // Initialiser l'UI du barème IRPP
     loadSimulationParams(); // Charger les paramètres de simulation sauvegardés
@@ -6440,7 +7050,8 @@ async function generateInvoicePDFBase64(invoice) {
                 unitPrice: invoice.unitPrice || 0,
                 total: invoice.total || 0,
                 tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked,
-                items: invoice.items || null
+                items: invoice.items || null,
+                sourceQuoteNumber: invoice.sourceQuoteNumber || ''
             });
         }
     } finally {
@@ -7284,6 +7895,82 @@ function renderRAMList() {
 }
 
 window.renderRAMList = renderRAMList;
+window.filterInvoiceList = filterInvoiceList;
+window.filterRAMList = filterRAMList;
+
+/**
+ * Filtre la liste des RAM selon la recherche
+ */
+function filterRAMList() {
+    const searchInput = document.getElementById('ramSearchInput');
+    if (!searchInput) return;
+    
+    const rawTerm = searchInput.value.trim();
+    const searchTerm = rawTerm.toLowerCase();
+    const tbody = document.getElementById('ramTableBody');
+    if (!tbody) return;
+    
+    // Si vide, afficher tous les RAM
+    if (searchTerm === '') {
+        renderRAMList();
+        return;
+    }
+    
+    // Filtrer les RAM
+    // Déterminer si la recherche cible les heures (accepte "12", "12.5", "12h", "12,5h")
+    const hoursQueryStr = rawTerm.replace(/\s/gi, '').replace(/h$/i, '').replace(',', '.');
+    const hoursQuery = parseFloat(hoursQueryStr);
+
+    const filtered = rams.filter(ram => {
+        const matchesText = (
+            ram.client.toLowerCase().includes(searchTerm) ||
+            ram.monthName.toLowerCase().includes(searchTerm) ||
+            ram.year.toString().includes(searchTerm) ||
+            (ram.invoiceNumber && ram.invoiceNumber.toLowerCase().includes(searchTerm))
+        );
+
+        // Calculer le total d'heures du RAM
+        const totalHours = ram.activities.reduce((sum, a) => sum + (parseFloat(a.hours) || 0), 0);
+
+        // Match heures si une valeur numérique est détectée dans la recherche
+        const matchesHours = !isNaN(hoursQuery) && (
+            Math.abs(totalHours - hoursQuery) < 0.0001 ||
+            totalHours.toFixed(2).includes(hoursQueryStr)
+        );
+
+        return matchesText || matchesHours;
+    });
+    
+    // Afficher les résultats filtrés
+    tbody.innerHTML = '';
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: var(--space-24); color: var(--color-text-secondary);">Aucun résultat trouvé</td></tr>';
+        return;
+    }
+    
+    filtered.forEach((ram) => {
+        const index = rams.indexOf(ram);
+        const totalHours = ram.activities.reduce((sum, a) => sum + (a.hours || 0), 0);
+        const row = document.createElement('tr');
+        
+        row.innerHTML = `
+            <td>${ram.client}</td>
+            <td>${ram.monthName} ${ram.year}</td>
+            <td>${totalHours.toFixed(2)}h</td>
+            <td>${ram.invoiceNumber || '-'}</td>
+            <td>${ram.createdAt && !isNaN(new Date(ram.createdAt)) ? new Date(ram.createdAt).toLocaleDateString('fr-FR') : 'Non renseignée'}</td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editRAMInForm(${index})" title="Modifier">✏️ Modifier</button>
+                <button class="btn btn-sm btn-secondary" onclick="deleteRAM(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
+                <button class="btn btn-sm btn-success" onclick="downloadRAMPDF(${ram.id})" title="Télécharger PDF" style="margin-left: var(--space-4);">📄 PDF</button>
+                <button class="btn btn-sm btn-primary" onclick="sendRAMEmail(${ram.id})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
 
 // Modifier un RAM dans le formulaire (comme les factures)
 function editRAMInForm(index) {
@@ -8154,8 +8841,8 @@ function getCAParMois(annee = new Date().getFullYear()) {
 function checkSeuils(ca = null) {
     if (ca === null) ca = getCACumule();
     
-    const seuilTVA = 37500;
-    const seuilTVAMajore = 39100;
+    const seuilTVA = taxSettings.seuilTVAAnnuel || 37500;
+    const seuilTVAMajore = taxSettings.seuilTVAMajore || 39100;
     const seuilMicro = taxSettings.caMaxBNC || 77700;
     const seuilMicroMajore = seuilMicro * 1.1;
     
@@ -8247,6 +8934,1416 @@ const tauxTVAFrance = {
     reduit: 5.5,       // Livres, alimentation, énergie
     special: 2.1       // Médicaments remboursés, presse
 };
+
+
+// ============================================================
+// 2.5 DEVIS (QUOTES)
+// ============================================================
+
+// Variables globales devis
+let currentQuoteItems = [];
+let isQuoteEditMode = false;
+let editingQuoteIndex = -1;
+
+/**
+ * Génère le prochain numéro de devis
+ * Format: DEVIS-YYYY-NNN
+ */
+function getNextQuoteNumber(date = null) {
+    const targetDate = date ? new Date(date) : new Date();
+    const year = targetDate.getFullYear();
+    
+    // Filtrer les devis de l'année en cours
+    const quotesThisYear = quotes.filter(q => {
+        if (!q.number) return false;
+        return q.number.startsWith(`DEVIS-${year}`);
+    });
+    
+    // Trouver le prochain numéro séquentiel
+    const nextNum = quotesThisYear.length + 1;
+    return `DEVIS-${year}-${String(nextNum).padStart(3, '0')}`;
+}
+
+/**
+ * Ajoute une ligne de devis
+ */
+function addQuoteItem() {
+    const item = {
+        description: '',
+        quantity: 1,
+        unitPrice: 0,
+        total: 0
+    };
+    currentQuoteItems.push(item);
+    renderQuoteItems();
+}
+
+/**
+ * Supprime une ligne de devis
+ */
+function removeQuoteItem(index) {
+    if (currentQuoteItems.length <= 1) {
+        showToast('⚠️ Un devis doit contenir au moins une ligne', 'error');
+        return;
+    }
+    currentQuoteItems.splice(index, 1);
+    renderQuoteItems();
+}
+
+/**
+ * Met à jour un champ d'une ligne de devis
+ */
+function updateQuoteItemField(index, field, value) {
+    if (!currentQuoteItems[index]) return;
+    
+    if (field === 'quantity' || field === 'unitPrice') {
+        currentQuoteItems[index][field] = parseFloat(value) || 0;
+        currentQuoteItems[index].total = currentQuoteItems[index].quantity * currentQuoteItems[index].unitPrice;
+    } else {
+        currentQuoteItems[index][field] = value;
+    }
+    
+    renderQuoteItems();
+}
+
+/**
+ * Affiche les lignes de devis dans le tableau
+ */
+function renderQuoteItems() {
+    const tbody = document.getElementById('quoteItemsBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    currentQuoteItems.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid var(--color-border)';
+        row.innerHTML = `
+            <td style="padding: 8px;">
+                <input type="text" class="form-control" value="${item.description || ''}" 
+                       onchange="updateQuoteItemField(${index}, 'description', this.value)" 
+                       placeholder="Description du service/produit" style="font-size: var(--font-size-sm);">
+            </td>
+            <td style="padding: 8px; text-align: center;">
+                <input type="number" class="form-control" value="${item.quantity || 1}" 
+                       onchange="updateQuoteItemField(${index}, 'quantity', this.value)" 
+                       min="0" step="0.01" style="width: 70px; text-align: center; font-size: var(--font-size-sm);">
+            </td>
+            <td style="padding: 8px; text-align: right;">
+                <input type="number" class="form-control" value="${item.unitPrice || 0}" 
+                       onchange="updateQuoteItemField(${index}, 'unitPrice', this.value)" 
+                       min="0" step="0.01" style="width: 110px; text-align: right; font-size: var(--font-size-sm);">
+            </td>
+            <td style="padding: 8px; text-align: right;">
+                <strong style="font-size: var(--font-size-sm);">${item.total.toFixed(2)} €</strong>
+            </td>
+            <td style="padding: 8px; text-align: center;">
+                <button type="button" class="btn btn-sm btn-secondary" 
+                        onclick="removeQuoteItem(${index})" 
+                        title="Supprimer ligne" 
+                        style="padding: 4px 8px; font-size: 12px;">🗑️</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    
+    updateQuoteTotals();
+}
+
+/**
+ * Met à jour les totaux du devis
+ */
+function updateQuoteTotals() {
+    const totalHT = currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0);
+    
+    const totalHTInput = document.getElementById('quoteTotalHT');
+    if (totalHTInput) totalHTInput.value = `${totalHT.toFixed(2)} €`;
+}
+
+/**
+ * Initialise les lignes de devis
+ */
+function loadQuoteItems(items) {
+    currentQuoteItems = items && items.length > 0 ? [...items] : [];
+    renderQuoteItems();
+}
+
+/**
+ * Vide les lignes de devis
+ */
+function clearQuoteItems() {
+    currentQuoteItems = [];
+    renderQuoteItems();
+}
+
+/**
+ * Affiche la liste des devis
+ */
+function renderQuoteList() {
+    const tbody = document.getElementById('quoteListBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (quotes.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="8" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucun devis créé</td>';
+        tbody.appendChild(row);
+        return;
+    }
+
+    quotes.forEach((quote, index) => {
+        const row = document.createElement('tr');
+        const statusClass = (quote.status || '').toLowerCase().replace('é', 'e').replace('è', 'e');
+        const linkedInvoiceBadge = quote.linkedInvoiceNumber
+            ? `<a href="#" onclick="openInvoiceByNumber('${quote.linkedInvoiceNumber}')" title="Ouvrir la facture liée" style="text-decoration: none; display: inline-block; padding: 4px 8px; border-radius: 999px; background: rgba(16, 185, 129, 0.15); color: #065f46; font-size: 12px; font-weight: 600;">Facture ${quote.linkedInvoiceNumber}</a>`
+            : `<span style="color: var(--color-text-secondary); font-size: 12px;">—</span>`;
+
+        row.innerHTML = `
+            <td><strong>${quote.number}</strong></td>
+            <td>${quote.client}</td>
+            <td>${formatDateFR(quote.date)}</td>
+            <td>${formatDateFR(quote.validityDate)}</td>
+            <td><strong>${(quote.total || 0).toFixed(2)} €</strong></td>
+            <td>${linkedInvoiceBadge}</td>
+            <td><span class="status-badge status-${statusClass}">${quote.status || 'Brouillon'}</span></td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editQuoteInForm(${index})" title="Modifier">✏️</button>
+                <button class="btn btn-sm btn-secondary" onclick="downloadQuotePDF(${index})" title="Télécharger PDF">📥</button>
+                <button class="btn btn-sm btn-primary" onclick="sendQuoteEmail(${index})" title="Envoyer par email">📧</button>
+                <button class="btn btn-sm btn-success" onclick="convertQuoteToInvoice(${index})" title="Convertir en facture">🔄</button>
+                <div style="display:inline-flex; gap:4px; margin-left:8px;">
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Envoyé')" title="Marquer comme envoyé">📤</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Accepté')" title="Marquer comme accepté">✅</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Refusé')" title="Marquer comme refusé">❌</button>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="deleteQuote(${index})" title="Supprimer">🗑️</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * Filtre la liste des devis
+ */
+function filterQuoteList() {
+    const searchInput = document.getElementById('quoteSearchInput');
+    if (!searchInput) return;
+    
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    const tbody = document.getElementById('quoteListBody');
+    if (!tbody) return;
+    
+    // Si vide, afficher tous les devis
+    if (searchTerm === '') {
+        renderQuoteList();
+        return;
+    }
+    
+    // Filtrer les devis
+    const filtered = quotes.filter(quote => 
+        quote.number.toLowerCase().includes(searchTerm) ||
+        quote.client.toLowerCase().includes(searchTerm)
+    );
+    
+    // Afficher les résultats filtrés
+    tbody.innerHTML = '';
+    
+    if (filtered.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="8" style="text-align: center; color: var(--color-text-secondary); padding: var(--space-24);">Aucun résultat pour "${searchTerm}"</td>`;
+        tbody.appendChild(row);
+        return;
+    }
+    
+    filtered.forEach((quote, filteredIndex) => {
+        const index = quotes.indexOf(quote);
+        const row = document.createElement('tr');
+        const statusClass = (quote.status || '').toLowerCase().replace('é', 'e').replace('è', 'e');
+        const linkedInvoiceBadge = quote.linkedInvoiceNumber
+            ? `<a href="#" onclick="openInvoiceByNumber('${quote.linkedInvoiceNumber}')" title="Ouvrir la facture liée" style="text-decoration: none; display: inline-block; padding: 4px 8px; border-radius: 999px; background: rgba(16, 185, 129, 0.15); color: #065f46; font-size: 12px; font-weight: 600;">Facture ${quote.linkedInvoiceNumber}</a>`
+            : `<span style="color: var(--color-text-secondary); font-size: 12px;">—</span>`;
+
+        row.innerHTML = `
+            <td><strong>${quote.number}</strong></td>
+            <td>${quote.client}</td>
+            <td>${formatDateFR(quote.date)}</td>
+            <td>${formatDateFR(quote.validityDate)}</td>
+            <td><strong>${(quote.total || 0).toFixed(2)} €</strong></td>
+            <td>${linkedInvoiceBadge}</td>
+            <td><span class="status-badge status-${statusClass}">${quote.status || 'Brouillon'}</span></td>
+            <td>
+                <button class="btn btn-sm btn-secondary" onclick="editQuoteInForm(${index})" title="Modifier">✏️</button>
+                <button class="btn btn-sm btn-secondary" onclick="downloadQuotePDF(${index})" title="Télécharger PDF">📥</button>
+                <button class="btn btn-sm btn-primary" onclick="sendQuoteEmail(${index})" title="Envoyer par email">📧</button>
+                <button class="btn btn-sm btn-success" onclick="convertQuoteToInvoice(${index})" title="Convertir en facture">🔄</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteQuote(${index})" title="Supprimer">🗑️</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Exposer les fonctions au scope global pour onclick handlers
+window.addQuoteItem = addQuoteItem;
+window.removeQuoteItem = removeQuoteItem;
+window.updateQuoteItemField = updateQuoteItemField;
+window.openInvoiceByNumber = function(number) {
+    const idx = invoices.findIndex(inv => inv.number === number);
+    if (idx >= 0) {
+        // Basculer sur l’onglet factures puis ouvrir en édition
+        const tab = document.querySelector('[data-tab="factures"]');
+        if (tab) tab.click();
+        editInvoiceInForm(idx);
+    } else {
+        showToast(`❌ Facture ${number} introuvable`, 'error');
+    }
+};
+window.openQuoteByNumber = function(number) {
+    const idx = quotes.findIndex(q => q.number === number);
+    if (idx >= 0) {
+        const tab = document.querySelector('[data-tab="devis"]');
+        if (tab) tab.click();
+        editQuoteInForm(idx);
+    } else {
+        showToast(`❌ Devis ${number} introuvable`, 'error');
+    }
+};
+
+// Met à jour le statut d'un devis et rafraîchit l'UI + KPIs
+function setQuoteStatus(index, status) {
+    const quote = quotes[index];
+    if (!quote) return;
+    quote.status = status;
+    // Si accepté sans facture liée, on garde la possibilité de convertir plus tard
+    renderQuoteList();
+    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+    saveToDrive();
+}
+
+window.setQuoteStatus = setQuoteStatus;
+
+/**
+ * Initialise le formulaire de devis
+ */
+function initQuoteForm() {
+    const quoteForm = document.getElementById('quoteForm');
+    if (!quoteForm) return;
+    
+    // Définir date par défaut (aujourd'hui)
+    const quoteDateInput = document.getElementById('quoteDate');
+    if (quoteDateInput && !quoteDateInput.value) {
+        quoteDateInput.value = new Date().toISOString().split('T')[0];
+    }
+    
+    // Définir date validité par défaut (30 jours)
+    const validityDateInput = document.getElementById('quoteValidityDate');
+    if (validityDateInput && !validityDateInput.value) {
+        const validityDate = new Date();
+        validityDate.setDate(validityDate.getDate() + 30);
+        validityDateInput.value = validityDate.toISOString().split('T')[0];
+    }
+    
+    // Définir numéro de devis
+    const quoteNumberInput = document.getElementById('quoteNumber');
+    if (quoteNumberInput && !quoteNumberInput.value) {
+        quoteNumberInput.value = getNextQuoteNumber();
+    }
+    
+    // Initialiser avec une ligne vide
+    if (currentQuoteItems.length === 0) {
+        addQuoteItem();
+    }
+    
+    // Handler soumission formulaire
+    quoteForm.addEventListener('submit', saveQuote);
+    
+    // Setup quote client select listener
+    setupQuoteClientSelectListener();
+    
+    // Setup cancel button
+    const cancelBtn = document.getElementById('cancelQuoteEditBtn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', cancelQuoteEditMode);
+    }
+    
+    // Setup preview button
+    const previewBtn = document.getElementById('previewQuote');
+    if (previewBtn) {
+        previewBtn.addEventListener('click', () => {
+            if (currentQuoteItems.length === 0) {
+                showToast('⚠️ Ajoutez au moins une ligne au devis', 'error');
+                return;
+            }
+            showQuotePreview();
+        });
+    }
+    
+    // Setup download PDF button
+    const downloadPDFBtn = document.getElementById('downloadQuotePDF');
+    if (downloadPDFBtn) {
+        downloadPDFBtn.addEventListener('click', async () => {
+            if (currentQuoteItems.length === 0) {
+                showToast('⚠️ Ajoutez au moins une ligne au devis', 'error');
+                return;
+            }
+            
+            // Créer un objet devis temporaire depuis le formulaire
+            const tempQuote = {
+                number: document.getElementById('quoteNumber').value,
+                client: document.getElementById('quoteClientName').value,
+                clientSiret: document.getElementById('quoteClientSiret').value,
+                clientAddress: document.getElementById('quoteClientAddress').value,
+                date: document.getElementById('quoteDate').value,
+                validityDate: document.getElementById('quoteValidityDate').value,
+                items: [...currentQuoteItems],
+                total: currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0)
+            };
+            
+            try {
+                showToast('⏳ Génération du PDF...', 'info');
+                const pdfBase64 = await generateQuotePDFBase64(tempQuote);
+                
+                const byteCharacters = atob(pdfBase64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${tempQuote.number}-${tempQuote.client.replace(/\s+/g, '_')}.pdf`;
+                link.click();
+                
+                showToast('✅ PDF téléchargé', 'success');
+            } catch (error) {
+                console.error('Erreur:', error);
+                showToast('❌ Erreur : ' + error.message, 'error');
+            }
+        });
+    }
+}
+
+/**
+ * Configure le listener pour la sélection client dans devis
+ */
+function setupQuoteClientSelectListener() {
+    const quoteClientSelect = document.getElementById('quoteClientSelect');
+    if (!quoteClientSelect) return;
+    
+    quoteClientSelect.addEventListener('change', (e) => {
+        const index = e.target.value;
+        const nameEl = document.getElementById('quoteClientName');
+        const siretEl = document.getElementById('quoteClientSiret');
+        const addressEl = document.getElementById('quoteClientAddress');
+        
+        if (index === '') {
+            // Saisie manuelle
+            if (nameEl) { nameEl.value = ''; nameEl.readOnly = false; }
+            if (siretEl) { siretEl.value = ''; siretEl.readOnly = false; }
+            if (addressEl) { addressEl.value = ''; addressEl.readOnly = false; }
+        } else {
+            // Auto-remplissage depuis client
+            const client = clients[parseInt(index)];
+            if (nameEl) { nameEl.value = client.name; nameEl.readOnly = true; }
+            if (siretEl) { siretEl.value = client.siret || ''; siretEl.readOnly = true; }
+            if (addressEl) { addressEl.value = client.address || ''; addressEl.readOnly = true; }
+        }
+    });
+}
+
+/**
+ * Sauvegarde un devis
+ */
+async function saveQuote(e) {
+    if (e) e.preventDefault();
+    
+    // Validation lignes
+    if (!currentQuoteItems || currentQuoteItems.length === 0) {
+        showToast('⚠️ Veuillez ajouter au moins une ligne au devis', 'error');
+        return;
+    }
+    
+    const hasEmptyDescription = currentQuoteItems.some(item => !item.description || item.description.trim() === '');
+    if (hasEmptyDescription) {
+        showToast('⚠️ Toutes les lignes doivent avoir une description', 'error');
+        return;
+    }
+    
+    // Calcul total
+    const totalHT = currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0);
+    
+    const quoteNumber = document.getElementById('quoteNumber').value;
+    const quoteData = {
+        number: quoteNumber,
+        client: document.getElementById('quoteClientName').value,
+        clientSiret: document.getElementById('quoteClientSiret').value,
+        clientAddress: document.getElementById('quoteClientAddress').value,
+        date: document.getElementById('quoteDate').value,
+        validityDate: document.getElementById('quoteValidityDate').value,
+        items: [...currentQuoteItems],
+        total: totalHT,
+        status: 'Brouillon'
+    };
+    
+    if (isQuoteEditMode && editingQuoteIndex >= 0) {
+        // Mise à jour
+        quotes[editingQuoteIndex] = {
+            ...quotes[editingQuoteIndex],
+            ...quoteData
+        };
+        showToast('✅ Devis mis à jour');
+        cancelQuoteEditMode();
+    } else {
+        // Création
+        quotes.push(quoteData);
+        showToast('✅ Devis créé avec succès');
+        resetQuoteForm();
+    }
+    
+    renderQuoteList();
+    saveToDrive();
+    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+}
+
+/**
+ * Édite un devis
+ */
+function editQuoteInForm(index) {
+    const quote = quotes[index];
+    if (!quote) return;
+    
+    isQuoteEditMode = true;
+    editingQuoteIndex = index;
+    
+    // Afficher indicateur édition
+    const indicator = document.getElementById('editQuoteModeIndicator');
+    if (indicator) indicator.style.display = 'block';
+    const editingNumberEl = document.getElementById('editingQuoteNumber');
+    if (editingNumberEl) editingNumberEl.textContent = quote.number;
+    
+    // Pré-remplir formulaire
+    document.getElementById('quoteNumber').value = quote.number;
+    document.getElementById('quoteClientName').value = quote.client;
+    document.getElementById('quoteClientSiret').value = quote.clientSiret || '';
+    document.getElementById('quoteClientAddress').value = quote.clientAddress || '';
+    document.getElementById('quoteDate').value = quote.date;
+    document.getElementById('quoteValidityDate').value = quote.validityDate;
+    
+    loadQuoteItems(quote.items);
+    
+    // Afficher bouton annuler
+    const cancelBtn = document.getElementById('cancelQuoteEditBtn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+    
+    // Changer texte bouton
+    const submitBtn = document.getElementById('submitQuoteBtn');
+    if (submitBtn) submitBtn.textContent = '💾 Mettre à jour devis';
+    
+    // Scroll vers formulaire
+    document.getElementById('quoteForm').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * Annule le mode édition
+ */
+function cancelQuoteEditMode() {
+    isQuoteEditMode = false;
+    editingQuoteIndex = -1;
+    
+    const indicator = document.getElementById('editQuoteModeIndicator');
+    if (indicator) indicator.style.display = 'none';
+    
+    const cancelBtn = document.getElementById('cancelQuoteEditBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    
+    const submitBtn = document.getElementById('submitQuoteBtn');
+    if (submitBtn) submitBtn.textContent = '💾 Créer devis';
+    
+    resetQuoteForm();
+}
+
+/**
+ * Réinitialise le formulaire devis
+ */
+function resetQuoteForm() {
+    const quoteForm = document.getElementById('quoteForm');
+    if (quoteForm) quoteForm.reset();
+    
+    document.getElementById('quoteNumber').value = getNextQuoteNumber();
+    document.getElementById('quoteDate').value = new Date().toISOString().split('T')[0];
+    
+    const validityDate = new Date();
+    validityDate.setDate(validityDate.getDate() + 30);
+    document.getElementById('quoteValidityDate').value = validityDate.toISOString().split('T')[0];
+    
+    clearQuoteItems();
+    addQuoteItem();
+}
+
+/**
+ * Supprime un devis
+ */
+function deleteQuote(index) {
+    const quote = quotes[index];
+    if (!quote) return;
+    
+    if (confirm(`Supprimer le devis ${quote.number} ?`)) {
+        quotes.splice(index, 1);
+        showToast('✅ Devis supprimé');
+        renderQuoteList();
+        saveToDrive();
+        try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+    }
+}
+
+/**
+ * Construit le HTML d'un devis (même format que les factures)
+ */
+function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, validityDate, items}) {
+    const quoteItems = items && items.length > 0 ? items : [];
+    const totalHT = quoteItems.reduce((sum, item) => sum + (item.total || 0), 0);
+    
+    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
+        ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
+        : '[À compléter dans Paramètres]';
+
+    const logoSrc = companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:') 
+        ? companyInfo.logoUrl 
+        : 'assets/images/MTI_CONSULTING.png';
+    const logoHTML = `<img src="${logoSrc}" style="max-width: 180px; max-height: 90px; object-fit: contain; margin-bottom: 8px; display: block;" crossorigin="anonymous">`;
+
+    return `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        @page { 
+            size: A4 portrait; 
+            margin: 0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: Arial, Helvetica, sans-serif; 
+            color: #1a1a1a; 
+            margin: 0; 
+            padding: 0; 
+            background: white;
+            width: 794px;
+            height: 1123px;
+        }
+        .page-container { 
+            width: 794px;
+            height: 1123px;
+            margin: 0; 
+            padding: 60px 50px 100px 50px;
+            position: relative; 
+            background: white;
+            box-sizing: border-box;
+        }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 35px; }
+        .header-left { max-width: 48%; }
+        .header-right { max-width: 45%; margin-top: 85px; }
+        .company { font-weight: bold; font-size: 20px; color: #21808D; margin-bottom: 10px; line-height: 1.2; }
+        .separator { border: none; border-top: 2px solid #e0e0e0; margin: 20px 0; clear: both; }
+        .invoice-details { margin-top: 30px; margin-bottom: 25px; line-height: 1.7; }
+        .invoice-number { font-size: 24px; font-weight: bold; margin-bottom: 12px; color: #21808D; }
+        table { width: 100%; border-collapse: collapse; margin: 25px 0; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+        th { background-color: rgba(33, 128, 141, 0.12); font-weight: bold; font-size: 13px; color: #1a1a1a; }
+        td { font-size: 14px; color: #333; }
+        .totals { text-align: right; margin-top: 30px; padding-top: 20px; border-top: 3px solid #21808D; font-size: 15px; line-height: 1.8; }
+        .legal { 
+            position: absolute; 
+            bottom: 40px; 
+            left: 50px; 
+            right: 50px; 
+            font-size: 9px; 
+            color: #666; 
+            line-height: 1.4; 
+            background: #f9f9f9; 
+            padding: 10px 12px; 
+            border-radius: 3px; 
+            border-left: 3px solid #21808D; 
+        }
+        .legal p { margin: 3px 0; }
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 10px 12px;
+            border-radius: 3px;
+            margin: 15px 0;
+            font-size: 12px;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <div class="header">
+            <div class="header-left">
+                ${logoHTML}
+                <div class="company">${companyInfo.name}</div>
+                <div style="font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
+                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret || ''}</div>
+            </div>
+            <div class="header-right">
+                <div style="font-weight: bold; margin-bottom: 4px;">${clientName}</div>
+                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${clientAddress}</div>
+            </div>
+        </div>
+
+        <div class="invoice-details">
+            <h2 class="invoice-number">${quoteNumber}</h2>
+            <div style="font-size: 13px;">
+                <div>Date d'émission: ${formatDateFR(quoteDate)}</div>
+                <div>Valide jusqu'au: ${formatDateFR(validityDate)}</div>
+            </div>
+        </div>
+
+        <hr class="separator">
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th style="text-align: center;">Quantité</th>
+                    <th style="text-align: right;">Prix unitaire HT</th>
+                    <th style="text-align: right;">Total HT</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${quoteItems.map(item => `
+                    <tr>
+                        <td>${item.description || ''}</td>
+                        <td style="text-align: center;">${item.quantity || 0}</td>
+                        <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
+                        <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+
+        <div class="totals">
+            <div style="margin-bottom: 6px;">Total HT: ${totalHT.toFixed(2)} €</div>
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">TVA non applicable (art. 293 B du CGI)</div>
+            <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${totalHT.toFixed(2)} €</div>
+        </div>
+
+        <div class="warning-box">
+            <strong>⚠️ Bon pour accord:</strong> Ce devis est valable jusqu'au ${formatDateFR(validityDate)}. Une fois signé, il a valeur de contrat.
+        </div>
+
+        <div class="legal">
+            <p><strong>Conditions de validité:</strong> Ce devis est valable ${Math.ceil((new Date(validityDate) - new Date(quoteDate)) / (1000 * 60 * 60 * 24))} jours à compter de la date d'émission | <strong>Conditions de paiement:</strong> À définir après acceptation</p>
+            <p><strong>Mentions légales:</strong> ${companyInfo.name} | SIRET: ${companyInfo.siret || ''} | TVA non applicable (art. 293 B du CGI) | Dispensé d'immatriculation au RCS et au RM (micro-entreprise)</p>
+            ${(companyInfo.iban || companyInfo.bic) ? `<p style="margin-top: 6px;">${companyInfo.iban ? `<strong>IBAN:</strong> ${companyInfo.iban}` : ''}${companyInfo.iban && companyInfo.bic ? ' | ' : ''}${companyInfo.bic ? `<strong>BIC:</strong> ${companyInfo.bic}` : ''}</p>` : ''}
+        </div>
+    </div>
+</body>
+</html>`;
+}
+
+/**
+ * Génère un PDF pour un devis (Base64)
+ */
+async function generateQuotePDFBase64(quote) {
+    // Helper: fetch image as data URI
+    async function fetchImageAsDataUri(url) {
+        if (!url) return null;
+        if (url.startsWith('data:')) return url;
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('Image fetch failed');
+            const blob = await resp.blob();
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) {
+            console.warn('fetchImageAsDataUri failed for', url, e);
+            return null;
+        }
+    }
+    
+    if (!window.jspdf) {
+        throw new Error('jsPDF manquant - impossible de générer le PDF');
+    }
+    
+    // Construire le HTML du devis
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.width = 'auto';
+    tempContainer.style.padding = '0';
+    
+    // Essayer de charger le logo
+    let originalLogo = companyInfo.logoUrl;
+    let logoDataUri = null;
+    try {
+        const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') 
+            ? companyInfo.logoUrl 
+            : 'assets/images/MTI_CONSULTING.png';
+        logoDataUri = await fetchImageAsDataUri(logoSrc);
+        if (logoDataUri) companyInfo.logoUrl = logoDataUri;
+    } catch (e) {
+        console.warn('Could not inline logo', e);
+    }
+    
+    try {
+        tempContainer.innerHTML = buildQuoteHtml({
+            clientName: quote.client || '',
+            clientAddress: quote.clientAddress || '',
+            quoteNumber: quote.number || '',
+            quoteDate: quote.date || '',
+            validityDate: quote.validityDate || '',
+            items: quote.items || []
+        });
+    } finally {
+        companyInfo.logoUrl = originalLogo;
+    }
+    
+    document.body.appendChild(tempContainer);
+
+    // Utiliser html2canvas si disponible pour meilleure qualité
+    if (window.html2canvas && window.jspdf) {
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdfDoc = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdfDoc.internal.pageSize.getWidth();
+            const pageHeight = pdfDoc.internal.pageSize.getHeight();
+            
+            const a4WidthPx = 794;
+            const a4HeightPx = 1123;
+            tempContainer.style.width = a4WidthPx + 'px';
+            tempContainer.style.height = a4HeightPx + 'px';
+
+            const canvasScale = 2.0;
+            const canvas = await html2canvas(tempContainer, { 
+                scale: canvasScale, 
+                useCORS: true, 
+                backgroundColor: '#ffffff' 
+            });
+            const imgData = canvas.toDataURL('image/jpeg', 0.85);
+
+            pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+            
+            const dataUri = pdfDoc.output('datauristring');
+            try { document.body.removeChild(tempContainer); } catch(e) {}
+            return dataUri.split(',')[1];
+        } catch (err) {
+            console.warn('html2canvas/pdf path failed, falling back to legacy jsPDF:', err);
+            try { document.body.removeChild(tempContainer); } catch(e) {}
+        }
+    } else {
+        try { document.body.removeChild(tempContainer); } catch(e) {}
+    }
+
+    // Fallback: utiliser jsPDF autoTable
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    // Logo
+    if (companyInfo.logoUrl) {
+        try {
+            const imgToUse = logoDataUri || companyInfo.logoUrl;
+            if (imgToUse) {
+                try { doc.addImage(imgToUse, 'PNG', 20, 20, 30, 30); } catch(e) { /* ignore */ }
+            }
+        } catch(e) { /* ignore */ }
+    }
+
+    // En-tête
+    doc.setFontSize(20);
+    doc.setTextColor(0, 102, 204); // Bleu
+    doc.text(companyInfo.name, 60, 30);
+    doc.setTextColor(0, 0, 0); // Reset noir
+    doc.setFontSize(10);
+    doc.text(companyInfo.address, 60, 37);
+    doc.text(`${companyInfo.postalCode} ${companyInfo.city}`, 60, 42);
+    doc.text(`SIRET : ${companyInfo.siret}`, 60, 47);
+
+    // Titre
+    doc.setFontSize(18);
+    doc.setTextColor(33, 128, 141); // #21808D
+    doc.text(`DEVIS ${quote.number}`, 20, 70);
+    doc.setTextColor(0, 0, 0);
+
+    // Client
+    doc.setFontSize(10);
+    doc.text('Client :', 20, 85);
+    doc.text(quote.client, 20, 90);
+    if (quote.clientSiret) doc.text(`SIRET : ${quote.clientSiret}`, 20, 95);
+
+    // Dates
+    doc.text(`Date d'émission : ${formatDateFR(quote.date)}`, 120, 85);
+    doc.text(`Valide jusqu'au : ${formatDateFR(quote.validityDate)}`, 120, 90);
+
+    // Tableau multi-lignes
+    if (doc.autoTable) {
+        const tableBody = quote.items && quote.items.length > 0
+            ? quote.items.map(item => [
+                item.description || '',
+                (item.quantity || 0).toString(),
+                `${(item.unitPrice || 0).toFixed(2)} €`,
+                `${((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)} €`
+            ])
+            : [];
+        
+        doc.autoTable({
+            startY: 120,
+            head: [['Description', 'Quantité', 'Prix unitaire HT', 'Total HT']],
+            body: tableBody,
+            headStyles: { fillColor: [33, 128, 141] },
+            styles: { fontSize: 10 }
+        });
+    }
+
+    const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 10 : 160;
+
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total HT : ${(quote.total || 0).toFixed(2)} €`, 120, finalY);
+    doc.setFont(undefined, 'normal');
+    
+    doc.setFontSize(9);
+    doc.text(`TVA non applicable (art. 293 B du CGI)`, 120, finalY + 7);
+
+    // Mention légale
+    doc.setFontSize(9);
+    doc.setTextColor(200, 100, 0);
+    doc.text(`⚠️ Bon pour accord - Valable jusqu'au ${formatDateFR(quote.validityDate)}`, 20, finalY + 20);
+    doc.setTextColor(0, 0, 0);
+
+    return doc.output('datauristring').split(',')[1];
+}
+
+/**
+ * Télécharge le PDF d'un devis
+ */
+async function downloadQuotePDF(index) {
+    const quote = quotes[index];
+    if (!quote) {
+        showToast('❌ Devis introuvable', 'error');
+        return;
+    }
+    
+    if (!window.jspdf) {
+        showToast('❌ jsPDF manquant - impossible de générer le PDF', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Génération du PDF...', 'info');
+        const pdfBase64 = await generateQuotePDFBase64(quote);
+        
+        // Convertir base64 en blob
+        const byteCharacters = atob(pdfBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        
+        // Télécharger
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${quote.number}-${quote.client.replace(/\s+/g, '_')}.pdf`;
+        link.click();
+        
+        showToast('✅ PDF téléchargé', 'success');
+    } catch (error) {
+        console.error('Erreur génération PDF:', error);
+        showToast('❌ Erreur : ' + error.message, 'error');
+    }
+}
+
+/**
+ * Génère le corps du mail pour un devis
+ */
+function generateQuoteEmailBody(quote, client) {
+    const contactName = client.contact_name || client.name;
+    return `Bonjour ${contactName},
+
+Veuillez trouver ci-joint le devis n°${quote.number} d'un montant de ${(quote.total || 0).toFixed(2)} € HT.
+
+Date d'émission : ${formatDateFR(quote.date)}
+Date de validité : ${formatDateFR(quote.validityDate)}
+
+Ce devis en attente de votre accord constitue une offre ferme et précise.
+
+Cordialement,
+Mickaël TOURDOT-IGUEDJETAL
+MTI CONSULTING
+Téléphone : +33 7 77 37 17 39
+Mail : mticonsulting59@gmail.com`;
+}
+
+/**
+ * Affiche un aperçu du mail avant envoi
+ */
+// Store current quote index for email sending from modal
+let currentQuoteIndexForEmail = null;
+
+function showQuoteEmailPreview(index) {
+    const quote = quotes[index];
+    if (!quote) {
+        showToast('❌ Devis introuvable', 'error');
+        return;
+    }
+    
+    const client = clients.find(c => c.name === quote.client);
+    if (!client) {
+        showToast('❌ Client introuvable', 'error');
+        return;
+    }
+    
+    // Store current quote index for sending
+    currentQuoteIndexForEmail = index;
+    
+    const hasEmail = client && client.email_facturation && client.email_facturation.trim() !== '';
+    const emailTo = hasEmail ? client.email_facturation : '';
+    
+    // Construire le contenu de l'email
+    const subject = `${quote.number} - MTI CONSULTING`;
+    const body = generateQuoteEmailBody(quote, client);
+    
+    // Remplir le modal réutilisable
+    const emailToEl = document.getElementById('emailTo');
+    const emailSubjectEl = document.getElementById('emailSubject');
+    const emailBodyEl = document.getElementById('emailBody');
+    
+    if (emailToEl) emailToEl.textContent = emailTo || '(À compléter manuellement)';
+    if (emailSubjectEl) emailSubjectEl.textContent = subject;
+    if (emailBodyEl) emailBodyEl.textContent = body;
+    
+    // Afficher warning si pas d'email
+    const warningDiv = document.getElementById('emailWarning');
+    if (warningDiv) {
+        if (!hasEmail) {
+            warningDiv.style.display = 'block';
+            warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce devis.</strong><br>Veuillez ajouter l\'email dans la gestion des tiers.';
+        } else {
+            warningDiv.style.display = 'none';
+        }
+    }
+    
+    // Configurer le bouton de confirmation pour les devis
+    setupQuoteEmailConfirmButton(index, hasEmail);
+    
+    // Afficher le modal
+    const modal = document.getElementById('emailModal');
+    if (modal) modal.classList.add('show');
+}
+
+function setupQuoteEmailConfirmButton(index, hasEmail) {
+    const confirmEmail = document.getElementById('confirmEmail');
+    if (confirmEmail) {
+        // Cloner le bouton pour enlever les anciens listeners
+        const newConfirm = confirmEmail.cloneNode(true);
+        confirmEmail.parentNode.replaceChild(newConfirm, confirmEmail);
+        
+        // Désactiver si pas d'email
+        if (!hasEmail) {
+            newConfirm.disabled = true;
+            newConfirm.style.opacity = '0.6';
+            newConfirm.style.cursor = 'not-allowed';
+        } else {
+            newConfirm.disabled = false;
+            newConfirm.style.opacity = '1';
+            newConfirm.style.cursor = 'pointer';
+        }
+        
+        // Ajouter listener pour envoi
+        newConfirm.addEventListener('click', async () => {
+            if (newConfirm.disabled) return;
+            newConfirm.disabled = true;
+            newConfirm.style.opacity = '0.6';
+            const originalText = newConfirm.textContent;
+            newConfirm.textContent = '⏳ Envoi en cours...';
+            
+            try {
+                await confirmQuoteEmailSend(index);
+            } finally {
+                newConfirm.disabled = false;
+                newConfirm.style.opacity = '1';
+                newConfirm.textContent = originalText;
+            }
+        });
+    }
+}
+
+/**
+ * Confirme et envoie l'email du devis
+ */
+async function confirmQuoteEmailSend(index) {
+    const quote = quotes[index];
+    if (!quote) {
+        showToast('❌ Devis introuvable', 'error');
+        return;
+    }
+    
+    const client = clients.find(c => c.name === quote.client);
+    if (!client || !client.email_facturation) {
+        showToast('❌ Email du client manquant', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Génération du PDF et envoi...', 'info');
+        
+        // Générer PDF
+        const pdfBase64 = await generateQuotePDFBase64(quote);
+        
+        // Utiliser la fonction generateQuoteEmailBody pour cohérence
+        const subject = `${quote.number} - MTI CONSULTING`;
+        const body = generateQuoteEmailBody(quote, client);
+        
+        // Envoyer via backend
+        const result = await callBackend('sendEmail', {
+            to: client.email_facturation,
+            subject: subject,
+            body: body,
+            pdfBase64: pdfBase64,
+            pdfFilename: `${quote.number}-${quote.client.replace(/\s+/g, '_')}.pdf`
+        });
+        
+        if (!result || !result.success) {
+            throw new Error((result && (result.data || result.error)) || 'Erreur inconnue');
+        }
+        
+        // Marquer comme envoyé
+        quotes[index].status = 'Envoyé';
+        await saveToDrive();
+        renderQuoteList();
+        try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+        
+        showToast(`✅ Devis envoyé à ${client.email_facturation}`, 'success');
+        
+        // Fermer le modal (même méthode que pour les factures)
+        const modal = document.getElementById('emailModal');
+        if (modal) modal.classList.remove('show');
+    } catch (error) {
+        console.error('❌ Erreur envoi email:', error);
+        showToast('❌ Erreur : ' + (error.message || error), 'error');
+    }
+}
+
+/**
+ * Envoie un devis par email avec PDF
+ */
+async function sendQuoteEmail(index) {
+    const quote = quotes[index];
+    if (!quote) {
+        showToast('❌ Devis introuvable', 'error');
+        return;
+    }
+    
+    const client = clients.find(c => c.name === quote.client);
+    if (!client || !client.email_facturation) {
+        showToast('❌ Email du client manquant', 'error');
+        return;
+    }
+    
+    // Afficher le modal de prévisualisation
+    showQuoteEmailPreview(index);
+}
+
+/**
+ * Prévisualise et prépare l'envoi d'un devis depuis le formulaire
+ */
+async function previewAndConfirmQuoteSend() {
+    const quoteNumber = document.getElementById('quoteNumber').value;
+    const clientName = document.getElementById('quoteClientName').value;
+    const clientSiret = document.getElementById('quoteClientSiret').value;
+    const clientAddress = document.getElementById('quoteClientAddress').value;
+    const quoteDate = document.getElementById('quoteDate').value;
+    const validityDate = document.getElementById('quoteValidityDate').value;
+    
+    if (!clientName) {
+        showToast('⚠️ Veuillez saisir le nom du client', 'error');
+        return;
+    }
+    
+    if (!currentQuoteItems || currentQuoteItems.length === 0) {
+        showToast('⚠️ Veuillez ajouter au moins une ligne au devis', 'error');
+        return;
+    }
+    
+    // Créer l'objet devis temporaire
+    const tempQuote = {
+        number: quoteNumber,
+        client: clientName,
+        clientSiret: clientSiret,
+        clientAddress: clientAddress,
+        date: quoteDate,
+        validityDate: validityDate,
+        items: currentQuoteItems,
+        total: currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0)
+    };
+    
+    // Trouver le client dans la liste
+    const clientObj = clients.find(c => c.name === clientName) || { name: clientName, contact_name: clientName };
+    
+    // Préparer le contenu de l'email
+    const to = clientObj.email_facturation || '';
+    const subject = `${tempQuote.number} - MTI CONSULTING`;
+    const body = generateQuoteEmailBody(tempQuote, clientObj);
+    
+    // Afficher le modal de prévisualisation
+    showEmailPreviewForQuoteConfirmSend(to, subject, body, tempQuote);
+}
+
+/**
+ * Affiche le modal de prévisualisation pour l'envoi d'un devis
+ */
+function showEmailPreviewForQuoteConfirmSend(to, subject, body, quote) {
+    const emailToEl = document.getElementById('emailTo');
+    const emailSubjectEl = document.getElementById('emailSubject');
+    const emailBodyEl = document.getElementById('emailBody');
+    
+    if (emailToEl) emailToEl.textContent = to || '(À compléter manuellement)';
+    if (emailSubjectEl) emailSubjectEl.textContent = subject;
+    if (emailBodyEl) emailBodyEl.textContent = body;
+    
+    const hasEmail = to && to.trim() !== '';
+    const warningDiv = document.getElementById('emailWarning');
+    if (warningDiv) {
+        if (!hasEmail) {
+            warningDiv.style.display = 'block';
+            warningDiv.innerHTML = '⚠️ <strong>Aucun contact email configuré pour ce client.</strong><br>Veuillez ajouter l\'email dans la gestion des tiers.';
+        } else {
+            warningDiv.style.display = 'none';
+        }
+    }
+    
+    // Stocker l'index temporaire pour la confirmation
+    currentQuoteIndexForEmail = -1; // -1 signifie qu'on est en création, pas en édition depuis la liste
+    currentQuoteTempForEmail = quote; // Sauvegarder le devis temporaire
+    
+    // Configurer le bouton de confirmation
+    setupQuoteEmailConfirmButtonForForm(hasEmail);
+    
+    // Afficher le modal
+    const modal = document.getElementById('emailModal');
+    if (modal) modal.classList.add('show');
+}
+
+/**
+ * Configure le bouton de confirmation pour l'envoi depuis le formulaire
+ */
+function setupQuoteEmailConfirmButtonForForm(hasEmail) {
+    const confirmEmail = document.getElementById('confirmEmail');
+    if (confirmEmail) {
+        // Cloner le bouton pour enlever les anciens listeners
+        const newConfirm = confirmEmail.cloneNode(true);
+        confirmEmail.parentNode.replaceChild(newConfirm, confirmEmail);
+        
+        // Désactiver si pas d'email
+        if (!hasEmail) {
+            newConfirm.disabled = true;
+            newConfirm.style.opacity = '0.6';
+            newConfirm.style.cursor = 'not-allowed';
+        } else {
+            newConfirm.disabled = false;
+            newConfirm.style.opacity = '1';
+            newConfirm.style.cursor = 'pointer';
+        }
+        
+        // Ajouter listener pour envoi
+        newConfirm.addEventListener('click', async () => {
+            if (newConfirm.disabled) return;
+            newConfirm.disabled = true;
+            newConfirm.style.opacity = '0.6';
+            const originalText = newConfirm.textContent;
+            newConfirm.textContent = '⏳ Envoi en cours...';
+            
+            try {
+                await confirmQuoteEmailSendFromForm();
+            } finally {
+                newConfirm.disabled = false;
+                newConfirm.style.opacity = '1';
+                newConfirm.textContent = originalText;
+            }
+        });
+    }
+}
+
+/**
+ * Confirme et envoie l'email du devis depuis le formulaire
+ */
+async function confirmQuoteEmailSendFromForm() {
+    if (!currentQuoteTempForEmail) {
+        showToast('❌ Devis manquant', 'error');
+        return;
+    }
+    
+    const quote = currentQuoteTempForEmail;
+    const client = clients.find(c => c.name === quote.client);
+    
+    if (!client || !client.email_facturation) {
+        showToast('❌ Email du client manquant', 'error');
+        return;
+    }
+    
+    try {
+        showToast('⏳ Génération du PDF et envoi...', 'info');
+        
+        // Générer PDF
+        const pdfBase64 = await generateQuotePDFBase64(quote);
+        
+        // Utiliser la fonction generateQuoteEmailBody pour cohérence
+        const subject = `${quote.number} - MTI CONSULTING`;
+        const body = generateQuoteEmailBody(quote, client);
+        
+        // Envoyer via backend
+        const result = await callBackend('sendEmail', {
+            to: client.email_facturation,
+            subject: subject,
+            body: body,
+            pdfBase64: pdfBase64,
+            pdfFilename: `${quote.number}-${quote.client.replace(/\s+/g, '_')}.pdf`
+        });
+        
+        if (!result || !result.success) {
+            throw new Error((result && (result.data || result.error)) || 'Erreur inconnue');
+        }
+        
+        showToast(`✅ Devis envoyé à ${client.email_facturation}`, 'success');
+        
+        // Fermer le modal
+        const modal = document.getElementById('emailModal');
+        if (modal) modal.classList.remove('show');
+        
+        // Nettoyer la variable temporaire
+        currentQuoteTempForEmail = null;
+        
+        // Rafraîchir KPIs
+        try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+    } catch (error) {
+        console.error('❌ Erreur envoi email:', error);
+        showToast('❌ Erreur : ' + (error.message || error), 'error');
+    }
+}
+
+// Variable globale pour stocker le devis temporaire en création
+let currentQuoteTempForEmail = null;
+
+/**
+ * Affiche l'aperçu d'un devis
+ */
+function showQuotePreview() {
+    const quoteNumber = document.getElementById('quoteNumber').value;
+    const client = document.getElementById('quoteClientName').value;
+    const clientAddress = document.getElementById('quoteClientAddress').value;
+    const date = document.getElementById('quoteDate').value;
+    const validityDate = document.getElementById('quoteValidityDate').value;
+    
+    if (!client) {
+        showToast('⚠️ Veuillez saisir le nom du client', 'error');
+        return;
+    }
+    
+    // Créer l'objet devis temporaire
+    const tempQuote = {
+        number: quoteNumber,
+        client: client,
+        clientAddress: clientAddress,
+        date: date,
+        validityDate: validityDate,
+        items: currentQuoteItems,
+        total: currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0)
+    };
+    
+    // Utiliser le même HTML que le PDF
+    const previewHTML = buildQuoteHtml({
+        clientName: tempQuote.client,
+        clientAddress: tempQuote.clientAddress,
+        quoteNumber: tempQuote.number,
+        quoteDate: tempQuote.date,
+        validityDate: tempQuote.validityDate,
+        items: tempQuote.items
+    });
+    
+    // Afficher dans un modal
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; overflow-y: auto;';
+    modal.innerHTML = `
+        <div style="position: relative; background: white; border-radius: 8px; max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
+            <button onclick="this.closest('div').parentElement.remove()" style="position: absolute; top: 10px; right: 10px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 18px; z-index: 10000;">×</button>
+            <iframe style="width: 100%; height: 600px; border: none; border-radius: 8px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+/**
+ * Convertit un devis en facture
+ */
+function convertQuoteToInvoice(index) {
+    const quote = quotes[index];
+    if (!quote) {
+        showToast('❌ Devis introuvable', 'error');
+        return;
+    }
+    
+    if (!confirm(`Convertir le devis ${quote.number} en facture ?`)) {
+        return;
+    }
+    
+    // Créer nouvelle facture depuis le devis
+    const newInvoice = {
+        number: getNextInvoiceNumber(),
+        client: quote.client,
+        clientSiret: quote.clientSiret,
+        clientAddress: quote.clientAddress,
+        date: new Date().toISOString().split('T')[0],
+        dueDate: (() => {
+            const due = new Date();
+            due.setDate(due.getDate() + 30);
+            return due.toISOString().split('T')[0];
+        })(),
+        items: [...quote.items],
+        total: quote.total,
+        status: 'Brouillon',
+        sourceQuoteNumber: quote.number
+    };
+    
+    invoices.push(newInvoice);
+    
+    // Marquer le devis comme accepté et lier la facture
+    quotes[index].status = 'Accepté';
+    quotes[index].linkedInvoiceNumber = newInvoice.number;
+    
+    saveToDrive();
+    renderInvoiceList();
+    renderQuoteList();
+    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+    
+    showToast(`✅ Facture ${newInvoice.number} créée depuis devis ${quote.number}`, 'success');
+    
+    // Basculer sur l'onglet factures
+    const facturesTab = document.querySelector('[data-tab="factures"]');
+    if (facturesTab) facturesTab.click();
+}
+
+// Exposer les fonctions globales
+window.editQuoteInForm = editQuoteInForm;
+window.deleteQuote = deleteQuote;
+window.sendQuoteEmail = sendQuoteEmail;
+window.downloadQuotePDF = downloadQuotePDF;
+window.convertQuoteToInvoice = convertQuoteToInvoice;
+window.showQuoteEmailPreview = showQuoteEmailPreview;
+window.confirmQuoteEmailSend = confirmQuoteEmailSend;
+window.previewAndConfirmQuoteSend = previewAndConfirmQuoteSend;
+window.confirmQuoteEmailSendFromForm = confirmQuoteEmailSendFromForm;
 
 
 // 3. FACTURES RÉCURRENTES / ABONNEMENTS
@@ -8510,6 +10607,422 @@ function initCACounterListeners() {
     
     // Mettre \u00e0 jour les options d'ann\u00e9es au chargement
     updateCAYearOptions();
+
+    // Mettre à jour les KPI Devis → Facture au chargement
+    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs error', e); }
+}
+
+// Retourne les devis filtrés selon les mêmes critères que les factures
+function getFilteredQuotes() {
+    let filtered = [...quotes];
+
+    // Period filter (identique à getFilteredInvoices)
+    const periodEl = document.getElementById('periodFilter');
+    const period = periodEl ? periodEl.value : 'all';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (period !== 'all') {
+        filtered = filtered.filter(q => {
+            const qDate = new Date(q.date);
+            qDate.setHours(0, 0, 0, 0);
+            if (period === 'day') return qDate.getTime() === today.getTime();
+            if (period === 'week') {
+                const weekAgo = new Date(today);
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                return qDate >= weekAgo && qDate <= today;
+            }
+            if (period === 'month') {
+                return qDate.getMonth() === today.getMonth() && qDate.getFullYear() === today.getFullYear();
+            }
+            if (period === 'year') {
+                return qDate.getFullYear() === today.getFullYear();
+            }
+            return true;
+        });
+    }
+
+    // Date range filter
+    const startDate = document.getElementById('startDateFilter')?.value;
+    const endDate = document.getElementById('endDateFilter')?.value;
+
+    if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        filtered = filtered.filter(q => new Date(q.date) >= start);
+    }
+
+    if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(q => new Date(q.date) <= end);
+    }
+
+    // Client filter
+    const clientFilter = document.getElementById('clientFilterSelect') ? document.getElementById('clientFilterSelect').value : 'all';
+    if (clientFilter !== 'all') {
+        filtered = filtered.filter(q => q.client === clientFilter);
+    }
+
+    return filtered;
+}
+
+/**
+ * Met à jour le dashboard d'accueil avec les chiffres clés
+ */
+function updateDashboard() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    // CA du mois en cours
+    const monthInvoices = invoices.filter(inv => {
+        const invDate = new Date(inv.date);
+        return invDate >= startOfMonth && invDate <= today;
+    });
+    const monthCA = monthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    
+    // Factures en attente (envoyées non payées)
+    const pendingInvoices = invoices.filter(inv => 
+        inv.status === 'Envoyée' && (parseFloat(inv.montantRecu) || 0) < (inv.total || 0)
+    );
+    const pendingAmount = pendingInvoices.reduce((sum, inv) => 
+        sum + ((inv.total || 0) - (parseFloat(inv.montantRecu) || 0)), 0
+    );
+    
+    // Dernière facture créée
+    const lastInvoice = invoices.length > 0 ? invoices[invoices.length - 1] : null;
+    
+    // Dernier paiement reçu
+    const paidInvoices = invoices.filter(inv => inv.dateReception).sort((a, b) => 
+        new Date(b.dateReception) - new Date(a.dateReception)
+    );
+    const lastPayment = paidInvoices.length > 0 ? paidInvoices[0] : null;
+    
+    // Mise à jour du DOM
+    const dashCAEl = document.getElementById('dashMonthCA');
+    const dashPendingCountEl = document.getElementById('dashPendingCount');
+    const dashPendingAmountEl = document.getElementById('dashPendingAmount');
+    const dashLastInvoiceEl = document.getElementById('dashLastInvoice');
+    const dashLastPaymentEl = document.getElementById('dashLastPayment');
+    
+    if (dashCAEl) dashCAEl.textContent = `${monthCA.toFixed(2)} €`;
+    if (dashPendingCountEl) dashPendingCountEl.textContent = pendingInvoices.length;
+    if (dashPendingAmountEl) dashPendingAmountEl.textContent = `${pendingAmount.toFixed(2)} €`;
+    
+    if (dashLastInvoiceEl) {
+        if (lastInvoice) {
+            dashLastInvoiceEl.innerHTML = `<strong>${lastInvoice.number}</strong> - ${lastInvoice.client} (${formatDateFR(lastInvoice.date)})`;
+        } else {
+            dashLastInvoiceEl.textContent = 'Aucune facture';
+        }
+    }
+    
+    if (dashLastPaymentEl) {
+        if (lastPayment) {
+            dashLastPaymentEl.innerHTML = `<strong>${lastPayment.number}</strong> - ${(parseFloat(lastPayment.montantRecu) || 0).toFixed(2)} € (${formatDateFR(lastPayment.dateReception)})`;
+        } else {
+            dashLastPaymentEl.textContent = 'Aucun paiement';
+        }
+    }
+}
+
+/**
+ * Met à jour les alertes intelligentes
+ */
+function updateAlerts() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in7Days = new Date(today);
+    in7Days.setDate(in7Days.getDate() + 7);
+    
+    const alerts = [];
+    
+    // Factures en retard (>30j)
+    const overdueInvoices = invoices.filter(inv => {
+        if (inv.status !== 'Envoyée') return false;
+        const dueDate = new Date(inv.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        const daysDiff = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+        return daysDiff > 30;
+    });
+    
+    if (overdueInvoices.length > 0) {
+        const total = overdueInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+        alerts.push({
+            type: 'error',
+            icon: '🔴',
+            message: `${overdueInvoices.length} facture(s) en retard (+30j) - ${total.toFixed(2)} €`,
+            action: () => {
+                document.getElementById('statusFilter').value = 'Retard';
+                applyFilters();
+            }
+        });
+    }
+    
+    // Factures proches échéance (<7j)
+    const soonDueInvoices = invoices.filter(inv => {
+        if (inv.status !== 'Envoyée') return false;
+        const dueDate = new Date(inv.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate >= today && dueDate <= in7Days;
+    });
+    
+    if (soonDueInvoices.length > 0) {
+        const total = soonDueInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+        alerts.push({
+            type: 'warning',
+            icon: '🟠',
+            message: `${soonDueInvoices.length} facture(s) échéance <7j - ${total.toFixed(2)} €`,
+            action: null
+        });
+    }
+    
+    // Devis expirés non convertis
+    const expiredQuotes = quotes.filter(q => {
+        if (q.linkedInvoiceNumber) return false;
+        const validityDate = new Date(q.validityDate);
+        validityDate.setHours(0, 0, 0, 0);
+        return validityDate < today;
+    });
+    
+    if (expiredQuotes.length > 0) {
+        const total = expiredQuotes.reduce((sum, q) => sum + (q.total || 0), 0);
+        alerts.push({
+            type: 'info',
+            icon: '🟡',
+            message: `${expiredQuotes.length} devis expiré(s) non converti(s) - ${total.toFixed(2)} €`,
+            action: null
+        });
+    }
+    
+    // Objectif CA mensuel personnalisé
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthInvoices = invoices.filter(inv => {
+        const invDate = new Date(inv.date);
+        return invDate >= startOfMonth && invDate <= today;
+    });
+    const monthCA = monthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    
+    // CA annuel (année en cours)
+    const startOfYear = new Date(today.getFullYear(), 0, 1);
+    const yearInvoices = invoices.filter(inv => {
+        const invDate = new Date(inv.date);
+        return invDate >= startOfYear && invDate <= today;
+    });
+    const yearCA = yearInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    
+    const objectif = taxSettings.objectifCAMensuel || 6000;
+    const seuilTVAAnnuel = taxSettings.seuilTVAAnnuel || 37500;
+    const seuilMicroAnnuel = taxSettings.caMaxBNC || 77700;
+    
+    // Calculer les pourcentages pour les barres de progression
+    const progressObjectif = Math.min(((monthCA / objectif) * 100), 100);
+    const progressTVA = Math.min(((yearCA / seuilTVAAnnuel) * 100), 100);
+    const progressMicro = Math.min(((yearCA / seuilMicroAnnuel) * 100), 100);
+    
+    // Alerte Objectif Personnel avec barre de progression
+    if (monthCA >= objectif) {
+        const overProgress = ((monthCA / objectif) * 100).toFixed(0);
+        alerts.push({
+            type: 'success',
+            icon: '🎯',
+            message: `Objectif CA mensuel atteint : ${monthCA.toFixed(0)} € (${overProgress}% de ${objectif.toFixed(0)}€)`,
+            action: null,
+            progress: 100,
+            progressColor: '#22c55e',
+            subtitle: `🎉 Félicitations ! Vous avez dépassé votre objectif de ${(monthCA - objectif).toFixed(0)}€`
+        });
+    } else if (monthCA >= objectif * 0.8) {
+        const nearProgress = ((monthCA / objectif) * 100).toFixed(0);
+        const remaining = objectif - monthCA;
+        alerts.push({
+            type: 'info',
+            icon: '🎯',
+            message: `Proche de l'objectif : ${monthCA.toFixed(0)} € (${nearProgress}%)`,
+            action: null,
+            progress: progressObjectif,
+            progressColor: '#3b82f6',
+            subtitle: `Plus que ${remaining.toFixed(0)}€ pour atteindre votre objectif de ${objectif.toFixed(0)}€`
+        });
+    }
+    
+    // Alertes seuils fiscaux ANNUELS avec barres de progression
+    if (yearCA >= seuilMicroAnnuel * 0.9) {
+        const microPercent = ((yearCA / seuilMicroAnnuel) * 100).toFixed(0);
+        const remaining = seuilMicroAnnuel - yearCA;
+        const isOver = yearCA >= seuilMicroAnnuel;
+        alerts.push({
+            type: isOver ? 'error' : 'warning',
+            icon: isOver ? '🚨' : '⚠️',
+            message: `Seuil Micro-BNC annuel : ${yearCA.toFixed(0)} € / ${seuilMicroAnnuel.toFixed(0)} € (${microPercent}%)`,
+            action: null,
+            progress: progressMicro,
+            progressColor: isOver ? '#dc2626' : '#f59e0b',
+            subtitle: isOver 
+                ? `🚨 Dépassement de ${(yearCA - seuilMicroAnnuel).toFixed(0)}€ ! Consultez votre comptable`
+                : `⚡ Plus que ${remaining.toFixed(0)}€ avant le plafond (CA cumulé ${today.getFullYear()})`
+        });
+    } else if (yearCA >= seuilTVAAnnuel * 0.9) {
+        const tvaPercent = ((yearCA / seuilTVAAnnuel) * 100).toFixed(0);
+        const remaining = seuilTVAAnnuel - yearCA;
+        const isOver = yearCA >= seuilTVAAnnuel;
+        alerts.push({
+            type: isOver ? 'warning' : 'info',
+            icon: isOver ? '⚡' : 'ℹ️',
+            message: `Seuil TVA annuel : ${yearCA.toFixed(0)} € / ${seuilTVAAnnuel.toFixed(0)} € (${tvaPercent}%)`,
+            action: null,
+            progress: progressTVA,
+            progressColor: isOver ? '#f59e0b' : '#3b82f6',
+            subtitle: isOver
+                ? `⚠️ Dépassement de ${(yearCA - seuilTVAAnnuel).toFixed(0)}€ - Anticipez la franchise TVA`
+                : `📊 Plus que ${remaining.toFixed(0)}€ avant le seuil (CA cumulé ${today.getFullYear()})`
+        });
+    }
+    
+    // Affichage des alertes
+    const alertsContainer = document.getElementById('alertsContainer');
+    if (!alertsContainer) return;
+    
+    if (alerts.length === 0) {
+        alertsContainer.innerHTML = `
+            <div style="
+                text-align: center; 
+                padding: var(--space-24);
+                background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+                border-radius: var(--radius-lg);
+                border: 2px dashed rgba(34, 197, 94, 0.3);
+            ">
+                <div style="font-size: 48px; margin-bottom: var(--space-8);">✅</div>
+                <p style="color: #22c55e; font-weight: var(--font-weight-semibold); font-size: var(--font-size-base); margin: 0;">
+                    Aucune alerte - Tout est sous contrôle !
+                </p>
+            </div>
+        `;
+        return;
+    }
+    
+    alertsContainer.innerHTML = alerts.map(alert => {
+        const bgColor = {
+            error: 'linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%)',
+            warning: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)',
+            info: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
+            success: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%)'
+        }[alert.type];
+        
+        const borderColor = {
+            error: '#dc2626',
+            warning: '#f59e0b',
+            info: '#3b82f6',
+            success: '#22c55e'
+        }[alert.type];
+        
+        const shadowColor = {
+            error: 'rgba(220, 38, 38, 0.2)',
+            warning: 'rgba(245, 158, 11, 0.2)',
+            info: 'rgba(59, 130, 246, 0.2)',
+            success: 'rgba(34, 197, 94, 0.2)'
+        }[alert.type];
+        
+        const clickable = alert.action ? 'cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;' : '';
+        const onclick = alert.action ? `onclick="(${alert.action.toString()})()"` : '';
+        const hoverStyle = alert.action ? 'onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 8px 16px ' + shadowColor + '\'" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'0 2px 8px ' + shadowColor + '\'"' : '';
+        
+        // Barre de progression si présente
+        const progressBar = alert.progress !== undefined ? `
+            <div style="margin-top: var(--space-12); background: rgba(255,255,255,0.5); border-radius: 999px; height: 8px; overflow: hidden; position: relative;">
+                <div style="
+                    width: ${alert.progress}%;
+                    height: 100%;
+                    background: ${alert.progressColor};
+                    border-radius: 999px;
+                    transition: width 1s ease-out;
+                    box-shadow: 0 0 10px ${alert.progressColor};
+                "></div>
+            </div>
+        ` : '';
+        
+        const subtitle = alert.subtitle ? `
+            <div style="
+                margin-top: var(--space-8);
+                font-size: var(--font-size-xs);
+                color: var(--color-text-secondary);
+                font-style: italic;
+            ">
+                ${alert.subtitle}
+            </div>
+        ` : '';
+        
+        return `
+            <div style="
+                padding: var(--space-16);
+                background: ${bgColor};
+                border-left: 5px solid ${borderColor};
+                border-radius: var(--radius-lg);
+                margin-bottom: var(--space-12);
+                box-shadow: 0 2px 8px ${shadowColor};
+                ${clickable}
+            " ${onclick} ${hoverStyle}>
+                <div style="display: flex; align-items: flex-start; gap: var(--space-12);">
+                    <div style="
+                        font-size: 32px;
+                        line-height: 1;
+                        flex-shrink: 0;
+                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+                    ">
+                        ${alert.icon}
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="
+                            font-size: var(--font-size-base);
+                            font-weight: var(--font-weight-semibold);
+                            color: var(--color-text-primary);
+                            line-height: 1.4;
+                        ">
+                            ${alert.message}
+                        </div>
+                        ${subtitle}
+                        ${progressBar}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Met à jour les KPI Devis → Facture dans l'onglet Suivi (avec filtres)
+function updateDevisKPIs() {
+    const rateEl = document.getElementById('devisConversionRate');
+    const amountMonthEl = document.getElementById('devisConvertedAmountMonth');
+    const countMonthEl = document.getElementById('devisCountMonth');
+    const avgDelayEl = document.getElementById('devisAvgDelay');
+    if (!rateEl || !amountMonthEl || !countMonthEl || !avgDelayEl) return;
+
+    const quotesFiltered = getFilteredQuotes();
+    const invoicesAll = Array.isArray(invoices) ? invoices : [];
+
+    const convertedQuotes = quotesFiltered.filter(q => !!q.linkedInvoiceNumber);
+
+    const conversionRate = quotesFiltered.length > 0 ? (convertedQuotes.length / quotesFiltered.length) * 100 : 0;
+    rateEl.textContent = `${conversionRate.toFixed(0)}%`;
+
+    // Montant des devis filtrés
+    const quotesAmount = quotesFiltered.reduce((sum, q) => sum + (q.total || 0), 0);
+    amountMonthEl.textContent = `${quotesAmount.toFixed(2)} €`;
+
+    countMonthEl.textContent = `${quotesFiltered.length}`;
+
+    const delays = convertedQuotes.map(q => {
+        const inv = invoicesAll.find(i => i.number === q.linkedInvoiceNumber);
+        if (!inv) return null;
+        const dq = new Date(q.date);
+        const di = new Date(inv.date);
+        if (isNaN(dq) || isNaN(di)) return null;
+        const diffDays = Math.max(0, Math.round((di - dq) / (1000 * 60 * 60 * 24)));
+        return diffDays;
+    }).filter(v => v !== null);
+    const avgDelay = delays.length > 0 ? (delays.reduce((a, b) => a + b, 0) / delays.length) : 0;
+    avgDelayEl.textContent = `${avgDelay.toFixed(1)} j`;
 }
 
 /**

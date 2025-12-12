@@ -716,7 +716,10 @@ tr:hover {
 
     <div class="container">
         <nav class="nav-tabs">
-            <button class="nav-tab active" data-tab="factures">
+            <button class="nav-tab active" data-tab="devis">
+                📝 Devis
+            </button>
+            <button class="nav-tab" data-tab="factures">
                 📄 Factures
             </button>
             <button class="nav-tab" data-tab="ram">
@@ -740,7 +743,7 @@ tr:hover {
         </nav>
 
         <!-- FACTURES TAB -->
-        <div id="factures" class="tab-content active">
+        <div id="factures" class="tab-content">
             <div class="card">
                 <h2 class="card-title">Générateur de Factures</h2>
                 <div id="editModeIndicator" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-orange-500-rgb), 0.15); color: var(--color-warning); border-radius: var(--radius-base); margin-bottom: var(--space-16); border: 1px solid rgba(var(--color-orange-500-rgb), 0.25); font-weight: var(--font-weight-semibold);">
@@ -858,11 +861,17 @@ tr:hover {
             <div class="card">
                 <h2 class="card-title">Liste des factures</h2>
                 <div class="table-wrapper">
+                    <!-- SEARCH BAR -->
+                    <div class="form-group" style="margin-bottom: var(--space-16);">
+                        <input type="text" id="invoiceSearchInput" class="form-control" placeholder="🔍 Rechercher par numéro, client..." onkeyup="filterInvoiceList()">
+                    </div>
+
                     <table>
                         <thead>
                             <tr>
                                 <th>N°</th>
                                 <th>Client</th>
+                                <th>Devis lié</th>
                                 <th>Date</th>
                                 <th>Montant</th>
                                 <th>Statut</th>
@@ -926,6 +935,127 @@ tr:hover {
                     <p style="margin: var(--space-8) 0 0;">
                         <strong>Fréquences disponibles :</strong> Mensuelle, Trimestrielle, Annuelle
                     </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- DEVIS TAB -->
+        <div id="devis" class="tab-content active">
+            <div class="card">
+                <h2 class="card-title">Générateur de Devis</h2>
+                <div id="editQuoteModeIndicator" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-orange-500-rgb), 0.15); color: var(--color-warning); border-radius: var(--radius-base); margin-bottom: var(--space-16); border: 1px solid rgba(var(--color-orange-500-rgb), 0.25); font-weight: var(--font-weight-semibold);">
+                    ✏️ Modification du devis #<span id="editingQuoteNumber"></span>
+                </div>
+                <form id="quoteForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Sélectionner un client</label>
+                            <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); display: block; margin-bottom: 4px;">
+                                Choisissez un client existant ou sélectionnez <strong>Saisie manuelle</strong> pour remplir les informations à la main.
+                            </small>
+                            <select class="form-control" id="quoteClientSelect">
+                                <option value="">Saisie manuelle</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Numéro de devis</label>
+                            <input type="text" class="form-control" id="quoteNumber" readonly placeholder="DEVIS-YYYY-NNN (auto)">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Nom du client * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-rempli via SIRET)</small></label>
+                            <input type="text" class="form-control" id="quoteClientName" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">SIRET <span id="quoteClientSiretStatus" style="margin-left: 8px;"></span></label>
+                            <input type="text" class="form-control" id="quoteClientSiret" placeholder="14 chiffres" maxlength="14" inputmode="numeric" pattern="\d{14}">
+                            <small id="quoteClientSiretInfo" style="display: none; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary);"></small>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Adresse du client * <small style="color: var(--color-text-secondary); font-weight: normal;">(auto-remplie via SIRET)</small></label>
+                        <textarea class="form-control" id="quoteClientAddress" required></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Date du devis *</label>
+                            <input type="date" class="form-control" id="quoteDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Validité jusqu'au *</label>
+                            <input type="date" class="form-control" id="quoteValidityDate" required>
+                        </div>
+                    </div>
+
+                    <!-- MULTI-LINE ITEMS TABLE -->
+                    <div class="form-group">
+                        <label class="form-label">Lignes du devis *</label>
+                        <div id="quoteItemsContainer" style="border: 1px solid var(--color-border); border-radius: var(--border-radius); overflow: hidden;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: var(--color-bg-secondary);">
+                                        <th style="padding: 8px; text-align: left; font-weight: 600; font-size: var(--font-size-sm);">Description</th>
+                                        <th style="padding: 8px; text-align: center; font-weight: 600; font-size: var(--font-size-sm); width: 80px;">Qté</th>
+                                        <th style="padding: 8px; text-align: right; font-weight: 600; font-size: var(--font-size-sm); width: 120px;">Prix Unit. HT</th>
+                                        <th style="padding: 8px; text-align: right; font-weight: 600; font-size: var(--font-size-sm); width: 120px;">Total HT</th>
+                                        <th style="padding: 8px; text-align: center; width: 50px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="quoteItemsBody">
+                                    <!-- Quote items will be added here dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="addQuoteItem()" style="margin-top: 8px;">
+                            ➕ Ajouter une ligne
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Total HT</label>
+                        <input type="text" class="form-control" id="quoteTotalHT" readonly>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-secondary" id="cancelQuoteEditBtn" style="display: none;">Annuler</button>
+                        <button type="button" class="btn btn-secondary" id="previewQuote">👁️ Aperçu</button>
+                        <button type="button" class="btn btn-secondary" id="previewConfirmQuoteSendBtn">🔎 Prévisualiser et confirmer</button>
+                        <button type="button" class="btn btn-secondary" id="downloadQuotePDF">📥 Télécharger PDF</button>
+                        <button type="submit" class="btn btn-primary" id="submitQuoteBtn">💾 Créer devis</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Quote List -->
+            <div class="card">
+                <h2 class="card-title">Liste des devis</h2>
+                <div class="table-wrapper">
+                    <!-- SEARCH BAR -->
+                    <div class="form-group" style="margin-bottom: var(--space-16);">
+                        <input type="text" id="quoteSearchInput" class="form-control" placeholder="🔍 Rechercher par numéro, client..." onkeyup="filterQuoteList()">
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>N°</th>
+                                <th>Client</th>
+                                <th>Date</th>
+                                <th>Validité</th>
+                                <th>Montant</th>
+                                <th>Facture liée</th>
+                                <th>Statut</th>
+                                <th>Actions rapides</th>
+                            </tr>
+                        </thead>
+                        <tbody id="quoteListBody">
+                            <!-- Quotes will be populated here -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1028,6 +1158,11 @@ tr:hover {
                 </div>
                 
                 <div class="table-wrapper">
+                    <!-- SEARCH BAR -->
+                    <div class="form-group" style="margin-bottom: var(--space-16);">
+                        <input type="text" id="ramSearchInput" class="form-control" placeholder="🔍 Rechercher par client, période..." onkeyup="filterRAMList()">
+                    </div>
+
                     <table>
                         <thead>
                             <tr>
@@ -1221,6 +1356,37 @@ tr:hover {
 
         <!-- SUIVI TAB -->
         <div id="suivi" class="tab-content">
+            <!-- Dashboard d'accueil -->
+            <div class="card" style="margin-bottom: var(--space-16); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <h2 style="margin: 0 0 var(--space-16) 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); color: white;">📊 Vue d'ensemble</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-16);">
+                    <div style="background: rgba(255, 255, 255, 0.15); padding: var(--space-16); border-radius: var(--radius-base); backdrop-filter: blur(10px);">
+                        <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4); opacity: 0.9;">CA du mois</div>
+                        <div style="font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);" id="dashMonthCA">0 €</div>
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.15); padding: var(--space-16); border-radius: var(--radius-base); backdrop-filter: blur(10px);">
+                        <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4); opacity: 0.9;">Factures en attente</div>
+                        <div style="font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);"><span id="dashPendingCount">0</span> <small style="font-size: var(--font-size-base);">(<span id="dashPendingAmount">0 €</span>)</small></div>
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.15); padding: var(--space-16); border-radius: var(--radius-base); backdrop-filter: blur(10px);">
+                        <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4); opacity: 0.9;">Dernière facture</div>
+                        <div style="font-size: var(--font-size-sm);" id="dashLastInvoice">—</div>
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.15); padding: var(--space-16); border-radius: var(--radius-base); backdrop-filter: blur(10px);">
+                        <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4); opacity: 0.9;">Dernier paiement</div>
+                        <div style="font-size: var(--font-size-sm);" id="dashLastPayment">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alertes intelligentes -->
+            <div class="card" style="margin-bottom: var(--space-16);">
+                <h3 style="font-size: var(--font-size-lg); margin: 0 0 var(--space-12) 0; font-weight: var(--font-weight-semibold);">🚨 Alertes</h3>
+                <div id="alertsContainer">
+                    <p style="color: var(--color-text-secondary); text-align: center; padding: var(--space-12);">Chargement...</p>
+                </div>
+            </div>
+
             <div class="card" style="margin-bottom: var(--space-16);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-16);">
                     <h3 style="font-size: var(--font-size-lg); margin-bottom: 0; font-weight: var(--font-weight-semibold);">Filtres</h3>
@@ -1265,6 +1431,29 @@ tr:hover {
                             <option value="Payée">Payée</option>
                             <option value="Retard">Retard</option>
                         </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPIs Devis → Facture (filtrés) -->
+            <div class="card" style="margin-bottom: var(--space-16);">
+                <h3 style="font-size: var(--font-size-lg); margin: 0 0 var(--space-16) 0; font-weight: var(--font-weight-semibold); color: var(--color-primary);">📊 Statistiques Devis</h3>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">Taux de conversion (période)</div>
+                        <div class="summary-value" id="devisConversionRate">0%</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Montant devis (période)</div>
+                        <div class="summary-value" id="devisConvertedAmountMonth">0 €</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Nb devis (période)</div>
+                        <div class="summary-value" id="devisCountMonth">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Délai moyen conversion</div>
+                        <div class="summary-value" id="devisAvgDelay">0 j</div>
                     </div>
                 </div>
             </div>
@@ -1319,7 +1508,10 @@ tr:hover {
                 <div id="caAlert" style="display: none; padding: var(--space-12); border-radius: var(--border-radius-sm); margin-top: var(--space-12); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);"></div>
             </div>
 
-            <div class="summary-grid">
+            <!-- KPIs Factures (filtrés) -->
+            <div class="card" style="margin-bottom: var(--space-16);">
+                <h3 style="font-size: var(--font-size-lg); margin: 0 0 var(--space-16) 0; font-weight: var(--font-weight-semibold); color: var(--color-primary);">💰 Statistiques Factures</h3>
+                <div class="summary-grid">
                 <div class="summary-card">
                     <div class="summary-label">Total facturé</div>
                     <div class="summary-value" id="totalFacture">0 €</div>
@@ -1335,6 +1527,7 @@ tr:hover {
                 <div class="summary-card">
                     <div class="summary-label">Taux de recouvrement</div>
                     <div class="summary-value" id="tauxRecouvrement">0%</div>
+                </div>
                 </div>
             </div>
 
@@ -1491,17 +1684,10 @@ tr:hover {
                 </div>
 
                 <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">CFE (Cotisation Foncière des Entreprises)</h4>
-                <div class="form-group">
-                    <label class="form-label">Montant CFE annuel (€)</label>
-                    <input type="number" class="form-control" id="cfeAnnuel" step="1" min="0" value="600">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">% mensuel à ventiler CFE</label>
-                    <input type="number" class="form-control" id="prorationMensuelle" step="0.01" min="0" value="8.33">
-                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Défaut: 8.33% (1/12)</small>
-                </div>
-                <div style="padding: var(--space-12); background-color: var(--color-bg-1); border-radius: var(--radius-base); margin-bottom: var(--space-16);">
-                    <strong>CFE mensuelle: <span id="cfeMensuel">50.00</span>€</strong>
+                <div style="padding: var(--space-12); background-color: rgba(59, 130, 246, 0.1); border-left: 4px solid rgba(59, 130, 246, 1); border-radius: var(--radius-base); margin-bottom: var(--space-16);">
+                    <p style="margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                        💡 <strong>CFE personnalisée par commune</strong> : Allez à l'onglet <strong>Calculs</strong> et recherchez votre commune pour obtenir la CFE officielle DGFiP 2024 (34 934 communes).
+                    </p>
                 </div>
 
                 <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Cotisations sociales URSSAF (BNC - Prestations de services)</h4>
@@ -1510,7 +1696,7 @@ tr:hover {
                     <div class="form-group">
                         <label class="form-label">Avec ACRE (12 mois) (%)</label>
                         <input type="number" class="form-control" id="tauxAcreActif" step="0.01" min="0" value="12.3">
-                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Taux réduit BNC 2025 : 12,30%</small>
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Taux réduit BNC 2025 : 12,30% (hors CFP 0,2%)</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Sans ACRE (taux plein) (%)</label>
@@ -1526,18 +1712,70 @@ tr:hover {
                     <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Obligatoire - Code du travail L6331-48</small>
                 </div>
 
-                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Conditions d'éligibilité Versement Libératoire</h4>
+                <!-- SECTION: SEUILS FISCAUX ANNUELS -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-32); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📊 Seuils Fiscaux Annuels</h3>
+                
+                <div style="padding: var(--space-16); background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%); border-left: 4px solid #f59e0b; border-radius: var(--radius-base); margin-bottom: var(--space-12);">
+                    <p style="margin: 0 0 var(--space-8) 0; font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                        ⚠️ <strong>Important :</strong> Ces seuils sont utilisés pour le suivi automatique de vos plafonds légaux. Les alertes dans l'onglet Suivi se basent sur le <strong>CA cumulé annuel</strong>.
+                    </p>
+                </div>
+
+                <div style="padding: var(--space-12); background: linear-gradient(135deg, rgba(33, 140, 141, 0.1) 0%, rgba(33, 140, 141, 0.05) 100%); border-left: 4px solid var(--color-primary); border-radius: var(--radius-base); margin-bottom: var(--space-20); display: flex; align-items: center; justify-content: space-between; gap: var(--space-12);">
+                    <div style="flex: 1;">
+                        <p style="margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                            🔄 <strong>Mise à jour automatique :</strong> Les seuils sont synchronisés avec l'API officielle URSSAF Mon-entreprise au démarrage (cache 24h).
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="refreshFiscalThresholdsBtn" style="white-space: nowrap;">
+                        🔄 Actualiser depuis URSSAF
+                    </button>
+                </div>
+
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Franchise en base de TVA</h4>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">RFR maximum par part (€)</label>
-                        <input type="number" class="form-control" id="rfrMaxVL" step="1" min="0" value="28797">
-                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">28 797€ pour 2026 (27 478€ pour 2025)</small>
+                        <label class="form-label">Seuil TVA de base (€)</label>
+                        <input type="number" class="form-control" id="seuilTVAAnnuel" step="1" min="0" value="37500">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Prestations de services BNC - seuil 2025</small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">CA maximum BNC (€)</label>
-                        <input type="number" class="form-control" id="caMaxBNC" step="1" min="0" value="77700">
-                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Plafond micro-entreprise BNC</small>
+                        <label class="form-label">Seuil TVA majoré (€)</label>
+                        <input type="number" class="form-control" id="seuilTVAMajore" step="1" min="0" value="39100">
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Tolérance sur 2 ans si dépassement seuil de base</small>
                     </div>
+                </div>
+
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Plafond Micro-Entreprise</h4>
+                <div class="form-group">
+                    <label class="form-label">CA maximum BNC (€)</label>
+                    <input type="number" class="form-control" id="caMaxBNC" step="1" min="0" value="77700">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Plafond annuel pour rester en régime micro-BNC</small>
+                </div>
+
+                <!-- SECTION: OBJECTIF PERSONNEL -->
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-32); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">🎯 Objectifs Personnels</h3>
+                
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Objectif CA Mensuel</h4>
+                <div class="form-group">
+                    <label class="form-label">Objectif CA mensuel (€)</label>
+                    <input type="number" class="form-control" id="objectifCAMensuel" step="100" min="0" value="6000">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">Définissez votre objectif mensuel personnalisé</small>
+                </div>
+                <div style="padding: var(--space-12); background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-left: 4px solid var(--color-primary); border-radius: var(--radius-base); margin-bottom: var(--space-16);">
+                    <p style="margin: 0 0 var(--space-8) 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-primary);">📊 Équivalents mensuels (référence)</p>
+                    <ul style="margin: 0; padding-left: var(--space-20); font-size: var(--font-size-xs); color: var(--color-text-secondary);">
+                        <li><strong>Seuil TVA :</strong> <span id="seuilTVAMensuel">3 125</span> €/mois (<span id="seuilTVAAnnuel">37 500</span>€/an)</li>
+                        <li><strong>Plafond Micro-BNC :</strong> <span id="seuilMicroMensuel">6 475</span> €/mois (<span id="seuilMicroAnnuel">77 700</span>€/an)</li>
+                    </ul>
+                    <small style="display: block; margin-top: var(--space-8); font-style: italic; color: var(--color-text-secondary);">💡 Calculés automatiquement : seuil annuel ÷ 12</small>
+                </div>
+
+                <h4 style="font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); margin-top: var(--space-16); margin-bottom: var(--space-12);">Conditions d'éligibilité Versement Libératoire</h4>
+                <div class="form-group">
+                    <label class="form-label">RFR maximum par part (€)</label>
+                    <input type="number" class="form-control" id="rfrMaxVL" step="1" min="0" value="28797">
+                    <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">28 797€ pour 2026 (27 478€ pour 2025)</small>
                 </div>
 
                 <!-- SECTION 3: BARÈME IRPP (Progressif) -->
@@ -1571,6 +1809,12 @@ tr:hover {
         <div id="calculs" class="tab-content">
             <div class="card">
                 <h2 class="card-title">Calculateur de Charges et Impôts</h2>
+                
+                <!-- Alertes seuils CA (en haut du simulateur) -->
+                <div id="seuilsAlert" style="display: none; padding: var(--space-16); margin-bottom: var(--space-24); border-radius: var(--radius-base); font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <!-- Alertes dynamiques TVA/Micro-entreprise -->
+                </div>
+                
                 <div class="form-group">
                     <label class="form-label">Chiffre d'affaires (€) *</label>
                     <input type="number" class="form-control" id="caInput" step="0.01" min="0" value="0">

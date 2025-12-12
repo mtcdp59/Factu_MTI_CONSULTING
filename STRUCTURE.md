@@ -8,7 +8,6 @@ Factu_MTI_CONSULTING/
 ├── 📄 README.md                    # Documentation utilisateur
 ├── 📄 STRUCTURE.md                 # Ce fichier
 ├── 📄 CHANGELOG.md                 # Historique des versions
-├── 📄 TAUX_OFFICIELS_2025.md       # Taux fiscaux officiels 2025
 ├── 📄 .gitignore                   # Fichiers à ignorer par Git
 │
 ├── 📁 assets/                      # Ressources statiques
@@ -24,13 +23,31 @@ Factu_MTI_CONSULTING/
 │       ├── web-app-manifest-512x512.png
 │       └── site.webmanifest
 │
-├── 📁 docs/                        # Documentation technique
+├── 📁 Documentation/               # Documentation comparaison repository
+│   ├── 0_LISEZMOI.md              # Point d'entrée principal
+│   ├── RESUME_RAPIDE.md           # TL;DR 2 minutes
+│   │
+│   └── 📁 Comparaison/            # Analyse détaillée
+│       ├── NAVIGATION.md          # FAQ + Glossaire
+│       ├── VUE_ENSEMBLE.md        # Vue d'ensemble des changements
+│       ├── CODE_DETAILLE.md       # Code ligne par ligne
+│       └── GUIDE_DEPLOIEMENT.md   # Guide déploiement
+│
+├── 📁 docs/                        # Documentation technique application
 │   ├── BAREME_IRPP.md             # Guide calculateur IRPP progressif
+│   ├── CALCULATEUR_CHARGES.md     # Documentation calculateur charges
 │   ├── FICHE_TECHNIQUE.md         # Fiche technique développeur
 │   ├── DEMARRAGE.md               # Guide de démarrage rapide
 │   ├── DEMARRAGE_GITHUB_PAGES.md  # Déploiement GitHub Pages
+│   ├── CORS_URGENCE.md            # Solutions CORS (historique)
 │   ├── DEBUG_CORS.md              # Debugging CORS (historique)
-│   └── CORS_URGENCE.md            # Solutions CORS (historique)
+│   ├── 429_ERROR_SOLUTION.md      # Solution erreurs 429 URSSAF API
+│   ├── QUICK_REFERENCE.md         # Référence rapide (localisation code)
+│   ├── README_ANALYSIS.md         # Index documentation analyse
+│   ├── VISUAL_SUMMARY.md          # Résumé visuel comparaison code
+│   ├── URSSAF_INTEGRATION.md      # Intégration API URSSAF
+│   ├── TAUX_OFFICIELS_2025.md     # Taux fiscaux officiels 2025
+│   └── AUTRES_ELEMENTS_A_SURVEILLER.md  # Seuils TVA et autres alertes
 │
 ├── 📁 backend/                     # Code backend
 │   └── AppScript.js               # Google Apps Script (~1364 lignes, v42 style)
@@ -49,7 +66,9 @@ Factu_MTI_CONSULTING/
 Fichiers principaux de l'application :
 - **index.html** : Single Page Application complète
 - **app.js** : Toute la logique JavaScript
-- **README.md** : Point d'entrée documentation
+- **README.md** : Point d'entrée documentation utilisateur
+- **STRUCTURE.md** : Ce fichier (structure projet)
+- **CHANGELOG.md** : Historique des versions
 
 ### `assets/`
 Toutes les ressources statiques du projet.
@@ -62,11 +81,21 @@ Toutes les ressources statiques du projet.
 - Favicons pour tous les navigateurs et appareils
 - Manifest PWA
 
+### `Documentation/`
+Documentation de comparaison du repository (analyse workspace vs GitHub) :
+- **0_LISEZMOI.md** : Point d'entrée navigation
+- **RESUME_RAPIDE.md** : TL;DR 2 minutes
+- **Comparaison/** : Analyse détaillée (FAQ, Vue d'ensemble, Code détaillé, Guide déploiement)
+
 ### `docs/`
-Documentation complète du projet :
-- **BAREME_IRPP.md** : Détails du calculateur fiscal
-- **FICHE_TECHNIQUE.md** : Guide développeur
-- **DEMARRAGE.md** : Quick start
+Documentation technique de l'application :
+- **Guides utilisateur** : DEMARRAGE.md, DEMARRAGE_GITHUB_PAGES.md
+- **Documentation développeur** : FICHE_TECHNIQUE.md, BAREME_IRPP.md, CALCULATEUR_CHARGES.md
+- **Références techniques** : QUICK_REFERENCE.md, TAUX_OFFICIELS_2025.md
+- **Analyses** : README_ANALYSIS.md, VISUAL_SUMMARY.md
+- **Intégrations** : URSSAF_INTEGRATION.md, 429_ERROR_SOLUTION.md
+- **Historique** : CORS_URGENCE.md, DEBUG_CORS.md
+- **Alertes** : AUTRES_ELEMENTS_A_SURVEILLER.md
 
 ### `backend/`
 Code backend Google Apps Script (v42 style) :
@@ -98,6 +127,7 @@ app.js
   └─> assets/images/MTI_CONSULTING.png (fallback logo)
 
 README.md
+  ├─> Documentation/* (comparaison repository)
   ├─> docs/BAREME_IRPP.md
   ├─> docs/FICHE_TECHNIQUE.md
   └─> .github/instructions-copilot.md
@@ -112,7 +142,9 @@ scripts/start-server.*
 - **Lignes de code** : ~10,812 (8828 JS + 1984 HTML/CSS)
 - **Backend** : 1 fichier Google Apps Script (~1364 lignes, v42 style)
 - **Assets** : 8+ fichiers (1 logo + 7+ icons)
-- **Documentation** : 12+ fichiers markdown
+- **Documentation** : 
+  - `Documentation/` : 7 fichiers (comparaison repository)
+  - `docs/` : 14 fichiers (technique application)
 - **Architecture** : Frontend-only (vanilla JS) + Google Apps Script backend
 - **Déploiement** : GitHub Pages (production), localhost (dev)
 
@@ -174,11 +206,13 @@ scripts/start-server.*
 ## 🚀 Points d'entrée
 
 1. **Utilisateur** : `index.html` (ouvrir dans navigateur)
-2. **Développeur** : `docs/FICHE_TECHNIQUE.md`
-3. **Quick start** : `docs/DEMARRAGE.md`
-4. **Backend** : `backend/AppScript.js` (déployer sur Google Apps Script)
+2. **Documentation** : `README.md` (point d'entrée principal)
+3. **Comparaison repo** : `Documentation/0_LISEZMOI.md`
+4. **Développeur** : `docs/FICHE_TECHNIQUE.md`
+5. **Quick start** : `docs/DEMARRAGE.md`
+6. **Backend** : `backend/AppScript.js` (déployer sur Google Apps Script)
 
 ---
 
-**Dernière mise à jour** : 10 Décembre 2025  
+**Dernière mise à jour** : 12 Décembre 2025  
 **Version** : 2.1.3

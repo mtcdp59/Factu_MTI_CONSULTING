@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API URSSAF - Option B (Calculs Dynamiques)</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1e40af; margin-top: 0; }
+        h2 { color: #3b82f6; font-size: 1.2em; margin-top: 0; }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover { background: #2563eb; }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 100%;
+            max-width: 300px;
+        }
+        .result {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #f0fdf4;
+            border-left-color: #22c55e;
+        }
+        .error {
+            background: #fef2f2;
+            border-left-color: #ef4444;
+            color: #dc2626;
+        }
+        .warning {
+            background: #fffbeb;
+            border-left-color: #f59e0b;
+            color: #d97706;
+        }
+        code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat {
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1e40af;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test API URSSAF - Option B (Calculs Dynamiques)</h1>
+
+    <div class="card">
+        <h2>📝 Configuration du test</h2>
+        <div class="form-group">
+            <label>Chiffre d'affaires annuel (EUR)</label>
+            <input type="number" id="ca" value="50000" step="1000" min="0">
+        </div>
+        <div class="form-group">
+            <label>Situation ACRE</label>
+            <select id="acre">
+                <option value="true">Avec ACRE (exonération 1ère année)</option>
+                <option value="false">Sans ACRE (taux plein)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Date de création (DD/MM/YYYY)</label>
+            <input type="text" id="dateCreation" value="01/01/2025" placeholder="01/01/2025">
+        </div>
+        <button id="btnTest" onclick="runTest()">▶️ Lancer le test</button>
+        <button onclick="runAllScenarios()">🔄 Tester tous les scénarios</button>
+        <button onclick="clearResults()">🗑️ Effacer résultats</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        // Base URL API URSSAF
+        const API_BASE = 'https://mon-entreprise.urssaf.fr/api/v1';
+
+        /**
+         * Fonction principale de calcul dynamique (identique à app.js)
+         */
+        async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
+            const situation = {
+                "entreprise . catégorie juridique": "'EI'",
+                "entreprise . catégorie juridique . EI . auto-entrepreneur": "oui",
+                "dirigeant . auto-entrepreneur": "oui",
+                "dirigeant . auto-entrepreneur . chiffre d'affaires": ca,
+                "entreprise . activité . nature": "'libérale'",
+                "entreprise . activité . nature . libérale . réglementée": "non",
+                "entreprise . date de création": creationDate,
+                "dirigeant . auto-entrepreneur . éligible à l'ACRE": hasACRE ? "oui" : "non",
+                "dirigeant . exonérations . ACRE": hasACRE ? "oui" : "non"
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/evaluate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        situation,
+                        expressions: ["dirigeant . auto-entrepreneur . cotisations et contributions"]
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (!data || !data.evaluations) {
+                    throw new Error('Invalid API response structure');
+                }
+
+                // L'API retourne un objet avec les règles évaluées
+                const ruleKey = "dirigeant . auto-entrepreneur . cotisations et contributions";
+                const evaluation = data.evaluations[ruleKey];
+                
+                if (!evaluation || typeof evaluation.nodeValue !== 'number') {
+                    console.warn('Response structure:', data);
+                    throw new Error('Invalid API response structure');
+                }
+
+                const montantMensuel = evaluation.nodeValue;
+                if (isNaN(montantMensuel)) {
+                    throw new Error('Invalid nodeValue from API');
+                }
+
+                const montantAnnuel = montantMensuel * 12;
+                const taux = ca > 0 ? (montantAnnuel / ca) * 100 : 0;
+
+                return { 
+                    success: true,
+                    montantAnnuel, 
+                    taux,
+                    montantMensuel,
+                    response: data
+                };
+            } catch (err) {
+                console.error('Erreur calcul API:', err);
+                
+                // Fallback valeurs en dur
+                const tauxFallback = hasACRE ? 12.5 : 24.8;
+                const montantAnnuel = ca * (tauxFallback / 100);
+
+                return { 
+                    success: false,
+                    montantAnnuel, 
+                    taux: tauxFallback,
+                    montantMensuel: montantAnnuel / 12,
+                    error: err.message,
+                    fallback: true
+                };
+            }
+        }
+
+        /**
+         * Lancer un test avec les paramètres configurés
+         */
+        async function runTest() {
+            const btn = document.getElementById('btnTest');
+            btn.disabled = true;
+            btn.textContent = '⏳ Test en cours...';
+
+            const ca = parseFloat(document.getElementById('ca').value);
+            const hasACRE = document.getElementById('acre').value === 'true';
+            const dateCreation = document.getElementById('dateCreation').value;
+
+            const startTime = performance.now();
+            const result = await calculateCotisationsDynamically(ca, hasACRE, dateCreation);
+            const duration = performance.now() - startTime;
+
+            displayResult(result, {
+                ca,
+                hasACRE,
+                dateCreation,
+                duration
+            });
+
+            btn.disabled = false;
+            btn.textContent = '▶️ Lancer le test';
+        }
+
+        /**
+         * Afficher les résultats du test
+         */
+        function displayResult(result, params) {
+            const resultsDiv = document.getElementById('results');
+            const isSuccess = result.success;
+            const isFallback = result.fallback;
+
+            const html = `
+                <div class="card">
+                    <h2>${isSuccess ? '✅' : '⚠️'} Résultat du test</h2>
+                    <div class="result ${isSuccess ? 'success' : (isFallback ? 'warning' : 'error')}">
+                        <strong>${isSuccess ? 'Calcul API réussi' : (isFallback ? 'Fallback activé' : 'Erreur API')}</strong>
+                        ${isFallback ? '<p>L\'API a échoué, utilisation des valeurs en dur.</p>' : ''}
+                        ${!isSuccess && !isFallback ? `<p>Erreur: ${result.error}</p>` : ''}
+                    </div>
+
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-value">${result.taux.toFixed(2)}%</div>
+                            <div class="stat-label">Taux effectif</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${result.montantAnnuel.toLocaleString('fr-FR', {maximumFractionDigits: 2})} €</div>
+                            <div class="stat-label">Cotisations annuelles</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${result.montantMensuel.toLocaleString('fr-FR', {maximumFractionDigits: 2})} €</div>
+                            <div class="stat-label">Cotisations mensuelles</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${params.duration.toFixed(0)} ms</div>
+                            <div class="stat-label">Temps de réponse</div>
+                        </div>
+                    </div>
+
+                    <h3 style="margin-top: 20px;">📊 Paramètres</h3>
+                    <pre>{
+  "CA annuel": ${params.ca.toLocaleString('fr-FR')} €,
+  "ACRE": ${params.hasACRE ? 'OUI' : 'NON'},
+  "Date création": "${params.dateCreation}",
+  "Source": "${isSuccess ? 'API URSSAF Mon-entreprise' : 'Valeurs fallback'}"
+}</pre>
+
+                    ${isSuccess ? `
+                    <h3>🔍 Détails réponse API</h3>
+                    <pre>${JSON.stringify(result.response, null, 2)}</pre>
+                    ` : ''}
+
+                    <p style="margin-top: 15px; font-size: 13px; color: #64748b;">
+                        Test effectué le ${new Date().toLocaleString('fr-FR')}
+                    </p>
+                </div>
+            `;
+
+            resultsDiv.innerHTML = html + resultsDiv.innerHTML;
+        }
+
+        /**
+         * Tester tous les scénarios (AVEC/SANS ACRE)
+         */
+        async function runAllScenarios() {
+            const scenarios = [
+                { ca: 50000, hasACRE: true, label: 'CA 50k EUR AVEC ACRE' },
+                { ca: 50000, hasACRE: false, label: 'CA 50k EUR SANS ACRE' },
+                { ca: 25000, hasACRE: true, label: 'CA 25k EUR AVEC ACRE' },
+                { ca: 72600, hasACRE: false, label: 'CA 72.6k EUR (max BNC) SANS ACRE' }
+            ];
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="card"><h2>🔄 Tests multiples en cours...</h2></div>' + resultsDiv.innerHTML;
+
+            for (const scenario of scenarios) {
+                const result = await calculateCotisationsDynamically(
+                    scenario.ca,
+                    scenario.hasACRE,
+                    '01/01/2025'
+                );
+
+                displayResult(result, {
+                    ca: scenario.ca,
+                    hasACRE: scenario.hasACRE,
+                    dateCreation: '01/01/2025',
+                    duration: 0,
+                    label: scenario.label
+                });
+
+                // Pause entre les appels pour éviter rate limiting
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            resultsDiv.querySelector('.card').remove(); // Supprimer message "en cours"
+        }
+
+        /**
+         * Effacer tous les résultats
+         */
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-test au chargement
+        window.addEventListener('load', () => {
+            console.log('Page de test chargée. Prêt pour les tests Option B !');
+        });
+    </script>
+</body>
+</html>
