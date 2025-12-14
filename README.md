@@ -2,76 +2,126 @@
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.1.3-blue)
+![Version](https://img.shields.io/badge/version-2.2.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
+
+## Historique des versions
+
+### v2.2.1 (Décembre 2024)
+
+**Corrections**
+- Correction de la persistance des devis après actualisation (backend + localStorage)
+- Ajout de `quotes: []` dans la structure `emptyData` du backend Google Apps Script
+- Sauvegarde automatique des devis en localStorage comme backup
+- Synchronisation localStorage après chargement depuis Drive
+
+**Améliorations**
+- Auto-actualisation de la date de validité du devis (+30 jours) lors de la modification de la date d'émission
+- Comportement identique aux factures pour une meilleure cohérence UX
+
+### v2.2.0 (Décembre 2024)
+
+**Interface utilisateur**
+- Formatage français des montants avec séparateur de milliers (ex: `12 345,67 €`)
+- Dropdown client intelligent avec auto-remplissage SIRET et Adresse
+- Optimisation du rendu PDF des devis (largeurs de colonnes)
+
+**Calculateur fiscal**
+- Interrogation séparée de l'API URSSAF pour les cotisations sociales (12,3%) et la CFP (0,2%)
+- Utilisation de règles API distinctes : `cotisations et contributions . cotisations` + `cotisations et contributions . CFP`
+- Amélioration de la précision des calculs (suppression des calculs par soustraction)
+- Évolutivité automatique en cas de modification des taux légaux
+
+**Documentation**
+- Guide complet des Rapports d'Activité Mensuels (RAMs)
+- Documentation technique de la synchronisation Google Sheets pour les devis
 
 ## 📋 Fonctionnalités
 
 ### 💼 Gestion Clients
-- ✅ Création et modification de fiches clients
-- ✅ **Enrichissement SIRENE automatique** : API INSEE pour auto-complétion (v2.1)
+- Création et modification de fiches clients
+- **Enrichissement SIRENE automatique** : API INSEE pour auto-complétion (v2.1)
   - Code NAF (activité principale)
   - Catégorie juridique (ex: SAS, SASU, SARL)
   - État administratif (Actif/Fermé)
   - Type établissement (Siège social/Établissement)
-- ✅ SIRET validé + cache 90 jours
-- ✅ Export Google Sheets : 9 colonnes enrichies
-- ✅ Recherche et filtrage
-- ✅ Import/Export CSV
+- SIRET validé + cache 90 jours
+- Export Google Sheets : 9 colonnes enrichies
+- Recherche et filtrage
+- Import/Export CSV
+
+### 📝 Gestion Devis
+- **Création devis multi-lignes** : Formulaire complet avec numérotation auto (`DEVIS-YYYY-NNN`)
+- **Génération PDF professionnelle** : Logo, branding MTI CONSULTING, template optimisé
+- **Conversion devis → facture** : 1 clic pour créer facture depuis devis accepté
+- **Liaison bidirectionnelle** : Traçabilité complète devis ↔ facture (badges cliquables)
+- **4 statuts** : Brouillon, Envoyé, Accepté, Refusé
+- **Synchronisation Drive** : Sauvegarde automatique dans `mti_data.json`
+- **Synchronisation Sheets** : Import/Export vers Google Sheets (onglet "Devis") - [📖 Guide](docs/SYNCHRONISATION_DEVIS_SHEETS.md)
+- **KPIs Dashboard** : Indicateurs temps réel (nombre devis, taux conversion)
+- **Recherche & filtrage** : Par numéro ou nom client
+- **Dropdown client** : Sélection rapide avec auto-remplissage
 
 ### 🧾 Facturation Multi-lignes
-- ✅ **Facturation multi-lignes** : Plusieurs lignes par facture
-- ✅ Numérotation automatique séquentielle
-- ✅ Génération PDF A4 (794×1123px) avec logo
-- ✅ Adresse client positionnée pour enveloppes à fenêtre
-- ✅ Mentions légales micro-entreprise
-- ✅ IBAN + BIC affichés en footer
-- ✅ Statuts : Brouillon, Envoyée, Payée, Retard
-- ✅ Dates d'échéance et suivi des paiements
-- ✅ **Validation stricte** : Empêche les factures vides
+- **Facturation multi-lignes** : Plusieurs lignes par facture
+- **Badge origine devis** : Lien cliquable vers devis source si facture créée depuis devis
+- Numérotation automatique séquentielle
+- Génération PDF A4 (794×1123px) avec logo
+- Adresse client positionnée pour enveloppes à fenêtre
+- Mentions légales micro-entreprise
+- **Dropdown client** : Sélection rapide avec auto-remplissage
+- IBAN + BIC affichés en footer
+- Statuts : Brouillon, Envoyée, Payée, Retard
+- Dates d'échéance et suivi des paiements
+- **Validation stricte** : Empêche les factures vides
 
 ### 📊 Calculateur de Charges et Impôts (Taux Officiels 2025)
-- ✅ **Taux URSSAF vérifiés** : 12,3% (ACRE) / 24,6% (Standard 2025) - Décret n°2024-484
-- ✅ **CFP obligatoire** : 0,2% (Code du travail L6331-48)
-- ✅ **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
-- ✅ **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
-- ✅ **Vérification éligibilité VL** : RFR ≤ 28,797€/part (seuil 2026)
-- ✅ **CFE personnalisée** : API Open Data Soft DGFiP 2024 (34,934 communes) + fallback 14 villes
-- ✅ **Tableau détaillé** : 4 colonnes (Poste/Taux/Base/Montant)
-- ✅ **Comparaison VL vs IRPP** : Affichage côte à côte avec recommandation
-- ✅ **Projection 2025-2029** : Évolution URSSAF +1%/an (→ 28,6%)
-- ✅ **Graphique distribution** : Histogramme empilé des charges
-- ✅ **Toggle Mensuel/Annuel** : Flexibilité d'affichage
-- ✅ **Sauvegarde simulation** : Persistance paramètres dans localStorage
-- ✅ **Export PDF** : Simulation complète avec sources légales
+- **Calculs dynamiques API URSSAF** : Intégration API Mon-entreprise.urssaf.fr pour taux toujours à jour
+- **Taux URSSAF officiels** : 12,3% (ACRE) / 24,6% (Standard 2025) via API - Décret n°2024-484
+- **CFP récupérée séparément** : 0,2% isolée via API pour plus de précision (Code du travail L6331-48)
+- **Double requête API** : `cotisations et contributions . cotisations` (12,3%) + `cotisations et contributions . CFP` (0,2%)
+- **Cache intelligent** : 5 minutes pour optimiser performances
+- **Fallback robuste** : Valeurs locales si API indisponible (12,5% / 24,8%)
+- **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
+- **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
+- **Vérification éligibilité VL** : RFR ≤ 28,797€/part (seuil 2026)
+- **CFE personnalisée** : API Open Data Soft DGFiP 2024 (34,934 communes) + fallback 14 villes
+- **Tableau détaillé** : 4 colonnes (Poste/Taux/Base/Montant)
+- **Comparaison VL vs IRPP** : Affichage côte à côte avec recommandation
+- **Projection 2025-2029** : Évolution URSSAF +1%/an (→ 28,6%)
+- **Graphique distribution** : Histogramme empilé des charges
+- **Toggle Mensuel/Annuel** : Flexibilité d'affichage
+- **Sauvegarde simulation** : Persistance paramètres dans localStorage
+- **Export PDF** : Simulation complète avec sources légales
 
 ### 📅 Agenda Google Calendar
-- ✅ **FullCalendar** intégré avec OAuth2
-- ✅ Création/Modification/Suppression d'événements
-- ✅ Événements toute la journée
-- ✅ Modal d'édition avec dates et heures
-- ✅ Synchronisation temps réel (auto-refresh 5 min)
-- ✅ Vue 8h-20h, semaine du lundi au dimanche
+- **FullCalendar** intégré avec OAuth2
+- Création/Modification/Suppression d'événements
+- Événements toute la journée
+- Modal d'édition avec dates et heures
+- Synchronisation temps réel (auto-refresh 5 min)
+- Vue 8h-20h, semaine du lundi au dimanche
 
 ### 🔄 Stockage et Synchronisation
-- ✅ **Google Drive API** : Sauvegarde automatique dans `mti_data.json`
-- ✅ **Google Apps Script Backend** : REST API pour opérations (clients, factures, RAMs)
-- ✅ **Google Sheets Export** : Export automatique RAMs vers onglet dédié
-- ✅ Persistance locale (localStorage) + sync cloud
-- ✅ Fallback JSONP pour compatibilité CORS
-- ✅ Triple-layer : localStorage → Drive → Sheets
+- **Google Drive API** : Sauvegarde automatique dans `mti_data.json`
+- **Google Apps Script Backend** : REST API pour opérations (clients, factures, RAMs)
+- **Google Sheets Export** : Export automatique RAMs vers onglet dédié
+- Persistance locale (localStorage) + sync cloud
+- Fallback JSONP pour compatibilité CORS
+- Triple-layer : localStorage → Drive → Sheets
 
 ### 📧 Envoi de Factures
-- ✅ Sauvegarde PDF sur Google Drive (dossier "Factures")
-- ✅ Ouverture automatique du PDF depuis Drive
-- ✅ Génération email Gmail pré-rempli
-- ✅ Corps d'email personnalisé par client
+- Sauvegarde PDF sur Google Drive (dossier "Factures")
+- Ouverture automatique du PDF depuis Drive
+- Génération email Gmail pré-rempli
+- Corps d'email personnalisé par client
 
 ### 📄 Rapports d'Activité Mensuelle (RAM)
-- ✅ **Génération calendrier 30 jours** : Interface complète mois/année
-- ✅ **Saisie détaillée** : Heures, commentaires, remarques par jour
-- ✅ **PDF format professionnel optimisé** : Format A4 portrait identique aux factures
+- **Guide complet** : [📖 Documentation RAM](docs/RAM_GUIDE.md)
+- **Génération calendrier 30 jours** : Interface complète mois/année
+- **Saisie détaillée** : Heures, commentaires, remarques par jour
+- **PDF format professionnel optimisé** : Format A4 portrait identique aux factures
   - Logo MTI CONSULTING 35×18mm
   - Couleurs corporate #21808D (bleu MTI)
   - Weekends grisés automatiquement
@@ -79,12 +129,12 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
   - **Mise en page optimisée** : RAM 31 jours + remarques courtes tient sur 1 page avec visas
   - Tableau adaptatif (taille réduite si remarques présentes)
   - Signature PandaDoc intégrée
-- ✅ **Envoi email** : RAM seul ou combiné facture + RAM
-- ✅ **Export Google Sheets** : Synchronisation automatique vers onglet RAM
-- ✅ **Liaison factures** : Dropdown intelligent filtré par client et période
-- ✅ **Prévention doublons** : Contrôle client + mois + année
-- ✅ **Gestion CRUD** : Création, lecture, modification, suppression, liste
-- ✅ **Persistance données** : Triple-layer (localStorage + Drive + Sheets)
+- **Envoi email** : RAM seul ou combiné facture + RAM
+- **Export Google Sheets** : Synchronisation automatique vers onglet RAM
+- **Liaison factures** : Dropdown intelligent filtré par client et période
+- **Prévention doublons** : Contrôle client + mois + année
+- **Gestion CRUD** : Création, lecture, modification, suppression, liste
+- **Persistance données** : Triple-layer (localStorage + Drive + Sheets)
 
 ## 🚀 Installation
 
@@ -96,14 +146,14 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 #### Configuration
 
-L'application est **pré-configurée** avec les credentials Google API de MTI CONSULTING. Elle fonctionne immédiatement sans configuration supplémentaire !
+L'application est **pré-configurée** avec les credentials Google API de MTI CONSULTING. Elle fonctionne immédiatement sans configuration supplémentaire.
 
-- ✅ Backend Google Apps Script opérationnel
-- ✅ Stockage Google Drive activé
-- ✅ Google Calendar intégré
-- ✅ Toutes les fonctionnalités disponibles
+- Backend Google Apps Script opérationnel
+- Stockage Google Drive activé
+- Google Calendar intégré
+- Toutes les fonctionnalités disponibles
 
-ℹ️ Les credentials sont hardcodés dans `app.js` (v42 style) et peuvent être modifiés dans l'onglet **Paramètres** si besoin.
+Les credentials sont hardcodés dans `app.js` et peuvent être modifiés dans l'onglet **Paramètres** si besoin.
 
 ---
 
@@ -202,6 +252,8 @@ L'application est **pré-configurée** avec les credentials Google API de MTI CO
 
 ## 📖 Documentation
 
+### Documentation générale
+
 - **[docs/BAREME_IRPP.md](docs/BAREME_IRPP.md)** : Guide complet du calculateur IRPP progressif
   - Exemples de calcul détaillés
   - Comparaison versement libératoire vs progressif
@@ -221,6 +273,21 @@ L'application est **pré-configurée** avec les credentials Google API de MTI CO
   - Patterns de code
   - Conventions
   - Points d'intégration
+
+### Documentation API URSSAF - Calculs Dynamiques
+
+**👉 [Documentation complète: docs/api-urssaf/](docs/api-urssaf/00_README.md)**
+
+| Document | Description | Lecture |
+|----------|-------------|---------|
+| **[00_README.md](docs/api-urssaf/00_README.md)** | 📚 Index et navigation | 5 min |
+| **[01_DECISION.md](docs/api-urssaf/01_DECISION.md)** | 📊 Décision stratégique et comparaison | 10 min |
+| **[02_IMPLEMENTATION.md](docs/api-urssaf/02_IMPLEMENTATION.md)** | 🔧 Guide technique complet | 30 min |
+| **[03_MIGRATION.md](docs/api-urssaf/03_MIGRATION.md)** | 🔄 Guide de migration | 15 min |
+| **[04_BUGFIXES.md](docs/api-urssaf/04_BUGFIXES.md)** | 🐛 Historique des corrections | 10 min |
+| **[05_RESUME.md](docs/api-urssaf/05_RESUME.md)** | ⚡ Résumé exécutif | 5 min |
+
+**Résumé**: L'application utilise l'API URSSAF Mon-entreprise pour calculer dynamiquement les cotisations sociales (12,50% AVEC ACRE / 24,80% SANS ACRE, CFP inclus). Maintenance automatique, fallback robuste, cache 5 minutes.
 
 ## 🏗️ Architecture Technique
 
@@ -320,7 +387,7 @@ Google Drive (persistence cloud)
 
 ## 🔒 Sécurité
 
-✅ **Architecture sécurisée** :
+**Architecture sécurisée** :
 - Backend Google Apps Script avec authentification Google
 - Credentials OAuth2 configurés pour domaines autorisés uniquement
 - Données stockées sur Google Drive (authentification requise)
@@ -372,47 +439,54 @@ MIT License - Voir LICENSE pour plus de détails
 ## 📅 Changelog
 
 ### v2.2 (Décembre 2025) - 🧮 Calculateur Avancé
-- ✨ **Calculateur de charges complet** (taux officiels 2025 vérifiés)
-  - **Taux URSSAF** : 12,3% (ACRE) / 24,6% (Standard) - Décret n°2024-484
-  - **CFP obligatoire** : 0,2% (Code du travail L6331-48)
-  - **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
-  - **Sélection régime fiscal** : IRPP Progressif ou Versement Libératoire (2,2%)
-  - **Vérification éligibilité VL** : RFR ≤ 28,797€/part (seuil 2026)
-  - **CFE personnalisée** : Base de données 12 communes (237€ - 2,433€)
-- 📊 **Tableau détaillé des charges** : 4 colonnes (Poste/Taux/Base/Montant)
-- ⚖️ **Comparaison VL vs IRPP** : Affichage côte à côte avec recommandation automatique
-- 📈 **Projection 2025-2029** : Évolution URSSAF +1%/an (24,6% → 28,6%)
-- 📊 **Graphique distribution** : Histogramme empilé des charges (URSSAF/CFP/Impôt/CFE/Net)
-- 🔄 **Toggle Mensuel/Annuel** : Flexibilité d'affichage
-- 💾 **Sauvegarde simulation** : Persistance paramètres dans localStorage
-- 📄 **Export PDF** : Simulation complète avec sources légales
-- 🔧 Tous les taux modifiables dans Paramètres (mise à jour annuelle simplifiée)
+### v2.1 (Novembre 2024)
 
-### v2.1 (Décembre 2025) - 📋 Système RAM
-- ✨ **Système RAM complet** : Rapports d'Activité Mensuelle
-  - Génération PDF A4 format professionnel (logo 35×18mm, #21808D)
-  - Envoi email (RAM seul ou facture + RAM combiné)
-  - Export Google Sheets automatique
-  - Liaison intelligente avec factures
-  - Prévention doublons (client + mois + année)
-  - CRUD complet avec persistance triple-layer
-- 🔧 Chargement images optimisé (fetchImageAsDataUri, évite CORS)
-- 🔧 Signature PandaDoc intégrée dans RAMs
-- 🐛 Corrections logo, table overflow, variables email
+**Système de Rapports d'Activité Mensuelle (RAM)**
+- Génération PDF professionnelle (A4, logo MTI CONSULTING, charte graphique)
+- Envoi par email (RAM seul ou combiné avec facture)
+- Export automatique vers Google Sheets
+- Liaison bidirectionnelle avec les factures
+- Prévention des doublons (validation client + mois + année)
+- Persistance sur triple couche (localStorage + Drive + Sheets)
 
-### v2.0 (Novembre 2025) - 🧾 Facturation Multi-lignes
-- ✨ **Facturation multi-lignes** : Plusieurs lignes par facture
-- ✨ **Barème IRPP progressif 2025** : Éditable + comparaison automatique
-- ✨ **Validation PDF** : Empêche les factures vides
-- 🔧 IBAN + BIC séparés (remplace RIB)
-- 🔧 Bouton Annuler calendrier corrigé
-- 🔧 Optimisation refresh calendrier (5 min au lieu de 30s)
-- 📊 Calculateur BNC avec abattement 34%
-- 🎨 Favicons multi-formats
+**Enrichissement clients**
+- Intégration API INSEE SIRENE pour auto-complétion
+- Récupération automatique : NAF, catégorie juridique, état administratif
+- Cache des résultats API (validité 90 jours)
+- Export enrichi vers Google Sheets (9 colonnes)
 
-### v1.0 (Octobre 2025) - 🎉 Version Initiale
-- Gestion clients, factures, tâches
-- Intégration Google Drive, Gmail, Calendar
+**Corrections techniques**
+- Optimisation du chargement d'images (gestion CORS via base64)
+- Intégration signature PandaDoc dans les RAMs
+- Corrections affichage logo et tableaux
+
+### v2.0 (Octobre 2024)
+
+**Facturation**
+- Support multi-lignes (plusieurs prestations par facture)
+- Barème IRPP progressif 2025 (éditable et à jour)
+- Validation stricte empêchant les factures vides
+- Séparation IBAN / BIC (remplacement du RIB unique)
+
+**Calculateur fiscal**
+- Implémentation barème progressif avec abattement BNC 34%
+- Comparaison automatique Versement Libératoire vs IRPP
+- Interface de configuration des taux fiscaux
+
+**Optimisations**
+- Intervalle de rafraîchissement du calendrier : 5 minutes (au lieu de 30s)
+- Correction bouton d'annulation du calendrier
+- Ajout favicons multi-formats
+
+### v1.0 (Septembre 2024)
+
+**Fonctionnalités principales**
+- Gestion complète des clients (CRUD, recherche, import/export CSV)
+- Facturation simple avec génération PDF
+- Gestion des tâches
+- Intégration Google Drive (sauvegarde automatique dans `mti_data.json`)
+- Intégration Gmail (envoi de factures)
+- Intégration Google Calendar (FullCalendar avec OAuth2)
 - Intégration Google Drive + Calendar
 - Génération PDF basique
 - Calculateur de charges

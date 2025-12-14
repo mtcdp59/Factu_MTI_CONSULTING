@@ -255,6 +255,20 @@ async function loadFromDrive() {
 
     
         console.log('✅ Données chargées depuis Drive');
+        
+        // Sauvegarde backup localStorage
+        try {
+            if (quotes && quotes.length > 0) {
+                localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+                console.log(`Backup: ${quotes.length} devis en localStorage`);
+            }
+            if (rams && rams.length > 0) {
+                localStorage.setItem('mti_rams', JSON.stringify(rams));
+                console.log(`Backup: ${rams.length} RAMs en localStorage`);
+            }
+        } catch (e) {
+            console.warn('Erreur backup localStorage:', e);
+        }
 
         // Rafraîchir vues si fonctions définies
         if (typeof renderClientsTable === 'function') renderClientsTable();
@@ -513,7 +527,7 @@ function renderClientsTable() {
             <td>${client.email_facturation || '-'}</td>
             <td>${client.contact_name || '-'}</td>
             <td>${clientInvoices.length}</td>
-            <td><strong>${totalBilled.toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber(totalBilled)} €</strong></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editClient(${index})">✏️</button>
                 <button class="btn btn-sm btn-secondary" onclick="deleteClient(${index})" style="margin-left: var(--space-4);">🗑️</button>
@@ -621,6 +635,7 @@ function populateClientSelects() {
     const clientSelect = document.getElementById('clientSelect');
     const clientFilterSelect = document.getElementById('clientFilterSelect');
     const quoteClientSelect = document.getElementById('quoteClientSelect');
+    const ramClientSelect = document.getElementById('ramClientSelect');
 
     if (clientSelect) {
         clientSelect.innerHTML = '<option value="">Saisie manuelle</option>';
@@ -639,6 +654,16 @@ function populateClientSelects() {
             option.value = index;
             option.textContent = client.name;
             quoteClientSelect.appendChild(option);
+        });
+    }
+    
+    if (ramClientSelect) {
+        ramClientSelect.innerHTML = '<option value="">Saisie manuelle</option>';
+        clients.forEach((client, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = client.name;
+            ramClientSelect.appendChild(option);
         });
     }
 
@@ -692,6 +717,53 @@ function setupClientSelectListener() {
             if (sendEmailBtn) {
                 const hasEmail = client.email_facturation && client.email_facturation.trim() !== '';
                 sendEmailBtn.style.display = hasEmail ? 'inline-flex' : 'none';
+            }
+        }
+    });
+}
+
+// Setup RAM client select listener
+function setupRAMClientSelectListener() {
+    const ramClientSelect = document.getElementById('ramClientSelect');
+    if (!ramClientSelect) return;
+
+    ramClientSelect.addEventListener('change', (e) => {
+        const index = e.target.value;
+        const clientInput = document.getElementById('ramClientInput');
+        const clientSiret = document.getElementById('ramClientSiret');
+        const clientAddress = document.getElementById('ramClientAddress');
+        const manualGroup = document.getElementById('ramManualClientGroup');
+        
+        if (index === '') {
+            // Saisie manuelle
+            if (manualGroup) manualGroup.style.display = 'block';
+            if (clientInput) {
+                clientInput.value = '';
+                clientInput.readOnly = false;
+            }
+            if (clientSiret) {
+                clientSiret.value = '';
+                clientSiret.readOnly = false;
+            }
+            if (clientAddress) {
+                clientAddress.value = '';
+                clientAddress.readOnly = false;
+            }
+        } else {
+            // Client sélectionné - remplissage auto
+            const client = clients[parseInt(index)];
+            if (manualGroup) manualGroup.style.display = 'none';
+            if (clientInput) {
+                clientInput.value = client.name;
+                clientInput.readOnly = true;
+            }
+            if (clientSiret) {
+                clientSiret.value = client.siret || '';
+                clientSiret.readOnly = true;
+            }
+            if (clientAddress) {
+                clientAddress.value = client.address || '';
+                clientAddress.readOnly = true;
             }
         }
     });
@@ -986,17 +1058,17 @@ function setupInvoiceFormListeners() {
             if (tvaEnabled) {
                 tvaSection = `
                     <div class="invoice-total">
-                        Total HT: ${totalHT.toFixed(2)} €<br>
-                        TVA (20%): ${tva.toFixed(2)} €<br>
-                        <strong>Total TTC: ${totalTTC.toFixed(2)} €</strong>
+                        Total HT: ${formatNumber(totalHT)} €<br>
+                        TVA (20%): ${formatNumber(tva)} €<br>
+                        <strong>Total TTC: ${formatNumber(totalTTC)} €</strong>
                     </div>
                 `;
             } else {
                 tvaSection = `
                     <div class="invoice-total">
-                        Total HT: ${totalHT.toFixed(2)} €<br>
+                        Total HT: ${formatNumber(totalHT)} €<br>
                         TVA non applicable (art. 293 B du CGI)<br>
-                        <strong>Total TTC: ${totalHT.toFixed(2)} €</strong>
+                        <strong>Total TTC: ${formatNumber(totalHT)} €</strong>
                     </div>
                 `;
             }
@@ -1010,8 +1082,8 @@ function setupInvoiceFormListeners() {
                 <tr>
                     <td>${item.description || ''}</td>
                     <td style="text-align: center;">${item.quantity || 0}</td>
-                    <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
-                    <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                    <td style="text-align: right;">${formatNumber(parseFloat(item.unitPrice || 0))} €</td>
+                    <td style="text-align: right;">${formatNumber(item.total || 0)} €</td>
                 </tr>
             `).join('');
 
@@ -1141,16 +1213,16 @@ function renderInvoicePreview(inv, showModal) {
                         <tr>
                             <td>${item.description || ''}</td>
                             <td style="text-align: center;">${item.quantity || 0}</td>
-                            <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
-                            <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                            <td style="text-align: right;">${formatNumber(parseFloat(item.unitPrice || 0))} €</td>
+                            <td style="text-align: right;">${formatNumber(item.total || 0)} €</td>
                         </tr>
                     `).join('')
                     : `
                         <tr>
                             <td>${inv.description || ''}</td>
                             <td style="text-align: center;">${inv.quantity || 0}</td>
-                            <td style="text-align: right;">${parseFloat(inv.unitPrice || 0).toFixed(2)} €</td>
-                            <td style="text-align: right;">${(inv.total || 0).toFixed(2)} €</td>
+                            <td style="text-align: right;">${formatNumber(parseFloat(inv.unitPrice || 0))} €</td>
+                            <td style="text-align: right;">${formatNumber(inv.total || 0)} €</td>
                         </tr>
                     `
                 }
@@ -1158,7 +1230,7 @@ function renderInvoicePreview(inv, showModal) {
         </table>
 
         <div class="invoice-total" style="margin-bottom: 30px;">
-            ${tvaEnabled ? `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA (20%): ${tva.toFixed(2)} €</div><div><strong>Total TTC: ${totalTTC.toFixed(2)} €</strong></div>` : `<div>Total HT: ${totalHT.toFixed(2)} €</div><div>TVA non applicable (art. 293 B du CGI)</div><div><strong>Total TTC: ${totalHT.toFixed(2)} €</strong></div>`}
+            ${tvaEnabled ? `<div>Total HT: ${formatNumber(totalHT)} €</div><div>TVA (20%): ${formatNumber(tva)} €</div><div><strong>Total TTC: ${formatNumber(totalTTC)} €</strong></div>` : `<div>Total HT: ${formatNumber(totalHT)} €</div><div>TVA non applicable (art. 293 B du CGI)</div><div><strong>Total TTC: ${formatNumber(totalHT)} €</strong></div>`}
         </div>
 
         <div class="invoice-legal" style="margin-top: 30px; clear: both;"><p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p><p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p></div>
@@ -1203,12 +1275,12 @@ function calculateTotal() {
         const totalHTEl = document.getElementById('totalHT');
         const totalTVAEl = document.getElementById('totalTVA');
         const totalTTCEl = document.getElementById('totalTTC');
-        if (totalHTEl) totalHTEl.value = totalHT.toFixed(2) + ' €';
-        if (totalTVAEl) totalTVAEl.value = tva.toFixed(2) + ' €';
-        if (totalTTCEl) totalTTCEl.value = totalTTC.toFixed(2) + ' €';
+        if (totalHTEl) totalHTEl.value = formatNumber(totalHT) + ' €';
+        if (totalTVAEl) totalTVAEl.value = formatNumber(tva) + ' €';
+        if (totalTTCEl) totalTTCEl.value = formatNumber(totalTTC) + ' €';
     } else {
         const totalHTOnlyEl = document.getElementById('totalHTOnly');
-        if (totalHTOnlyEl) totalHTOnlyEl.value = totalHT.toFixed(2) + ' €';
+        if (totalHTOnlyEl) totalHTOnlyEl.value = formatNumber(totalHT) + ' €';
     }
 
     return totalHT;
@@ -1219,6 +1291,20 @@ function formatDateFR(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('fr-FR');
+}
+
+// Format number with thousands separator (space)
+function formatNumber(number, decimals = 2) {
+    if (number === null || number === undefined || isNaN(number)) return '0,00';
+    
+    const num = parseFloat(number);
+    const parts = num.toFixed(decimals).split('.');
+    
+    // Add space separator for thousands
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    
+    // Use comma for decimal separator (French format)
+    return parts.join(',');
 }
 
 // Email sending functionality (preview)
@@ -1392,7 +1478,7 @@ function renderInvoiceItems() {
                     style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: 4px; font-size: var(--font-size-sm); text-align: right;">
             </td>
             <td style="padding: 8px; text-align: right; font-weight: 600; font-size: var(--font-size-sm);">
-                ${item.total.toFixed(2)} €
+                ${formatNumber(item.total)} €
             </td>
             <td style="padding: 8px; text-align: center;">
                 <button type="button" 
@@ -3044,10 +3130,10 @@ function renderInvoiceTable(filteredInvoices) {
             <td>${invoice.client}</td>
             <td>${formatDateFR(invoice.date)}</td>
             <td>${formatDateFR(invoice.dueDate)}</td>
-            <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber(invoice.total || 0)} €</strong></td>
             <td><input type="number" class="form-control" style="width: 100px; font-size: var(--font-size-xs);" value="${montantRecu}" step="0.01" min="0" onchange="updateMontantRecu(${index}, this.value)"></td>
             <td><input type="date" class="form-control" style="width: 140px; font-size: var(--font-size-xs);" value="${invoice.dateReception || ''}" onchange="updateDateReception(${index}, this.value)"></td>
-            <td><strong>${reste.toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber(reste)} €</strong></td>
             <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoice(${index})" title="Modifier">✏️</button>
@@ -3084,7 +3170,7 @@ function renderInvoiceList() {
             <td>${invoice.client}</td>
             <td>${sourceQuoteBadge}</td>
             <td>${formatDateFR(invoice.date)}</td>
-            <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber(invoice.total || 0)} €</strong></td>
             <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
@@ -3211,7 +3297,7 @@ function filterInvoiceList() {
             <td><strong>${invoice.number}</strong></td>
             <td>${invoice.client}</td>
             <td>${formatDateFR(invoice.date)}</td>
-            <td><strong>${(invoice.total || 0).toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber((invoice.total || 0))} €</strong></td>
             <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
@@ -3454,9 +3540,9 @@ function updateSummary(filteredInvoices = invoices) {
     const totalAttEl = document.getElementById('totalAttente');
     const tauxEl = document.getElementById('tauxRecouvrement');
 
-    if (totalFactEl) totalFactEl.textContent = totalFacture.toFixed(2) + ' €';
-    if (totalPayeEl) totalPayeEl.textContent = totalPaye.toFixed(2) + ' €';
-    if (totalAttEl) totalAttEl.textContent = totalAttente.toFixed(2) + ' €';
+    if (totalFactEl) totalFactEl.textContent = formatNumber(totalFacture) + ' €';
+    if (totalPayeEl) totalPayeEl.textContent = formatNumber(totalPaye) + ' €';
+    if (totalAttEl) totalAttEl.textContent = formatNumber(totalAttente) + ' €';
     if (tauxEl) tauxEl.textContent = tauxRecouvrement.toFixed(1) + '%';
 }
 
@@ -4177,10 +4263,11 @@ async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
     };
 
     try {
-        // Appel API avec la règle complète incluant CFP
+        // Appel API avec deux règles : cotisations sociales ET CFP séparément
         console.log('Appel API URSSAF avec situation:', { ca, hasACRE, creationDate });
         const response = await evaluateMonEntreprise(situation, [
-            "dirigeant . auto-entrepreneur . cotisations et contributions"
+            "dirigeant . auto-entrepreneur . cotisations et contributions . cotisations",
+            "dirigeant . auto-entrepreneur . cotisations et contributions . CFP"
         ]);
 
         if (!response) {
@@ -4188,48 +4275,61 @@ async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
         }
 
         // L'API retourne soit un tableau (nouveau format) soit un objet (ancien format)
-        let evaluation;
+        let evaluationTotal, evaluationCFP;
+        
         if (Array.isArray(response)) {
-            // Nouveau format: evaluate: [{dottedName: "...", nodeValue: ...}] OU [{nodeValue: ...}]
+            // Nouveau format: evaluate: [{nodeValue: ...}] (sans dottedName si 2 règles)
             console.log('API response array:', JSON.stringify(response, null, 2));
             
-            const ruleKey = "dirigeant . auto-entrepreneur . cotisations et contributions";
-            
-            // Si un seul élément dans le tableau, c'est probablement la réponse directe
-            if (response.length === 1) {
-                evaluation = response[0];
+            // Quand on demande 2 règles, l'API retourne dans l'ordre demandé
+            // [0] = cotisations totales, [1] = CFP
+            if (response.length >= 2 && !response[0].error) {
+                evaluationTotal = response[0];
+                evaluationCFP = response[1].error ? null : response[1];
+            } else if (response.length === 1) {
+                // Une seule règle demandée ou seule la première a réussi
+                evaluationTotal = response[0];
+                evaluationCFP = null;
             } else {
-                // Sinon chercher par dottedName
-                evaluation = response.find(item => item.dottedName === ruleKey);
-                if (!evaluation) {
-                    console.warn('Rule not found in API response:', ruleKey);
-                    console.warn('Available rules:', response.map(r => r.dottedName || r));
-                    throw new Error('Rule not found in API response');
-                }
+                console.warn('Unexpected API response format:', response);
+                throw new Error('Total cotisations rule not found in API response');
             }
         } else {
             // Ancien format: {ruleKey: {nodeValue: ...}}
-            const ruleKey = "dirigeant . auto-entrepreneur . cotisations et contributions";
-            evaluation = response[ruleKey];
+            const ruleTotal = "dirigeant . auto-entrepreneur . cotisations et contributions";
+            const ruleCFP = "dirigeant . auto-entrepreneur . cotisations et contributions . CFP";
+            
+            evaluationTotal = response[ruleTotal];
+            evaluationCFP = response[ruleCFP];
         }
         
-        if (!evaluation || typeof evaluation.nodeValue !== 'number') {
+        if (!evaluationTotal || typeof evaluationTotal.nodeValue !== 'number') {
             console.warn('Response structure:', response);
-            throw new Error('Invalid API response structure');
+            throw new Error('Invalid API response structure for total');
         }
 
-        // L'API retourne les cotisations mensuelles
-        const montantMensuel = evaluation.nodeValue;
-        if (isNaN(montantMensuel)) {
+        // L'API retourne les cotisations mensuelles (URSSAF seul + CFP séparé)
+        const montantMensuelURSSAF = evaluationTotal.nodeValue;
+        const montantMensuelCFP = evaluationCFP && typeof evaluationCFP.nodeValue === 'number' 
+            ? evaluationCFP.nodeValue 
+            : (ca / 12) * (taxSettings.cfpBNC / 100); // Fallback si CFP non retournée
+        
+        if (isNaN(montantMensuelURSSAF)) {
             throw new Error('Invalid nodeValue from API');
         }
 
-        const montantAnnuel = montantMensuel * 12;
+        // Total = URSSAF + CFP
+        const montantAnnuelURSSAF = montantMensuelURSSAF * 12;
+        const montantAnnuelCFP = montantMensuelCFP * 12;
+        const montantAnnuel = montantAnnuelURSSAF + montantAnnuelCFP;
         const taux = ca > 0 ? (montantAnnuel / ca) * 100 : 0;
+        const tauxCFP = ca > 0 ? (montantAnnuelCFP / ca) * 100 : 0;
 
-        console.log(`✅ Cotisations dynamiques calculées: ${montantAnnuel.toFixed(2)} EUR/an (${taux.toFixed(2)}%)`);
+        console.log(`✅ Cotisations URSSAF: ${montantAnnuelURSSAF.toFixed(2)} EUR/an (${((montantAnnuelURSSAF / ca) * 100).toFixed(2)}%)`);
+        console.log(`✅ CFP: ${montantAnnuelCFP.toFixed(2)} EUR/an (${tauxCFP.toFixed(2)}%)`);
+        console.log(`✅ Total cotisations: ${montantAnnuel.toFixed(2)} EUR/an (${taux.toFixed(2)}%)`);
 
-        return { montantAnnuel, taux };
+        return { montantAnnuel, taux, montantAnnuelCFP, tauxCFP };
     } catch (err) {
         // Log silencieux si API null (normal avec CA=0), sinon warning
         if (err.message === 'API response is null') {
@@ -4242,8 +4342,10 @@ async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
         // Note: ACRE est une exonération 1ère année uniquement (depuis réforme 2020)
         const tauxFallback = hasACRE ? 12.5 : 24.8;
         const montantAnnuel = ca * (tauxFallback / 100);
+        const montantAnnuelCFP = ca * (taxSettings.cfpBNC / 100);
+        const tauxCFP = taxSettings.cfpBNC;
 
-        return { montantAnnuel, taux: tauxFallback };
+        return { montantAnnuel, taux: tauxFallback, montantAnnuelCFP, tauxCFP };
     }
 
     return { versementLiberatoire: taxSettings.versementLiberatoire, bncAbattement: taxSettings.bncAbattement };
@@ -4258,13 +4360,13 @@ function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
     const scenarioVLContent = document.getElementById('scenarioVLContent');
     if (scenarioVLContent) {
         scenarioVLContent.innerHTML = `
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8);">CA ${periodeText}: <strong>${(ca * multiplicateur).toFixed(2)} €</strong></div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">URSSAF: ${(vl.charges * multiplicateur).toFixed(2)} €</div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFP: ${(vl.cfp * multiplicateur).toFixed(2)} €</div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">Impôt VL (${taxSettings.versementLiberatoire}%): ${(vl.impot * multiplicateur).toFixed(2)} €</div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFE: ${(vl.cfe * multiplicateur).toFixed(2)} €</div>
-            <div style="border-top: 2px solid var(--color-border); padding-top: var(--space-8); margin-top: var(--space-8); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Total charges: <span style="color: var(--color-warning);">${(vl.total * multiplicateur).toFixed(2)} €</span></div>
-            <div style="font-size: var(--font-size-base); font-weight: var(--font-weight-bold); margin-top: var(--space-8); color: var(--color-primary);">Revenu net: ${(vl.net * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8);">CA ${periodeText}: <strong>${formatNumber((ca * multiplicateur))} €</strong></div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">URSSAF: ${formatNumber((vl.charges * multiplicateur))} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFP: ${formatNumber((vl.cfp * multiplicateur))} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">Impôt VL (${taxSettings.versementLiberatoire}%): ${formatNumber((vl.impot * multiplicateur))} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFE: ${formatNumber((vl.cfe * multiplicateur))} €</div>
+            <div style="border-top: 2px solid var(--color-border); padding-top: var(--space-8); margin-top: var(--space-8); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Total charges: <span style="color: var(--color-warning);">${formatNumber((vl.total * multiplicateur))} €</span></div>
+            <div style="font-size: var(--font-size-base); font-weight: var(--font-weight-bold); margin-top: var(--space-8); color: var(--color-primary);">Revenu net: ${formatNumber((vl.net * multiplicateur))} €</div>
         `;
     }
 
@@ -4272,13 +4374,13 @@ function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
     const scenarioIRPPContent = document.getElementById('scenarioIRPPContent');
     if (scenarioIRPPContent) {
         scenarioIRPPContent.innerHTML = `
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8);">CA ${periodeText}: <strong>${(ca * multiplicateur).toFixed(2)} €</strong></div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">URSSAF: ${(irpp.charges * multiplicateur).toFixed(2)} €</div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFP: ${(irpp.cfp * multiplicateur).toFixed(2)} €</div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">Impôt IRPP (progressif): ${(irpp.impot * multiplicateur).toFixed(2)} €</div>
-            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFE: ${(irpp.cfe * multiplicateur).toFixed(2)} €</div>
-            <div style="border-top: 2px solid var(--color-border); padding-top: var(--space-8); margin-top: var(--space-8); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Total charges: <span style="color: var(--color-warning);">${(irpp.total * multiplicateur).toFixed(2)} €</span></div>
-            <div style="font-size: var(--font-size-base); font-weight: var(--font-weight-bold); margin-top: var(--space-8); color: var(--color-primary);">Revenu net: ${(irpp.net * multiplicateur).toFixed(2)} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8);">CA ${periodeText}: <strong>${formatNumber((ca * multiplicateur))} €</strong></div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">URSSAF: ${formatNumber((irpp.charges * multiplicateur))} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFP: ${formatNumber((irpp.cfp * multiplicateur))} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">Impôt IRPP (progressif): ${formatNumber((irpp.impot * multiplicateur))} €</div>
+            <div style="font-size: var(--font-size-sm); margin-bottom: var(--space-8); color: var(--color-text-secondary);">CFE: ${formatNumber((irpp.cfe * multiplicateur))} €</div>
+            <div style="border-top: 2px solid var(--color-border); padding-top: var(--space-8); margin-top: var(--space-8); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Total charges: <span style="color: var(--color-warning);">${formatNumber((irpp.total * multiplicateur))} €</span></div>
+            <div style="font-size: var(--font-size-base); font-weight: var(--font-weight-bold); margin-top: var(--space-8); color: var(--color-primary);">Revenu net: ${formatNumber((irpp.net * multiplicateur))} €</div>
         `;
     }
 
@@ -4288,7 +4390,7 @@ function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
         const diff = Math.abs(vl.net - irpp.net) * multiplicateur;
         const meilleur = vl.net > irpp.net ? 'Versement Libératoire' : 'IRPP Progressif';
         const icone = vl.net > irpp.net ? '💼' : '📊';
-        comparaisonRecommandation.innerHTML = `${icone} <strong>Recommandation :</strong> ${meilleur} (gain de ${diff.toFixed(2)} € ${isMensuel ? 'par mois' : 'par an'})`;
+        comparaisonRecommandation.innerHTML = `${icone} <strong>Recommandation :</strong> ${meilleur} (gain de ${formatNumber(diff)} € ${isMensuel ? 'par mois' : 'par an'})`;
         comparaisonRecommandation.style.background = vl.net > irpp.net ? 'var(--color-success)' : 'var(--color-primary)';
     }
 }
@@ -4333,12 +4435,18 @@ function calculateTaxes() {
     
     // Calcul charges sociales : Option B (API dynamique) avec fallback
     calculateCotisationsWithFallback(ca * 12, acreActive, creationDate).then(result => {
+        // Stocker les données CFP pour finalizeTaxCalculation
+        window.lastCFPMensuel = result.montantAnnuelCFP / 12;
+        window.lastTauxCFP = result.tauxCFP;
+        
         // Une fois les cotisations calculées, finaliser les calculs
         finalizeTaxCalculation(ca, acreActive, result.montantAnnuel / 12, result.taux);
     }).catch(err => {
         console.error('Erreur calcul cotisations:', err);
         // Fallback immédiat sur valeurs en dur
         const chargesRate = acreActive ? (taxSettings.acreActif / 100) : (taxSettings.acreInactif / 100);
+        window.lastCFPMensuel = ca * (taxSettings.cfpBNC / 100);
+        window.lastTauxCFP = taxSettings.cfpBNC;
         finalizeTaxCalculation(ca, acreActive, ca * chargesRate, chargesRate * 100);
     });
 }
@@ -4383,7 +4491,7 @@ async function calculateCotisationsWithFallback(caAnnuel, hasACRE, creationDate)
  * Finalise les calculs fiscaux avec les cotisations obtenues.
  * @param {number} ca - CA mensuel
  * @param {boolean} acreActive - ACRE actif ou non
- * @param {number} chargesMensuelles - Montant charges mensuelles (incluant CFP si API)
+ * @param {number} chargesMensuelles - Montant charges mensuelles URSSAF (hors CFP, récupéré séparément via API)
  * @param {number} tauxEffectif - Taux effectif en %
  */
 function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif) {
@@ -4430,24 +4538,22 @@ function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif)
         periodeLabel.textContent = isMensuel ? '(Mensuelles)' : '(Annuelles)';
     }
 
-    // 1. Charges sociales URSSAF (incluent CFP si calculées par API)
-    // Note: Si API utilisée, chargesMensuelles inclut déjà CFP (0,2%)
-    // Si fallback, CFP ajouté séparément ci-dessous
+    // 1. Charges sociales URSSAF et CFP (récupérées dynamiquement de l'API)
+    // L'API retourne URSSAF (12.3%) et CFP (0.2%) séparément
+    const cfpMensuel = window.lastCFPMensuel || (ca * (taxSettings.cfpBNC / 100));
+    const tauxCFP = window.lastTauxCFP || taxSettings.cfpBNC;
+    
+    // Montant URSSAF mensuel (déjà sans CFP depuis l'API)
     const charges = chargesMensuelles;
+    // Taux URSSAF (déjà sans CFP depuis l'API)
+    const tauxURSSAF = tauxEffectif;
 
-    // 2. CFP (Contribution Formation Professionnelle) - OBLIGATOIRE
-    // Note: CFP déjà inclus dans calcul API, mais pas dans fallback
-    // Pour simplifier, on le compte séparément uniquement si fallback
-    const cfp = (tauxEffectif === taxSettings.acreActif || tauxEffectif === taxSettings.acreInactif) 
-        ? ca * (taxSettings.cfpBNC / 100)  // Fallback: ajouter CFP
-        : 0;  // API: CFP déjà inclus dans charges
-
-    // 3. CFE mensuel
+    // 2. CFE mensuel
     const cfe = taxSettings.cfeAnnuel / 12;
 
     // === CALCUL SCENARIO VL ===
     const impotVL = ca * (taxSettings.versementLiberatoire / 100);
-    const totalChargesVL = charges + cfp + impotVL + cfe;
+    const totalChargesVL = charges + cfpMensuel + impotVL + cfe;
     const netVL = ca - totalChargesVL;
 
     // === CALCUL SCENARIO IRPP ===
@@ -4455,7 +4561,7 @@ function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif)
     const revenuImposable = calculateBNCRevenuImposable(caAnnuel);
     const impotAnnuelIRPP = calculateIRPPProgressif(revenuImposable);
     const impotIRPP = impotAnnuelIRPP / 12;
-    const totalChargesIRPP = charges + cfp + impotIRPP + cfe;
+    const totalChargesIRPP = charges + cfpMensuel + impotIRPP + cfe;
     const netIRPP = ca - totalChargesIRPP;
 
     // === DÉTERMINER RÉGIME FISCAL SÉLECTIONNÉ ===
@@ -4468,7 +4574,7 @@ function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif)
     const netDetail = useVL ? netVL : netIRPP;
     const regimeLabel = useVL ? 'Versement Libératoire' : 'IRPP progressif';
     const impotTaux = useVL ? `${taxSettings.versementLiberatoire}%` : 'Barème';
-    const impotBase = useVL ? (ca * multiplicateur).toFixed(2) : revenuImposable.toFixed(2);
+    const impotBase = useVL ? formatNumber(ca * multiplicateur) : formatNumber(revenuImposable);
 
     // === REMPLIR TABLEAU DE DETAIL (utilise régime sélectionné) ===
     const detailBody = document.getElementById('detailChargesBody');
@@ -4476,37 +4582,37 @@ function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif)
         detailBody.innerHTML = `
             <tr style="border-bottom: 1px solid var(--color-border);">
                 <td style="padding: var(--space-12);">Charges sociales URSSAF <small style="color: var(--color-text-secondary);">(${chargesLabel})</small></td>
-                <td style="padding: var(--space-12); text-align: center;">${tauxEffectif.toFixed(1)}%</td>
-                <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(charges * multiplicateur).toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: center;">${tauxURSSAF.toFixed(1)}%</td>
+                <td style="padding: var(--space-12); text-align: right;">${formatNumber((ca * multiplicateur))} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${formatNumber((charges * multiplicateur))} €</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--color-border);">
                 <td style="padding: var(--space-12);">CFP <small style="color: var(--color-text-secondary);">(Formation professionnelle)</small></td>
-                <td style="padding: var(--space-12); text-align: center;">${cfp > 0 ? taxSettings.cfpBNC : '0.0'}%</td>
-                <td style="padding: var(--space-12); text-align: right;">${(ca * multiplicateur).toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(cfp * multiplicateur).toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: center;">${tauxCFP.toFixed(1)}%</td>
+                <td style="padding: var(--space-12); text-align: right;">${formatNumber((ca * multiplicateur))} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${formatNumber((cfpMensuel * multiplicateur))} €</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--color-border);">
                 <td style="padding: var(--space-12);">Impôt sur le revenu <small style="color: var(--color-text-secondary);">(${regimeLabel})</small></td>
                 <td style="padding: var(--space-12); text-align: center;">${impotTaux}</td>
                 <td style="padding: var(--space-12); text-align: right;">${impotBase} €</td>
-                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(impotDetail * multiplicateur).toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${formatNumber((impotDetail * multiplicateur))} €</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--color-border);">
                 <td style="padding: var(--space-12);">CFE <small style="color: var(--color-text-secondary);">(Cotisation Foncière Entreprises)</small></td>
                 <td style="padding: var(--space-12); text-align: center;">—</td>
                 <td style="padding: var(--space-12); text-align: right;">—</td>
-                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${(cfe * multiplicateur).toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold);">${formatNumber((cfe * multiplicateur))} €</td>
             </tr>
         `;
     }
-    document.getElementById('detailTotalCharges') && (document.getElementById('detailTotalCharges').textContent = (totalChargesDetail * multiplicateur).toFixed(2) + ' €');
-    document.getElementById('detailRevenuNet') && (document.getElementById('detailRevenuNet').textContent = (netDetail * multiplicateur).toFixed(2) + ' €');
+    document.getElementById('detailTotalCharges') && (document.getElementById('detailTotalCharges').textContent = formatNumber(totalChargesDetail * multiplicateur) + ' €');
+    document.getElementById('detailRevenuNet') && (document.getElementById('detailRevenuNet').textContent = formatNumber(netDetail * multiplicateur) + ' €');
 
     // === COMPARAISON VL vs IRPP ===
     const scenarios = {
-        vl: { charges, cfp, impot: impotVL, cfe, total: totalChargesVL, net: netVL },
-        irpp: { charges, cfp, impot: impotIRPP, cfe, total: totalChargesIRPP, net: netIRPP }
+        vl: { charges, cfp: cfpMensuel, impot: impotVL, cfe, total: totalChargesVL, net: netVL },
+        irpp: { charges, cfp: cfpMensuel, impot: impotIRPP, cfe, total: totalChargesIRPP, net: netIRPP }
     };
     updateComparaisonVL_IRPP(ca, multiplicateur, scenarios);
     
@@ -4544,15 +4650,15 @@ function updateComparaison(caMensuel) {
         <div style="display: grid; gap: var(--space-8); margin-bottom: var(--space-12);">
             <div style="display: flex; justify-content: space-between; padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base);">
                 <span><strong>Versement libératoire (${taxSettings.versementLiberatoire}%)</strong></span>
-                <span><strong>${versementLibMensuel.toFixed(2)} €/mois</strong> (${comp.versementLib.toFixed(2)} €/an)</span>
+                <span><strong>${formatNumber(versementLibMensuel)} €/mois</strong> (${formatNumber(comp.versementLib)} €/an)</span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base);">
                 <span><strong>IRPP progressif</strong> <small style="color: var(--color-text-secondary);">(après abattement BNC ${taxSettings.bncAbattement}%)</small></span>
-                <span><strong>${irppProgressifMensuel.toFixed(2)} €/mois</strong> (${comp.irppProgressif.toFixed(2)} €/an)</span>
+                <span><strong>${formatNumber(irppProgressifMensuel)} €/mois</strong> (${formatNumber(comp.irppProgressif)} €/an)</span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: var(--space-8); background: var(--color-bg-1); border-radius: var(--radius-base);">
                 <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">Revenu imposable annuel (après abattement BNC)</span>
-                <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">${comp.revenuImposable.toFixed(2)} €</span>
+                <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">${formatNumber(comp.revenuImposable)} €</span>
             </div>
         </div>
         <div style="padding: var(--space-12); background: ${meilleurColor}15; border: 2px solid ${meilleurColor}; border-radius: var(--radius-base); text-align: center;">
@@ -4561,7 +4667,7 @@ function updateComparaison(caMensuel) {
             </strong>
             <br>
             <span style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">
-                Économie : ${economieMensuelle.toFixed(2)} €/mois (${comp.economie.toFixed(2)} €/an)
+                Économie : ${formatNumber(economieMensuelle)} €/mois (${formatNumber(comp.economie)} €/an)
             </span>
         </div>
     `;
@@ -5190,7 +5296,7 @@ async function updateCFEEstimation() {
     
     cfeEstimationDiv.style.display = 'block';
     cfeEstimationDiv.innerHTML = `
-        <strong>📍 CFE pour "${commune}" :</strong> ${result.taux} €/an (${(result.taux / 12).toFixed(2)} €/mois)<br>
+        <strong>📍 CFE pour "${commune}" :</strong> ${result.taux} €/an (${formatNumber((result.taux / 12))} €/mois)<br>
         <small style="color: var(--color-text-secondary);">
             ${sourceIcon} Source: ${result.source}
             ${result.inseeCode ? `<br>Code INSEE: ${result.inseeCode}` : ''}
@@ -5463,11 +5569,14 @@ function updateProjection3_5Ans(ca, multiplicateur, baseScenario) {
     const useVL = regimeVLRadio ? regimeVLRadio.checked : false;
     const impotBase = useVL ? baseScenario.vl.impot : baseScenario.irpp.impot;
     
+    // Utiliser le taux CFP dynamique de l'API (ou fallback si non disponible)
+    const tauxCFPDynamique = window.lastTauxCFP || taxSettings.cfpBNC;
+    
     let html = '';
     anneesProjection.forEach((annee, index) => {
         const tauxURSSAF = tauxURSSAFBase + index; // +1%/an
         const urssaf = ca * (tauxURSSAF / 100) * multiplicateur;
-        const cfp = ca * (taxSettings.cfpBNC / 100) * multiplicateur;
+        const cfp = ca * (tauxCFPDynamique / 100) * multiplicateur;
         const impot = impotBase * multiplicateur;
         const cfe = (taxSettings.cfeAnnuel / 12) * multiplicateur;
         const totalCharges = urssaf + cfp + impot + cfe;
@@ -5479,12 +5588,12 @@ function updateProjection3_5Ans(ca, multiplicateur, baseScenario) {
             <tr style="border-bottom: 1px solid var(--color-border); ${rowStyle}">
                 <td style="padding: var(--space-12); font-weight: var(--font-weight-semibold);">${annee}</td>
                 <td style="padding: var(--space-12); text-align: center;">${tauxURSSAF.toFixed(1)}%</td>
-                <td style="padding: var(--space-12); text-align: right;">${urssaf.toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right;">${cfp.toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right;">${impot.toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right;">${cfe.toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); color: var(--color-warning);">${totalCharges.toFixed(2)} €</td>
-                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-bold); color: var(--color-primary);">${revenuNet.toFixed(2)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${formatNumber(urssaf)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${formatNumber(cfp)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${formatNumber(impot)} €</td>
+                <td style="padding: var(--space-12); text-align: right;">${formatNumber(cfe)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-semibold); color: var(--color-warning);">${formatNumber(totalCharges)} €</td>
+                <td style="padding: var(--space-12); text-align: right; font-weight: var(--font-weight-bold); color: var(--color-primary);">${formatNumber(revenuNet)} €</td>
             </tr>
         `;
     });
@@ -5615,7 +5724,7 @@ function exportSimulateurPDF() {
     pdf.setTextColor(0, 0, 0);
     pdf.text('PARAMÈTRES DE SIMULATION', 10, 40);
     pdf.setFontSize(10);
-    pdf.text(`Chiffre d'affaires: ${ca.toFixed(2)} € ${isMensuel ? '(mensuel)' : '(annuel)'}`, 15, 48);
+    pdf.text(`Chiffre d'affaires: ${formatNumber(ca)} € ${isMensuel ? '(mensuel)' : '(annuel)'}`, 15, 48);
     pdf.text(`Situation ACRE: ${acreActive ? 'Année 1 (12,3%)' : 'Année 2+ (24,6%)'}`, 15, 54);
     pdf.text(`CFE annuelle: ${taxSettings.cfeAnnuel} €`, 15, 60);
     
@@ -6512,8 +6621,8 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
                         <tr>
                             <td>${item.description || ''}</td>
                             <td style="text-align: center;">${item.quantity || 0}</td>
-                            <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
-                            <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                            <td style="text-align: right;">${formatNumber(parseFloat(item.unitPrice || 0))} €</td>
+                            <td style="text-align: right;">${formatNumber((item.total || 0))} €</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -6521,13 +6630,13 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
 
             <div class="totals">
                 ${tvaEnabled ? `
-                    <div style="margin-bottom: 6px;">Total HT: ${totalHT.toFixed(2)} €</div>
-                    <div style="margin-bottom: 6px;">TVA (20%): ${tva.toFixed(2)} €</div>
-                    <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${totalTTC.toFixed(2)} €</div>
+                    <div style="margin-bottom: 6px;">Total HT: ${formatNumber(totalHT)} €</div>
+                    <div style="margin-bottom: 6px;">TVA (20%): ${formatNumber(tva)} €</div>
+                    <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${formatNumber(totalTTC)} €</div>
                 ` : `
-                    <div style="margin-bottom: 6px;">Total HT: ${totalHT.toFixed(2)} €</div>
+                    <div style="margin-bottom: 6px;">Total HT: ${formatNumber(totalHT)} €</div>
                     <div style="font-size: 12px; color: #666; margin-bottom: 6px;">TVA non applicable (art. 293 B du CGI)</div>
-                    <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${totalHT.toFixed(2)} €</div>
+                    <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${formatNumber(totalHT)} €</div>
                 `}
             </div>
 
@@ -6682,7 +6791,17 @@ document.getElementById('downloadPDF')?.addEventListener('click', async () => {
 
 // Initialize app
 function initApp() {
-    // Load data from localStorage first
+    // Load data from localStorage first (backup si Drive échoue)
+    try {
+        const storedQuotes = localStorage.getItem('mti_quotes');
+        if (storedQuotes) {
+            quotes = JSON.parse(storedQuotes);
+            console.log(`✅ ${quotes.length} devis chargés depuis localStorage`);
+        }
+    } catch (e) {
+        console.warn('Erreur chargement quotes localStorage:', e);
+    }
+    
     try {
         const storedRAMs = localStorage.getItem('mti_rams');
         if (storedRAMs) {
@@ -6704,6 +6823,7 @@ function initApp() {
 
     setupNavigation();
     setupClientSelectListener();
+    setupRAMClientSelectListener();
     setupClientFormHandlers();
     setupInvoiceFormListeners();
     setupInvoiceSaveHandler();
@@ -6788,15 +6908,27 @@ function initApp() {
 
 // Setup listeners pour mise à jour automatique du select factures dans le formulaire RAM
 function setupRAMFormListeners() {
+    const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
     const monthSelect = document.getElementById('ramMonthSelect');
     const yearInput = document.getElementById('ramYearInput');
     
-    if (!clientInput || !monthSelect || !yearInput) return;
+    if (!monthSelect || !yearInput) return;
+    
+    // Fonction pour récupérer le nom du client actuel (depuis select ou input manuel)
+    const getCurrentClientName = () => {
+        if (clientSelect && clientSelect.value !== '') {
+            // Client sélectionné dans le dropdown
+            const index = parseInt(clientSelect.value);
+            return clients[index] ? clients[index].name : '';
+        }
+        // Saisie manuelle
+        return clientInput ? clientInput.value.trim() : '';
+    };
     
     // Fonction pour mettre à jour le select des factures
     const updateInvoiceSelect = () => {
-        const client = clientInput.value.trim();
+        const client = getCurrentClientName();
         const month = parseInt(monthSelect.value);
         const year = parseInt(yearInput.value);
         
@@ -6806,9 +6938,10 @@ function setupRAMFormListeners() {
     };
     
     // Écouter les changements
-    clientInput.addEventListener('blur', updateInvoiceSelect);
-    monthSelect.addEventListener('change', updateInvoiceSelect);
-    yearInput.addEventListener('change', updateInvoiceSelect);
+    if (clientSelect) clientSelect.addEventListener('change', updateInvoiceSelect);
+    if (clientInput) clientInput.addEventListener('blur', updateInvoiceSelect);
+    if (monthSelect) monthSelect.addEventListener('change', updateInvoiceSelect);
+    if (yearInput) yearInput.addEventListener('change', updateInvoiceSelect);
 }
 
 // Start the app on DOM ready
@@ -6953,7 +7086,7 @@ function generateEmailBody(invoice, client) {
     const contactName = client.contact_name || client.name;
     return `Bonjour ${contactName},
 
-Veuillez trouver ci-joint la facture n°${invoice.number} d'un montant de ${(invoice.total || 0).toFixed(2)} € HT.
+Veuillez trouver ci-joint la facture n°${invoice.number} d'un montant de ${formatNumber((invoice.total || 0))} € HT.
 
 Date de facturation : ${formatDateFR(invoice.date)}
 Date d'échéance : ${formatDateFR(invoice.dueDate)}
@@ -7153,14 +7286,14 @@ async function generateInvoicePDFBase64(invoice) {
             ? invoice.items.map(item => [
                 item.description || '',
                 (item.quantity || 0).toString(),
-                `${(item.unitPrice || 0).toFixed(2)} €`,
-                `${((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)} €`
+                `${formatNumber((item.unitPrice || 0))} €`,
+                `${formatNumber(((item.quantity || 0) * (item.unitPrice || 0)))} €`
             ])
             : [[
                 invoice.description || '',
                 (invoice.quantity || 0).toString(),
-                `${(invoice.unitPrice || 0).toFixed(2)} €`,
-                `${(invoice.total || 0).toFixed(2)} €`
+                `${formatNumber((invoice.unitPrice || 0))} €`,
+                `${formatNumber((invoice.total || 0))} €`
             ]];
         
         doc.autoTable({
@@ -7173,7 +7306,7 @@ async function generateInvoicePDFBase64(invoice) {
         if (invoice.items && invoice.items.length > 0) {
             let y = 120;
             invoice.items.forEach(item => {
-                doc.text(`${item.description} - ${item.quantity} x ${item.unitPrice}€ = ${(item.quantity * item.unitPrice).toFixed(2)}€`, 20, y);
+                doc.text(`${item.description} - ${item.quantity} x ${item.unitPrice}€ = ${formatNumber((item.quantity * item.unitPrice))} €`, 20, y);
                 y += 7;
             });
         } else {
@@ -7185,10 +7318,10 @@ async function generateInvoicePDFBase64(invoice) {
     const tva = (invoice.total || 0) * 0.2;
     const ttc = (invoice.total || 0) + tva;
 
-    doc.text(`Total HT : ${(invoice.total || 0).toFixed(2)} €`, 120, finalY);
-    doc.text(`TVA 20% : ${tva.toFixed(2)} €`, 120, finalY + 7);
+    doc.text(`Total HT : ${formatNumber((invoice.total || 0))} €`, 120, finalY);
+    doc.text(`TVA 20% : ${formatNumber(tva)} €`, 120, finalY + 7);
     doc.setFontSize(12);
-    doc.text(`Total TTC : ${ttc.toFixed(2)} €`, 120, finalY + 14);
+    doc.text(`Total TTC : ${formatNumber(ttc)} €`, 120, finalY + 14);
 
     return doc.output('datauristring').split(',')[1];
 }
@@ -7995,13 +8128,34 @@ function editRAMInForm(index) {
     }
     
     // Pré-remplir les champs
+    const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
+    const clientSiret = document.getElementById('ramClientSiret');
+    const clientAddress = document.getElementById('ramClientAddress');
     const monthSelect = document.getElementById('ramMonthSelect');
     const yearInput = document.getElementById('ramYearInput');
     const invoiceInput = document.getElementById('ramInvoiceNumber');
     const remarksInput = document.getElementById('ramRemarksInput');
+    const manualGroup = document.getElementById('ramManualClientGroup');
     
-    if (clientInput) clientInput.value = ram.client;
+    // Chercher si le client existe dans la liste
+    const clientIndex = clients.findIndex(c => c.name === ram.client);
+    if (clientIndex !== -1 && clientSelect) {
+        // Client trouvé - sélectionner dans le dropdown
+        clientSelect.value = clientIndex.toString();
+        if (manualGroup) manualGroup.style.display = 'none';
+        if (clientInput) clientInput.value = ram.client;
+        if (clientSiret) clientSiret.value = clients[clientIndex].siret || '';
+        if (clientAddress) clientAddress.value = clients[clientIndex].address || '';
+    } else {
+        // Client non trouvé - saisie manuelle
+        if (clientSelect) clientSelect.value = '';
+        if (manualGroup) manualGroup.style.display = 'block';
+        if (clientInput) clientInput.value = ram.client;
+        if (clientSiret) clientSiret.value = ram.clientSiret || '';
+        if (clientAddress) clientAddress.value = ram.clientAddress || '';
+    }
+    
     if (monthSelect) monthSelect.value = ram.month;
     if (yearInput) yearInput.value = ram.year;
     if (remarksInput) remarksInput.value = ram.remarks || '';
@@ -8088,15 +8242,25 @@ window.populateRAMInvoiceSelect = populateRAMInvoiceSelect;
 
 // Réinitialiser le formulaire RAM
 function resetRAMForm() {
+    const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
+    const clientSiret = document.getElementById('ramClientSiret');
+    const clientAddress = document.getElementById('ramClientAddress');
     const monthSelect = document.getElementById('ramMonthSelect');
     const yearInput = document.getElementById('ramYearInput');
     const invoiceInput = document.getElementById('ramInvoiceNumber');
     const remarksInput = document.getElementById('ramRemarksInput');
     
+    if (clientSelect) clientSelect.value = '';
     if (clientInput) clientInput.value = '';
+    if (clientSiret) clientSiret.value = '';
+    if (clientAddress) clientAddress.value = '';
     if (monthSelect) monthSelect.selectedIndex = new Date().getMonth();
     if (yearInput) yearInput.value = new Date().getFullYear();
+    
+    // Afficher le champ de saisie manuelle
+    const manualGroup = document.getElementById('ramManualClientGroup');
+    if (manualGroup) manualGroup.style.display = 'block';
     
     // Réinitialiser le select des factures
     if (invoiceInput) {
@@ -8218,17 +8382,39 @@ window.refreshRAMFormCalendar = refreshRAMFormCalendar;
 
 // Sauvegarder le RAM depuis le formulaire
 async function saveRAMFromForm() {
+    const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
+    const clientSiret = document.getElementById('ramClientSiret');
+    const clientAddress = document.getElementById('ramClientAddress');
     const monthSelect = document.getElementById('ramMonthSelect');
     const yearInput = document.getElementById('ramYearInput');
     const invoiceInput = document.getElementById('ramInvoiceNumber');
     const remarksInput = document.getElementById('ramRemarksInput');
     
-    if (!clientInput || !monthSelect || !yearInput) return;
+    if (!monthSelect || !yearInput) return;
     
-    const client = clientInput.value.trim();
+    // Récupérer le nom du client (depuis select ou input manuel)
+    let client = '';
+    let ramClientSiret = '';
+    let ramClientAddress = '';
+    
+    if (clientSelect && clientSelect.value !== '') {
+        // Client sélectionné dans le dropdown
+        const index = parseInt(clientSelect.value);
+        if (clients[index]) {
+            client = clients[index].name;
+            ramClientSiret = clients[index].siret || '';
+            ramClientAddress = clients[index].address || '';
+        }
+    } else {
+        // Saisie manuelle
+        client = clientInput ? clientInput.value.trim() : '';
+        ramClientSiret = clientSiret ? clientSiret.value.trim() : '';
+        ramClientAddress = clientAddress ? clientAddress.value.trim() : '';
+    }
+    
     if (!client) {
-        showToast('❌ Veuillez saisir un nom de client', 'error');
+        showToast('❌ Veuillez sélectionner ou saisir un nom de client', 'error');
         return;
     }
     
@@ -8281,6 +8467,8 @@ async function saveRAMFromForm() {
             // Mise à jour (préserver id et createdAt)
             const ram = rams[window.editingRAMIndex];
             ram.client = client;
+            ram.clientSiret = ramClientSiret;
+            ram.clientAddress = ramClientAddress;
             ram.month = month;
             ram.year = year;
             ram.monthName = monthName;
@@ -8295,6 +8483,8 @@ async function saveRAMFromForm() {
             const ram = {
                 id: Date.now(),
                 client,
+                clientSiret: ramClientSiret,
+                clientAddress: ramClientAddress,
                 month,
                 year,
                 monthName,
@@ -8378,7 +8568,7 @@ async function sendInvoiceWithRAM(invoiceIndex) {
         const ramFilename = `RAM_${linkedRAM.year}_${linkedRAM.monthName}_${invoice.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
         
         // Corps de l'email
-        const invoiceBody = `Montant total : ${invoice.total.toFixed(2)}€\nÉchéance : ${formatDateFR(invoice.dueDate)}`;
+        const invoiceBody = `Montant total : ${formatNumber(invoice.total)} €\nÉchéance : ${formatDateFR(invoice.dueDate)}`;
         
         // Envoyer via le backend
         const response = await fetch(CONFIG.BACKEND_URL, {
@@ -8775,6 +8965,81 @@ async function importRAMsFromSheets() {
 window.exportRAMsToSheets = exportRAMsToSheets;
 window.importRAMsFromSheets = importRAMsFromSheets;
 
+// ==========================================
+// QUOTES SYNC AVEC GOOGLE SHEETS
+// ==========================================
+
+// Exporter tous les devis vers Sheets
+async function exportQuotesToSheets() {
+    if (isSyncing) {
+        alert('⏳ Une synchronisation est déjà en cours...');
+        return;
+    }
+    
+    if (quotes.length === 0) {
+        alert('ℹ️ Aucun devis à exporter');
+        return;
+    }
+    
+    const confirm = window.confirm(`Exporter ${quotes.length} devis vers Google Sheets ?\n\nCela écrasera le contenu existant de la feuille Devis.`);
+    if (!confirm) return;
+    
+    isSyncing = true;
+    try {
+        const result = await callBackend('sync_quotes', { sheetId: CONFIG.SHEETS_ID, quotes });
+        if (!result || result.success === false) {
+            throw new Error(result?.data || 'Erreur serveur lors de l\'export');
+        }
+        
+        alert(`✅ ${result.data.count} ligne(s) exportée(s) vers Sheets`);
+        window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
+    } catch (error) {
+        console.error('exportQuotesToSheets error:', error);
+        alert(`❌ Erreur export devis : ${error.message || error}`);
+    } finally {
+        isSyncing = false;
+    }
+}
+
+// Importer les devis depuis Sheets
+async function importQuotesFromSheets() {
+    if (isSyncing) {
+        alert('⏳ Une synchronisation est déjà en cours...');
+        return;
+    }
+    
+    const confirm = window.confirm('Importer les devis depuis Google Sheets ?\n\nCela écrasera les devis locaux non sauvegardés.');
+    if (!confirm) return;
+    
+    isSyncing = true;
+    try {
+        const result = await callBackend('import_quotes', { sheetId: CONFIG.SHEETS_ID });
+        if (!result || result.success === false) {
+            throw new Error(result?.data || 'Erreur serveur lors de l\'import');
+        }
+        
+        quotes = result.data.quotes || [];
+        await saveToDrive();
+        // Sauvegarde backup localStorage
+        try {
+            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+        } catch (e) {
+            console.warn('Erreur sauvegarde quotes localStorage:', e);
+        }
+        renderQuoteList();
+        
+        alert(`✅ ${quotes.length} devis importé(s) depuis Sheets`);
+    } catch (error) {
+        console.error('importQuotesFromSheets error:', error);
+        alert(`❌ Erreur import devis : ${error.message || error}`);
+    } finally {
+        isSyncing = false;
+    }
+}
+
+window.exportQuotesToSheets = exportQuotesToSheets;
+window.importQuotesFromSheets = importQuotesFromSheets;
+
 // ===================================================================
 // PHASE 1 - NOUVELLES FONCTIONNALITÉS (Décembre 2025)
 // ===================================================================
@@ -9035,7 +9300,7 @@ function renderQuoteItems() {
                        min="0" step="0.01" style="width: 110px; text-align: right; font-size: var(--font-size-sm);">
             </td>
             <td style="padding: 8px; text-align: right;">
-                <strong style="font-size: var(--font-size-sm);">${item.total.toFixed(2)} €</strong>
+                <strong style="font-size: var(--font-size-sm);">${formatNumber(item.total)} €</strong>
             </td>
             <td style="padding: 8px; text-align: center;">
                 <button type="button" class="btn btn-sm btn-secondary" 
@@ -9057,7 +9322,7 @@ function updateQuoteTotals() {
     const totalHT = currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0);
     
     const totalHTInput = document.getElementById('quoteTotalHT');
-    if (totalHTInput) totalHTInput.value = `${totalHT.toFixed(2)} €`;
+    if (totalHTInput) totalHTInput.value = `${formatNumber(totalHT)} €`;
 }
 
 /**
@@ -9103,7 +9368,7 @@ function renderQuoteList() {
             <td>${quote.client}</td>
             <td>${formatDateFR(quote.date)}</td>
             <td>${formatDateFR(quote.validityDate)}</td>
-            <td><strong>${(quote.total || 0).toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber((quote.total || 0))} €</strong></td>
             <td>${linkedInvoiceBadge}</td>
             <td><span class="status-badge status-${statusClass}">${quote.status || 'Brouillon'}</span></td>
             <td>
@@ -9122,6 +9387,28 @@ function renderQuoteList() {
         tbody.appendChild(row);
     });
 }
+
+/**
+ * Ouvre un devis par son numéro (appelé depuis badge dans liste factures)
+ */
+function openQuoteByNumber(quoteNumber) {
+    const index = quotes.findIndex(q => q.number === quoteNumber);
+    if (index === -1) {
+        showToast('Devis introuvable', 'error');
+        return;
+    }
+    
+    // Switch to Devis tab
+    const devisTab = document.querySelector('[data-tab="devis"]');
+    if (devisTab) devisTab.click();
+    
+    // Small delay to ensure tab switch completes
+    setTimeout(() => {
+        editQuoteInForm(index);
+    }, 100);
+}
+
+window.openQuoteByNumber = openQuoteByNumber;
 
 /**
  * Filtre la liste des devis
@@ -9169,7 +9456,7 @@ function filterQuoteList() {
             <td>${quote.client}</td>
             <td>${formatDateFR(quote.date)}</td>
             <td>${formatDateFR(quote.validityDate)}</td>
-            <td><strong>${(quote.total || 0).toFixed(2)} €</strong></td>
+            <td><strong>${formatNumber((quote.total || 0))} €</strong></td>
             <td>${linkedInvoiceBadge}</td>
             <td><span class="status-badge status-${statusClass}">${quote.status || 'Brouillon'}</span></td>
             <td>
@@ -9242,6 +9529,16 @@ function initQuoteForm() {
         const validityDate = new Date();
         validityDate.setDate(validityDate.getDate() + 30);
         validityDateInput.value = validityDate.toISOString().split('T')[0];
+    }
+    
+    // Auto-update validity date when quote date changes (+30 days)
+    if (quoteDateInput && validityDateInput) {
+        quoteDateInput.addEventListener('change', () => {
+            const quoteDate = new Date(quoteDateInput.value);
+            const validity = new Date(quoteDate);
+            validity.setDate(validity.getDate() + 30);
+            validityDateInput.value = validity.toISOString().split('T')[0];
+        });
     }
     
     // Définir numéro de devis
@@ -9405,6 +9702,12 @@ async function saveQuote(e) {
     
     renderQuoteList();
     saveToDrive();
+    // Sauvegarde backup localStorage
+    try {
+        localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+    } catch (e) {
+        console.warn('Erreur sauvegarde quotes localStorage:', e);
+    }
     try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
 }
 
@@ -9495,6 +9798,12 @@ function deleteQuote(index) {
         showToast('✅ Devis supprimé');
         renderQuoteList();
         saveToDrive();
+        // Sauvegarde backup localStorage
+        try {
+            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+        } catch (e) {
+            console.warn('Erreur sauvegarde quotes localStorage:', e);
+        }
         try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
     }
 }
@@ -9620,17 +9929,17 @@ function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, vali
                     <tr>
                         <td>${item.description || ''}</td>
                         <td style="text-align: center;">${item.quantity || 0}</td>
-                        <td style="text-align: right;">${parseFloat(item.unitPrice || 0).toFixed(2)} €</td>
-                        <td style="text-align: right;">${(item.total || 0).toFixed(2)} €</td>
+                        <td style="text-align: right;">${formatNumber(parseFloat(item.unitPrice || 0))} €</td>
+                        <td style="text-align: right;">${formatNumber((item.total || 0))} €</td>
                     </tr>
                 `).join('')}
             </tbody>
         </table>
 
         <div class="totals">
-            <div style="margin-bottom: 6px;">Total HT: ${totalHT.toFixed(2)} €</div>
+            <div style="margin-bottom: 6px;">Total HT: ${formatNumber(totalHT)} €</div>
             <div style="font-size: 12px; color: #666; margin-bottom: 6px;">TVA non applicable (art. 293 B du CGI)</div>
-            <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${totalHT.toFixed(2)} €</div>
+            <div style="font-weight: bold; font-size: 18px; margin-top: 12px; color: #21808D;">Total TTC: ${formatNumber(totalHT)} €</div>
         </div>
 
         <div class="warning-box">
@@ -9791,8 +10100,8 @@ async function generateQuotePDFBase64(quote) {
             ? quote.items.map(item => [
                 item.description || '',
                 (item.quantity || 0).toString(),
-                `${(item.unitPrice || 0).toFixed(2)} €`,
-                `${((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)} €`
+                `${formatNumber((item.unitPrice || 0))} €`,
+                `${formatNumber(((item.quantity || 0) * (item.unitPrice || 0)))} €`
             ])
             : [];
         
@@ -9801,7 +10110,13 @@ async function generateQuotePDFBase64(quote) {
             head: [['Description', 'Quantité', 'Prix unitaire HT', 'Total HT']],
             body: tableBody,
             headStyles: { fillColor: [33, 128, 141] },
-            styles: { fontSize: 10 }
+            styles: { fontSize: 10 },
+            columnStyles: {
+                0: { cellWidth: 80 },    // Description plus large
+                1: { cellWidth: 25 },    // Quantité
+                2: { cellWidth: 40 },    // Prix unitaire
+                3: { cellWidth: 35 }     // Total HT (plus d'espace pour le €)
+            }
         });
     }
 
@@ -9809,7 +10124,7 @@ async function generateQuotePDFBase64(quote) {
 
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
-    doc.text(`Total HT : ${(quote.total || 0).toFixed(2)} €`, 120, finalY);
+    doc.text(`Total HT : ${formatNumber((quote.total || 0))} €`, 120, finalY);
     doc.setFont(undefined, 'normal');
     
     doc.setFontSize(9);
@@ -9872,7 +10187,7 @@ function generateQuoteEmailBody(quote, client) {
     const contactName = client.contact_name || client.name;
     return `Bonjour ${contactName},
 
-Veuillez trouver ci-joint le devis n°${quote.number} d'un montant de ${(quote.total || 0).toFixed(2)} € HT.
+Veuillez trouver ci-joint le devis n°${quote.number} d'un montant de ${formatNumber((quote.total || 0))} € HT.
 
 Date d'émission : ${formatDateFR(quote.date)}
 Date de validité : ${formatDateFR(quote.validityDate)}
@@ -10022,6 +10337,12 @@ async function confirmQuoteEmailSend(index) {
         // Marquer comme envoyé
         quotes[index].status = 'Envoyé';
         await saveToDrive();
+        // Sauvegarde backup localStorage
+        try {
+            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+        } catch (e) {
+            console.warn('Erreur sauvegarde quotes localStorage:', e);
+        }
         renderQuoteList();
         try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
         
@@ -10323,6 +10644,12 @@ function convertQuoteToInvoice(index) {
     quotes[index].linkedInvoiceNumber = newInvoice.number;
     
     saveToDrive();
+    // Sauvegarde backup localStorage
+    try {
+        localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+    } catch (e) {
+        console.warn('Erreur sauvegarde quotes localStorage:', e);
+    }
     renderInvoiceList();
     renderQuoteList();
     try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
@@ -10514,8 +10841,8 @@ function updateCADisplay(annee = new Date().getFullYear()) {
     const seuilMicro = 77700;
     
     // Mise à jour des valeurs
-    document.getElementById('caCumule').textContent = caCumule.toFixed(2) + ' €';
-    document.getElementById('caPaye').textContent = caPaye.toFixed(2) + ' €';
+    document.getElementById('caCumule').textContent = formatNumber(caCumule) + ' €';
+    document.getElementById('caPaye').textContent = formatNumber(caPaye) + ' €';
     document.getElementById('seuilTVA').textContent = ((caCumule / seuilTVA) * 100).toFixed(1) + '%';
     document.getElementById('seuilMicro').textContent = ((caCumule / seuilMicro) * 100).toFixed(1) + '%';
     document.getElementById('caAnnee').textContent = annee;
@@ -10706,9 +11033,9 @@ function updateDashboard() {
     const dashLastInvoiceEl = document.getElementById('dashLastInvoice');
     const dashLastPaymentEl = document.getElementById('dashLastPayment');
     
-    if (dashCAEl) dashCAEl.textContent = `${monthCA.toFixed(2)} €`;
+    if (dashCAEl) dashCAEl.textContent = `${formatNumber(monthCA)} €`;
     if (dashPendingCountEl) dashPendingCountEl.textContent = pendingInvoices.length;
-    if (dashPendingAmountEl) dashPendingAmountEl.textContent = `${pendingAmount.toFixed(2)} €`;
+    if (dashPendingAmountEl) dashPendingAmountEl.textContent = `${formatNumber(pendingAmount)} €`;
     
     if (dashLastInvoiceEl) {
         if (lastInvoice) {
@@ -10720,7 +11047,7 @@ function updateDashboard() {
     
     if (dashLastPaymentEl) {
         if (lastPayment) {
-            dashLastPaymentEl.innerHTML = `<strong>${lastPayment.number}</strong> - ${(parseFloat(lastPayment.montantRecu) || 0).toFixed(2)} € (${formatDateFR(lastPayment.dateReception)})`;
+            dashLastPaymentEl.innerHTML = `<strong>${lastPayment.number}</strong> - ${formatNumber((parseFloat(lastPayment.montantRecu) || 0))} € (${formatDateFR(lastPayment.dateReception)})`;
         } else {
             dashLastPaymentEl.textContent = 'Aucun paiement';
         }
@@ -10752,7 +11079,7 @@ function updateAlerts() {
         alerts.push({
             type: 'error',
             icon: '🔴',
-            message: `${overdueInvoices.length} facture(s) en retard (+30j) - ${total.toFixed(2)} €`,
+            message: `${overdueInvoices.length} facture(s) en retard (+30j) - ${formatNumber(total)} €`,
             action: () => {
                 document.getElementById('statusFilter').value = 'Retard';
                 applyFilters();
@@ -10773,7 +11100,7 @@ function updateAlerts() {
         alerts.push({
             type: 'warning',
             icon: '🟠',
-            message: `${soonDueInvoices.length} facture(s) échéance <7j - ${total.toFixed(2)} €`,
+            message: `${soonDueInvoices.length} facture(s) échéance <7j - ${formatNumber(total)} €`,
             action: null
         });
     }
@@ -10791,7 +11118,7 @@ function updateAlerts() {
         alerts.push({
             type: 'info',
             icon: '🟡',
-            message: `${expiredQuotes.length} devis expiré(s) non converti(s) - ${total.toFixed(2)} €`,
+            message: `${expiredQuotes.length} devis expiré(s) non converti(s) - ${formatNumber(total)} €`,
             action: null
         });
     }
@@ -11008,7 +11335,7 @@ function updateDevisKPIs() {
 
     // Montant des devis filtrés
     const quotesAmount = quotesFiltered.reduce((sum, q) => sum + (q.total || 0), 0);
-    amountMonthEl.textContent = `${quotesAmount.toFixed(2)} €`;
+    amountMonthEl.textContent = `${formatNumber(quotesAmount)} €`;
 
     countMonthEl.textContent = `${quotesFiltered.length}`;
 
@@ -11062,14 +11389,14 @@ function initTVACalculatorListeners() {
             }
             
             // Affichage des résultats
-            document.getElementById('tvaResultHT').textContent = result.ht.toFixed(2) + ' €';
-            document.getElementById('tvaResultTVA').textContent = result.tva.toFixed(2) + ' €';
-            document.getElementById('tvaResultTTC').textContent = result.ttc.toFixed(2) + ' €';
+            document.getElementById('tvaResultHT').textContent = result.formatNumber(ht) + ' €';
+            document.getElementById('tvaResultTVA').textContent = result.formatNumber(tva) + ' €';
+            document.getElementById('tvaResultTTC').textContent = result.formatNumber(ttc) + ' €';
             
             // Message d'impact
             const impactMsg = direction === 'ht-to-ttc' 
-                ? `Si vous facturez actuellement ${result.ht.toFixed(2)}€ TTC (franchise TVA), vous devrez facturer ${result.ttc.toFixed(2)}€ TTC avec TVA (+${result.tva.toFixed(2)}€ pour le client) OU garder ${result.ht.toFixed(2)}€ TTC et perdre ${((result.tva / result.ttc) * 100).toFixed(1)}% de marge.`
-                : `Votre prix actuel ${result.ttc.toFixed(2)}€ TTC correspond à ${result.ht.toFixed(2)}€ HT + ${result.tva.toFixed(2)}€ TVA. Si vous gardez ce prix TTC après assujettissement, vous perdrez ${result.tva.toFixed(2)}€ (collecté pour l'État).`;
+                ? `Si vous facturez actuellement ${formatNumber(result.ht)} € TTC (franchise TVA), vous devrez facturer ${formatNumber(result.ttc)} € TTC avec TVA (+${formatNumber(result.tva)} € pour le client) OU garder ${formatNumber(result.ht)} € TTC et perdre ${((result.tva / result.ttc) * 100).toFixed(1)}% de marge.`
+                : `Votre prix actuel ${formatNumber(result.ttc)} € TTC correspond à ${formatNumber(result.ht)} € HT + ${formatNumber(result.tva)} € TVA. Si vous gardez ce prix TTC après assujettissement, vous perdrez ${formatNumber(result.tva)} € (collecté pour l'État).`;
             
             document.getElementById('tvaImpactMessage').textContent = impactMsg;
             document.getElementById('tvaResults').style.display = 'block';
@@ -11126,7 +11453,7 @@ function renderRecurringList() {
             <tr style="background: ${rec.active ? 'inherit' : 'var(--color-gray-50)'};">
                 <td style="font-family: monospace; font-size: var(--font-size-sm);">${rec.id}</td>
                 <td><strong>${template.client || 'N/A'}</strong></td>
-                <td style="text-align: right; font-weight: var(--font-weight-semibold);">${parseFloat(template.total || 0).toFixed(2)} €</td>
+                <td style="text-align: right; font-weight: var(--font-weight-semibold);">${formatNumber(parseFloat(template.total || 0))} €</td>
                 <td>${frequencyLabels[rec.frequency] || rec.frequency}</td>
                 <td>${new Date(rec.nextDate).toLocaleDateString('fr-FR')}</td>
                 <td>${rec.lastGeneratedDate ? new Date(rec.lastGeneratedDate).toLocaleDateString('fr-FR') : '-'}</td>

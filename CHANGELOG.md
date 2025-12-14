@@ -5,9 +5,67 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.2.1] - 2024-12-15
+
+### Corrections
+
+#### Persistance des devis
+- **Problème** : Les devis n'étaient pas récupérés après actualisation de la page
+- **Cause** : 
+  - Le backend ne créait pas la propriété `quotes: []` dans `emptyData`
+  - Pas de sauvegarde localStorage comme backup (contrairement aux RAMs)
+- **Solution** :
+  - Ajout de `quotes: []` dans `backend/AppScript.js` ligne 221
+  - Sauvegarde automatique en localStorage après chaque opération sur les devis
+  - Chargement localStorage dans `initApp()` comme fallback
+  - Synchronisation localStorage après `loadFromDrive()` pour backup
+
+**Fichiers modifiés** :
+- `backend/AppScript.js` : Ajout `quotes: []` dans emptyData
+- `app.js` : Sauvegarde localStorage après création, modification, suppression, changement statut, import Sheets
+
+### Améliorations
+
+#### Auto-actualisation date validité devis
+- **Fonctionnalité** : La date de validité s'actualise automatiquement (+30 jours) quand la date d'émission du devis est modifiée
+- **Comportement** : Identique aux factures (date échéance = date facture + 30 jours)
+- **Implémentation** : Listener `change` sur `#quoteDate` dans `initQuoteForm()`
+
+**Fichier modifié** :
+- `app.js` : Ajout listener dans `initQuoteForm()` (ligne 9537)
+
+### Documentation
+
+- Mise à jour README.md : Version 2.2.1, notes de version
+- Mise à jour CHANGELOG.md : Historique détaillé des modifications
+
+---
+
+## [2.2.0] - 2024-12-14
+
+### Interface utilisateur
+
+- Formatage français des montants avec séparateur de milliers (espace) et virgule décimale
+- Fonction `formatNumber()` appliquée à 50+ emplacements
+- Dropdown client intelligent avec auto-remplissage (SIRET, Adresse)
+
+### Calculateur fiscal
+
+- Interrogation séparée de l'API URSSAF pour plus de précision :
+  - `dirigeant . auto-entrepreneur . cotisations et contributions . cotisations` (12,3%)
+  - `dirigeant . auto-entrepreneur . cotisations et contributions . CFP` (0,2%)
+- Suppression des calculs par soustraction
+- Évolutivité automatique en cas de modification des taux légaux
+
+### Documentation
+
+- Professionnalisation de toute la documentation
+
+---
+
 ## [2.1.4] - 2025-12-12
 
-### ✨ Nouveaux Modules : Devis + Option B (Calculs Dynamiques API URSSAF)
+### ✨ Nouveaux Modules : Devis + Calculs Dynamiques API URSSAF
 
 #### 🆕 Module Devis
 **Fonctionnalités principales** :
@@ -35,7 +93,7 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-#### 🆕 Option B - Calculs Dynamiques API URSSAF (Nouveau)
+#### 🆕 Calculs Dynamiques API URSSAF (Nouveau Module)
 **Fonctionnalités principales** :
 - ✅ **API Mon-entreprise URSSAF** : Intégration complète pour calculs cotisations temps réel
 - ✅ **Calculs dynamiques** : Cotisations URSSAF + CFP calculées via API (plus de taux en dur)
@@ -61,7 +119,7 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-#### 🐛 Corrections Bugs Production (Option B)
+#### 🐛 Corrections Bugs Production (Calculs Dynamiques)
 
 **Bug #5 - Structure API incompatible** :
 - **Problème** : Code attendait `data.evaluations` (ancien format objet), API retourne `data.evaluate` (nouveau format tableau)
@@ -78,7 +136,7 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 - **Solution** : Ajout zone alerte `#seuilsAlert` en haut simulateur + appel `checkSeuils(ca * 12)` dans `finalizeTaxCalculation()`
 - **Résultat** : Alerte rouge visible si dépassement micro-entreprise
 
-#### Clarifications Techniques (Option B)
+#### Clarifications Techniques (Calculs Dynamiques API URSSAF)
 **CFP (Contribution Formation Professionnelle)** :
 - Taux URSSAF : **12,3%** (cotisations sociales seules)
 - CFP : **+0,2%** (formation obligatoire)
