@@ -80,7 +80,7 @@ Si l'API échoue ou la commune n'est pas référencée :
 - **Date de début d'activité** : Input date pour calcul automatique période ACRE
 - **Calcul automatique** : Fin de période = fin du 3ème trimestre civil suivant le début
 - **Affichage dynamique** :
-  - ✅ Badge vert si ACRE active (avec durée restante en mois/jours)
+  - Badge vert si ACRE active (avec durée restante en mois/jours)
   - ⚠️ Badge orange si ACRE expirée
 - **Bascule automatique** : Le radio button se met à jour selon la période
 
@@ -127,8 +127,8 @@ L'API fournit le **taux CFE** (%), pas la base minimale (€). Le calcul utilise
 - **Input numérique** : Saisie du RFR par part
 - **Vérification automatique** : Comparaison avec seuil VL (28,797€ en 2026)
 - **Badge d'éligibilité** :
-  - ✅ Vert : Éligible au Versement Libératoire
-  - ❌ Rouge : Non éligible (IRPP obligatoire)
+  - Vert : Éligible au Versement Libératoire
+  - Rouge : Non éligible (IRPP obligatoire)
 - **Message détaillé** : RFR saisi vs seuil
 
 #### 💰 Régime fiscal
@@ -441,7 +441,7 @@ Tous les taux sont modifiables dans **Paramètres → Calculs Fiscaux et Sociaux
 - Durée : 4 trimestres (≈ 9 mois et demi restants au 01/12/2025)
 
 **Badge affiché** :
-✅ Période ACRE active
+Période ACRE active
 Début : 15/03/2025 (T1 2025)
 Fin : 31/12/2025 (fin T4 2025)
 **Durée restante : 0 mois (30 jours)**

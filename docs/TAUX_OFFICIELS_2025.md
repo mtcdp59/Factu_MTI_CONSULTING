@@ -3,7 +3,7 @@
 ## 🎯 Taux vérifiés URSSAF (Déclaration réelle)
 
 ### Cotisations sociales URSSAF - Prestations de services (BNC)
-- **Avec ACRE (12 mois)** : **12,30%** ✅
+- **Avec ACRE (12 mois)** : **12,30%**
 - **Sans ACRE** : **24,60%** (taux plein 2025)
 
 ⚠️ **Important** : Depuis la réforme 2020, il n'y a plus de dégressivité sur 3 ans. L'ACRE est valable **12 mois exactement**, puis retour au taux plein.
@@ -93,18 +93,18 @@ Le taux standard évolue de **+1% par an** jusqu'en 2029 :
 
 ### Votre déclaration du 8 décembre 2025
 - **CA déclaré** : 7 200 €
-- **Prestations BNC avec ACRE** : 886 € (12,30%) ✅
-- **Formation professionnelle** : 14 € (0,20%) ✅
+- **Prestations BNC avec ACRE** : 886 € (12,30%)
+- **Formation professionnelle** : 14 € (0,20%)
 - **Total charges** : 1 058 €
 
 ### Vérification des calculs
 ```
-URSSAF ACRE = 7 200 € × 12,30% = 885,60 € ≈ 886 € ✅
-CFP        = 7 200 € × 0,20%  = 14,40 €  ≈ 14 €  ✅
+URSSAF ACRE = 7 200 € × 12,30% = 885,60 € ≈ 886 €
+CFP        = 7 200 € × 0,20%  = 14,40 €  ≈ 14 €
 TOTAL      = 886 + 14 + VL/IRPP + CFE
 ```
 
-**Votre simulateur affichait 11,6% au lieu de 12,30%** → Maintenant corrigé ! 🎉
+**Correction appliquée** : Le simulateur affichait 11,6% au lieu de 12,30% (maintenant corrigé).
 
 ## 🔗 Sources officielles vérifiées
 1. https://www.autoentrepreneur.urssaf.fr/portail/accueil/sinformer-sur-le-statut/lessentiel-du-statut.html

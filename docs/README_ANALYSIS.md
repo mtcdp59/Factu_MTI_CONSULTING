@@ -185,18 +185,18 @@ This folder now contains 5 analysis documents comparing your workspace against t
 
 ## 🚀 Next Steps
 
-### Option A: Verify Everything Works (No Changes)
+### Approach 1: Verify Everything Works (No Changes)
 1. Read: `ANALYSIS_COMPLETE.md`
 2. Done! Your code is current and working.
 
-### Option B: Improve Reliability (Recommended)
+### Approach 2: Improve Reliability (Recommended)
 1. Read: `429_ERROR_SOLUTION.md`
 2. Copy code for exponential backoff (20 lines)
 3. Implement in app.js (30 minutes)
 4. Test with rapid reloads
 5. Deploy
 
-### Option C: Deep Understanding (For Developers)
+### Approach 3: Deep Understanding (For Developers)
 1. Read: `QUICK_REFERENCE.md` (orientation)
 2. Read: `DETAILED_LINE_BY_LINE_COMPARISON.md` (deep dive)
 3. Use QUICK_REFERENCE.md as ongoing reference

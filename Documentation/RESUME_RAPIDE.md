@@ -39,13 +39,13 @@
 
 ## 🚀 Prochaine Étape ?
 
-### Option A : Merger Immédiatement
+### Méthode 1 : Merger Immédiatement
 ```
 1. Lire CODE_DETAILLE.md (45 min) - code review
 2. Exécuter GUIDE_DEPLOIEMENT.md (2h) - déployer
 ```
 
-### Option B : Vue Rapide d'Abord
+### Méthode 2 : Vue Rapide d'Abord
 ```
 1. Lire VUE_ENSEMBLE.md (15 min)
 2. Confiance : tout est documenté, testé ✅

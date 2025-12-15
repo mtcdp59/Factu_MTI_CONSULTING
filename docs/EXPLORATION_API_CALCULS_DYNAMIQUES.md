@@ -179,7 +179,7 @@ Pour calculer correctement les cotisations, l'API nécessite :
 - 🎯 Simplicité (code lisible et maintenable)
 - 📅 Maintenance minimale (1x/an)
 
-### Option B : Calculs dynamiques via /evaluate (POSSIBLE mais NON RECOMMANDÉE)
+### Méthode Recommandée : Calculs dynamiques via /evaluate (IMPLÉMENTÉE)
 
 **Faisabilité technique :** ✅ **VALIDÉE** - L'API peut calculer 100% des cotisations (CFP inclus)
 
@@ -225,10 +225,10 @@ async function calculateCotisationsFromAPI(ca, hasACRE, creationDate) {
 - Si l'app doit supporter plusieurs activités (BIC, BNC, Cipav, etc.) → Actuellement **NON** (BNC uniquement)
 - Si calcul temps réel avec paramètres utilisateur multiples → Actuellement **NON** (simulation simple)
 
-### Option C : Hybride améliorée (ALTERNATIVE)
+### Alternative Non Implémentée : Hybride améliorée
 
 **Synchroniser via API :**
-- Même que Option A (5 paramètres /rules)
+- Même que Méthode Statique (5 paramètres /rules)
 
 **Calcul dynamique CFP uniquement :**
 ```javascript

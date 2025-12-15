@@ -79,8 +79,8 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 ### 📊 Calculateur de Charges et Impôts (Taux Officiels 2025)
 - **Calculs dynamiques API URSSAF** : Intégration API Mon-entreprise.urssaf.fr pour taux toujours à jour
 - **Taux URSSAF officiels** : 12,3% (ACRE) / 24,6% (Standard 2025) via API - Décret n°2024-484
-- **CFP récupérée séparément** : 0,2% isolée via API pour plus de précision (Code du travail L6331-48)
-- **Double requête API** : `cotisations et contributions . cotisations` (12,3%) + `cotisations et contributions . CFP` (0,2%)
+- **CFP incluse** : 0,2% récupérée via l'API (pas de calcul séparé)
+- **Validation rapide** : Bouton "🧪 Tester l'API URSSAF" dans l'onglet Calculs pour afficher les taux ACRE / sans ACRE
 - **Cache intelligent** : 5 minutes pour optimiser performances
 - **Fallback robuste** : Valeurs locales si API indisponible (12,5% / 24,8%)
 - **Période ACRE automatique** : Calcul selon date de début d'activité (Art. L.131-6-4 CSS)
@@ -135,6 +135,12 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 - **Prévention doublons** : Contrôle client + mois + année
 - **Gestion CRUD** : Création, lecture, modification, suppression, liste
 - **Persistance données** : Triple-layer (localStorage + Drive + Sheets)
+
+## 📚 Documentation utile
+
+- **URSSAF dynamique** : docs/api-urssaf/00_README.md
+- **Sync devis ↔ Sheets** : docs/SYNCHRONISATION_DEVIS_SHEETS.md
+- **Déploiement backend Apps Script** : DEPLOY_BACKEND.md
 
 ## 🚀 Installation
 

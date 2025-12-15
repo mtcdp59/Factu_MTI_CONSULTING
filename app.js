@@ -4338,9 +4338,9 @@ async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
             console.warn('⚠️ Échec calcul dynamique cotisations:', err.message);
         }
         
-        // Fallback sur valeurs en dur (12,5% ACRE / 24,8% standard)
+        // Fallback sur valeurs en dur (12,3% ACRE / 24,6% standard)
         // Note: ACRE est une exonération 1ère année uniquement (depuis réforme 2020)
-        const tauxFallback = hasACRE ? 12.5 : 24.8;
+        const tauxFallback = hasACRE ? 12.3 : 24.6;
         const montantAnnuel = ca * (tauxFallback / 100);
         const montantAnnuelCFP = ca * (taxSettings.cfpBNC / 100);
         const tauxCFP = taxSettings.cfpBNC;
@@ -4478,12 +4478,60 @@ async function calculateCotisationsWithFallback(caAnnuel, hasACRE, creationDate)
         
         return result;
     } catch (err) {
-        // Fallback sur valeurs en dur
+        // Fallback sur valeurs en dur + alerte visible
         const tauxFallback = hasACRE ? taxSettings.acreActif : taxSettings.acreInactif;
+        try {
+            showToast(`⚠️ API URSSAF indisponible, fallback sur taux locaux (${tauxFallback}% + CFP ${taxSettings.cfpBNC}%).`, 'warning');
+            console.warn('Fallback URSSAF avec taux locaux:', err);
+        } catch (e) {
+            console.warn('Fallback URSSAF (toast non affiché):', err);
+        }
         return {
             montantAnnuel: caAnnuel * (tauxFallback / 100),
             taux: tauxFallback
         };
+    }
+}
+
+/**
+ * Test manuel de l'API URSSAF (avec/sans ACRE) depuis l'onglet Calculs.
+ * Affiche les taux URSSAF et CFP séparés pour vérifier que l'API répond.
+ */
+async function testUrssafAPI() {
+    try {
+        const ca = parseFloat(document.getElementById('caInput')?.value) || 0;
+        if (!ca || ca <= 0) {
+            showToast('Veuillez saisir un CA > 0 avant de tester l\'API URSSAF.', 'warning');
+            return;
+        }
+
+        // Récupérer la date de début d'activité (convertir vers DD/MM/YYYY)
+        const creationDateInput = document.getElementById('dateDebutActivite');
+        let creationDate = creationDateInput && creationDateInput.value ? creationDateInput.value : null;
+        if (creationDate && creationDate.includes('-')) {
+            const parts = creationDate.split('-');
+            creationDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+        } else if (!creationDate) {
+            creationDate = `01/01/${new Date().getFullYear()}`;
+        }
+
+        const caAnnuel = ca * 12;
+        const scenarios = [];
+        for (const hasACRE of [true, false]) {
+            const res = await calculateCotisationsDynamically(caAnnuel, hasACRE, creationDate);
+            const montantCFP = res.montantAnnuelCFP ?? 0;
+            const montantURSSAF = (res.montantAnnuel ?? 0) - montantCFP;
+            const urssafRate = caAnnuel ? (montantURSSAF / caAnnuel) * 100 : 0;
+            const cfpRate = caAnnuel ? (montantCFP / caAnnuel) * 100 : (res.tauxCFP || taxSettings.cfpBNC || 0);
+            scenarios.push({ hasACRE, urssafRate, cfpRate, montantURSSAF, montantCFP });
+        }
+
+        const msg = `API OK · ACRE: URSSAF ${scenarios[0].urssafRate.toFixed(2)}% / CFP ${scenarios[0].cfpRate.toFixed(2)}% | Sans ACRE: URSSAF ${scenarios[1].urssafRate.toFixed(2)}% / CFP ${scenarios[1].cfpRate.toFixed(2)}%`;
+        showToast(msg, 'success');
+        console.log('🧪 Test API URSSAF détaillé:', scenarios);
+    } catch (err) {
+        console.error('Test API URSSAF en échec:', err);
+        showToast('⚠️ Test API URSSAF en échec: ' + (err.message || err), 'error');
     }
 }
 
@@ -4797,11 +4845,15 @@ if (exportSimulateurPDFBtn) {
 // Event listeners pour save/reset simulation
 const saveSimulationBtn = document.getElementById('saveSimulation');
 const resetSimulationBtn = document.getElementById('resetSimulation');
+const testUrssafAPIBtn = document.getElementById('testUrssafAPI');
 if (saveSimulationBtn) {
     saveSimulationBtn.addEventListener('click', saveSimulationParams);
 }
 if (resetSimulationBtn) {
     resetSimulationBtn.addEventListener('click', resetSimulationParams);
+}
+if (testUrssafAPIBtn) {
+    testUrssafAPIBtn.addEventListener('click', testUrssafAPI);
 }
 
 // Cache API CFE (localStorage)

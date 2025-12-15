@@ -116,9 +116,9 @@ L'API Mon-entreprise.urssaf.fr (basée sur le modèle Publicodes) expose **5 par
 
 **FAUX (version initiale):** "ACRE dégressif sur 3 ans (50% → 25% → 10%)"
 **VRAI (depuis réforme 2020):** ACRE exonération 1ère année uniquement (12 mois)
-**Impact:** Argument principal "complexité ACRE" invalide → **Option B (calculs dynamiques) désormais viable**
+**Impact:** Argument principal "complexité ACRE" invalide → **Calculs Dynamiques via API désormais viable**
 
-**Note:** Cette section garde l'analyse historique pour référence, mais l'Option B a été implémentée suite à cette correction.
+**Note:** Cette section garde l'analyse historique pour référence, mais les Calculs Dynamiques ont été implémentés suite à cette correction.
 
 **Raisons HISTORIQUES contre calculs dynamiques (partiellement obsolètes) :**
 
@@ -142,8 +142,8 @@ Les taux URSSAF (12,5% / 24,8% avec CFP) sont des **constantes réglementaires**
 
 ### 6. **Taux Cotisations URSSAF + CFP (ACRE actif)**
 - **Valeur app:** 12,5 % (incluant 0,2% CFP)
-- **Statut:** ✅ **DÉSORMAIS CALCULÉ DYNAMIQUEMENT via API (Option B implémentée)**
-- **Raisons implémentation Option B:**
+- **Statut:** ✅ **DÉSORMAIS CALCULÉ DYNAMIQUEMENT via API**
+- **Raisons implémentation:**
   - ✅ Calculable via `/evaluate` avec `cotisations et contributions` (CFP inclus)
   - ✅ ACRE NON dégressif depuis 2020 → Gestion simple (12 mois)
   - ✅ Cache 5 min implémenté → Performance acceptable
@@ -153,7 +153,7 @@ Les taux URSSAF (12,5% / 24,8% avec CFP) sont des **constantes réglementaires**
 
 ### 7. **Taux Cotisations URSSAF + CFP (ACRE inactif)**
 - **Valeur app:** 24,8 % (incluant 0,2% CFP)
-- **Statut:** ✅ **DÉSORMAIS CALCULÉ DYNAMIQUEMENT via API (Option B implémentée)**
+- **Statut:** ✅ **DÉSORMAIS CALCULÉ DYNAMIQUEMENT via API**
 - **Raisons implémentation:** Idem paramètre 6 (même fonction `calculateCotisationsDynamically()`)
 - **Source règle:** `dirigeant . auto-entrepreneur . cotisations et contributions`
 - **Justification HISTORIQUE (obsolète):** ~~Constante réglementaire stable~~ → Calcul dynamique préféré

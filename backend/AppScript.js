@@ -99,6 +99,12 @@ function doPost(e) {
       case 'import_rams':
         response = importRAMs(data.sheetId);
         break;
+      case 'sync_quotes':
+        response = syncQuotes(data.sheetId, data.quotes);
+        break;
+      case 'import_quotes':
+        response = importQuotes(data.sheetId);
+        break;
       case 'sendInvoiceWithRAM':
         response = sendInvoiceWithRAM(data);
         break;
@@ -211,6 +217,7 @@ function loadFromDrive() {
       const emptyData = {
         clients: [],
         invoices: [],
+        quotes: [],
         tasks: [],
         rams: [],
         recurringInvoices: [],
@@ -1356,8 +1363,204 @@ function clearRAMSheet() {
       sheetUrl: spreadsheet.getUrl()
     });
   } catch (error) {
-    Logger.log('❌ Erreur clearRAMSheet: ' + error.toString());
-    return createResponse(false, 'Erreur nettoyage RAM: ' + error.toString());
+    return createResponse(false, 'Erreur clear RAM: ' + error.toString());
   }
+}
+
+// ==========================================
+// QUOTES (DEVIS) SHEETS SYNC
+// ==========================================
+
+/**
+ * Synchroniser les devis vers Google Sheets
+ * @param {string} sheetId - ID du spreadsheet
+ * @param {Array} quotes - Tableau des devis
+ */
+function syncQuotes(sheetId, quotes) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
+    let sheet = spreadsheet.getSheetByName('Devis');
+    
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Devis');
+    }
+    
+    // Clear et headers
+    sheet.clear();
+    const headers = [
+      'Numéro',
+      'Client',
+      'Client SIRET',
+      'Client Adresse',
+      'Date',
+      'Validité',
+      'Statut',
+      'Description',
+      'Montant HT',
+      'Montant TTC',
+      'Facture liée',
+      'Créé le',
+      'Notes'
+    ];
+    
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, headers.length).setBackground('#218c8d');
+    sheet.getRange(1, 1, 1, headers.length).setFontColor('#ffffff');
+    
+    // Auto-resize sera fait après ajout des données
+    sheet.setFrozenRows(1);
+    
+    // Ajouter les données
+    const rows = [];
+    (quotes || []).forEach(quote => {
+      const description = formatQuoteDescription(quote.items || []);
+      rows.push([
+        quote.number || '',
+        quote.client || '',
+        quote.clientSiret || '',
+        quote.clientAddress || '',
+        quote.date || '',
+        quote.validityDate || '',
+        quote.status || 'Brouillon',
+        description,
+        quote.totalHT || 0,
+        quote.total || 0,
+        quote.linkedInvoice || '',
+        quote.createdAt || quote.date || '',
+        quote.notes || ''
+      ]);
+    });
+    
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+      
+      // Bordures
+      sheet.getRange(2, 1, rows.length, headers.length).setBorder(
+        true, true, true, true, true, true,
+        '#CCCCCC',
+        SpreadsheetApp.BorderStyle.SOLID
+      );
+      
+      // Alignement des montants
+      sheet.getRange(2, 9, rows.length, 2).setHorizontalAlignment('right');
+    }
+    
+    // Auto-resize colonnes
+    for (let i = 1; i <= headers.length; i++) {
+      sheet.autoResizeColumn(i);
+    }
+    
+    Logger.log('Devis synchronisés: ' + rows.length + ' lignes');
+    return createResponse(true, { 
+      count: rows.length,
+      sheetUrl: spreadsheet.getUrl()
+    });
+  } catch (error) {
+    return createResponse(false, 'Erreur sync devis: ' + error.toString());
+  }
+}
+
+/**
+ * Formater les items du devis pour affichage dans Sheets
+ * @param {Array} items - Lignes du devis
+ * @return {string} Description formatée
+ */
+function formatQuoteDescription(items) {
+  if (!items || items.length === 0) return '';
+  
+  return items.map(item => {
+    const desc = item.description || '';
+    const qty = item.quantity || 0;
+    const price = item.unitPrice || 0;
+    return desc + ' (' + qty + ' × ' + price + '€)';
+  }).join(' | ');
+}
+
+/**
+ * Importer les devis depuis Google Sheets
+ * @param {string} sheetId - ID du spreadsheet
+ */
+function importQuotes(sheetId) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
+    const sheet = spreadsheet.getSheetByName('Devis');
+    
+    if (!sheet) {
+      return createResponse(false, 'Feuille "Devis" introuvable. Créez d\'abord un onglet "Devis" dans Google Sheets.');
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    
+    if (data.length <= 1) {
+      // Seulement en-tête ou vide
+      return createResponse(true, { quotes: [] });
+    }
+    
+    // Parser les lignes (skip header)
+    const quotes = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      
+      // Skip lignes vides
+      if (!row[0] && !row[1]) continue;
+      
+      const quote = {
+        number: row[0] || '',
+        client: row[1] || '',
+        clientSiret: row[2] || '',
+        clientAddress: row[3] || '',
+        date: row[4] || '',
+        validityDate: row[5] || '',
+        status: row[6] || 'Brouillon',
+        items: parseQuoteDescription(row[7] || ''),
+        totalHT: parseFloat(row[8]) || 0,
+        total: parseFloat(row[9]) || 0,
+        linkedInvoice: row[10] || '',
+        createdAt: row[11] || '',
+        notes: row[12] || ''
+      };
+      
+      quotes.push(quote);
+    }
+    
+    Logger.log('Devis importés: ' + quotes.length);
+    return createResponse(true, { quotes: quotes });
+  } catch (error) {
+    return createResponse(false, 'Erreur import devis: ' + error.toString());
+  }
+}
+
+/**
+ * Parser la description pour reconstruire les items
+ * @param {string} description - Description formatée
+ * @return {Array} Tableau d'items
+ */
+function parseQuoteDescription(description) {
+  if (!description) return [];
+  
+  // Parser "Desc (qty × price€) | Desc2 (qty × price€)"
+  const parts = description.split(' | ');
+  return parts.map(function(part) {
+    // Regex pour capturer: "Description (quantity × price€)"
+    const match = part.match(/^(.*?)\s*\((\d+(?:\.\d+)?)\s*×\s*(\d+(?:\.\d+)?)€\)$/);
+    if (match) {
+      const qty = parseFloat(match[2]);
+      const price = parseFloat(match[3]);
+      return {
+        description: match[1].trim(),
+        quantity: qty,
+        unitPrice: price,
+        total: qty * price
+      };
+    }
+    // Fallback: ligne unique
+    return {
+      description: part,
+      quantity: 1,
+      unitPrice: 0,
+      total: 0
+    };
+  });
 }
 

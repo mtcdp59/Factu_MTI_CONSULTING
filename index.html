@@ -1033,6 +1033,15 @@ tr:hover {
             <!-- Quote List -->
             <div class="card">
                 <h2 class="card-title">Liste des devis</h2>
+                
+                <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" onclick="importQuotesFromSheets()">📥 Importer depuis Sheets</button>
+                    <button class="btn btn-secondary" onclick="exportQuotesToSheets()">📤 Exporter vers Sheets</button>
+                </div>
+                <div style="padding: 8px; background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); margin-bottom: 16px;">
+                    <strong>ℹ️ Synchronisation :</strong> Les devis sont automatiquement sauvegardés sur Google Drive. Utilisez ces boutons pour synchroniser avec Google Sheets (onglet "Devis").
+                </div>
+                
                 <div class="table-wrapper">
                     <!-- SEARCH BAR -->
                     <div class="form-group" style="margin-bottom: var(--space-16);">
@@ -1071,8 +1080,31 @@ tr:hover {
                 <div class="form-row" style="margin-bottom: var(--space-16);">
                     <div class="form-group">
                         <label class="form-label">Client *</label>
-                        <input type="text" id="ramClientInput" class="form-control" placeholder="Nom du client" required>
+                        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs); display: block; margin-bottom: 4px;">
+                            Choisissez un client existant ou sélectionnez <strong>Saisie manuelle</strong> pour remplir les informations à la main.
+                        </small>
+                        <select class="form-control" id="ramClientSelect">
+                            <option value="">Saisie manuelle</option>
+                        </select>
                     </div>
+                    <div class="form-group" id="ramManualClientGroup">
+                        <label class="form-label">Nom du client (saisie manuelle)</label>
+                        <input type="text" id="ramClientInput" class="form-control" placeholder="Nom du client">
+                    </div>
+                </div>
+                
+                <div class="form-row" style="margin-bottom: var(--space-16);">
+                    <div class="form-group">
+                        <label class="form-label">Client SIRET</label>
+                        <input type="text" id="ramClientSiret" class="form-control" placeholder="SIRET du client" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Client Adresse</label>
+                        <input type="text" id="ramClientAddress" class="form-control" placeholder="Adresse du client" readonly>
+                    </div>
+                </div>
+                
+                <div class="form-row" style="margin-bottom: var(--space-16);">
                     <div class="form-group">
                         <label class="form-label">N° Facture (optionnel)</label>
                         <select id="ramInvoiceNumber" class="form-control">
@@ -1909,6 +1941,7 @@ tr:hover {
                 <div class="action-buttons" style="margin-top: var(--space-24);">
                     <button type="button" class="btn btn-secondary" id="resetSimulation">🔄 Réinitialiser simulation</button>
                     <button type="button" class="btn btn-primary" id="saveSimulation">💾 Enregistrer simulation</button>
+                    <button type="button" class="btn btn-secondary" id="testUrssafAPI">🧪 Tester l'API URSSAF</button>
                 </div>
                 <div id="saveSimulationConfirmation" style="display: none; padding: var(--space-12); background-color: rgba(var(--color-teal-500-rgb), 0.15); color: var(--color-success); border-radius: var(--radius-base); margin-top: var(--space-12); border: 1px solid rgba(var(--color-teal-500-rgb), 0.25);">
                     ✓ Paramètres de simulation enregistrés avec succès

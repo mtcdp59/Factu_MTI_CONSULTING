@@ -90,12 +90,12 @@ const CONFIG = {
 ```
 
 **Architecture v42** :
-- ✅ Pas de fichier `config.js` externe
-- ✅ Credentials hardcodés directement dans `app.js`
-- ✅ Modifiables via l'onglet **Paramètres** (sauvegarde dans localStorage)
-- ✅ GitHub Pages fonctionne immédiatement sans configuration
-- ✅ Backend Google Apps Script sans gestion CORS (retours directs)
-- ✅ Backend propre (~1364 lignes, production-ready)
+- Pas de fichier `config.js` externe
+- Credentials hardcodés directement dans `app.js`
+- Modifiables via l'onglet **Paramètres** (sauvegarde dans localStorage)
+- GitHub Pages fonctionne immédiatement sans configuration
+- Backend Google Apps Script sans gestion CORS (retours directs)
+- Backend propre (~1364 lignes, production-ready)
 
 ### 2. Fonction d'initialisation (app.js ligne ~4900)
 
@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 1. Vérification backend storage
     const storageCheck = await callBackend('ensureStorage');
     if (storageCheck.success) {
-        console.log('✅ Drive storage verified:', storageCheck.data);
+        console.log('Drive storage verified:', storageCheck.data);
     }
     
     // 2. Chargement données depuis Drive (écrase les tableaux vides)
@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 3. Initialisation UI (clients, invoices, tasks, rams)
     initApp();
     
-    console.log('✅ Application prête');
+    console.log('Application prête');
 });
 ```
 
@@ -769,7 +769,7 @@ if (!bareme || !Array.isArray(bareme) || bareme.length === 0) {
 - `console.log('🚀 Initialisation MTI CONSULTING v2.1...')` (ligne 4747)
 - `console.debug('Calling backend:', CONFIG.BACKEND_URL, body)` (ligne 25)
 - `console.error('Backend error:', errMsg)` (ligne 42)
-- `console.log('✅ RAM loaded:', rams.length)` (après loadFromDrive)
+- `console.log('RAM loaded:', rams.length)` (après loadFromDrive)
 
 ### Outils de Test
 - **Test Backend** : Bouton dans Paramètres → Appelle `testBackend()`
