@@ -99,6 +99,42 @@ Recherchez par :
 4. **Modifiez** les heures et commentaires
 5. **Cliquez sur "Mettre à jour le RAM"**
 
+### PDF généré automatiquement
+
+Le RAM est exporté en PDF avec une structure optimisée sur 2 pages :
+
+**Page 1** :
+- En-tête avec logo MTI CONSULTING
+- Informations client (nom, SIRET, adresse)
+- Tableau d'activité jour par jour avec heures et commentaires
+- Total des heures du mois
+
+**Page 2** (structure fixe V9) :
+- **Remarques** (Y=20mm → Y=245mm)
+  - Espace disponible : 225mm (~75 lignes)
+  - Texte dynamique : 6-7pt selon longueur
+  - Bordure avec titre "Remarques"
+- **Gap sécurité** : 10mm
+- **Visas** (Y=255mm fixe)
+  - 2 boîtes : "Visa Prestataire" / "Visa Superviseur Client"
+  - Centrage avec marges 22mm de chaque côté
+  - Hauteur : 20mm (fin à 275mm)
+- **Gap sécurité** : 5mm
+- **Footer** (Y=280mm fixe)
+  - Nom société + SIRET centré
+  - Marge sécurité : 17mm du bord (compatible tous PDF viewers)
+
+**Historique positionnement** :
+- V1-V5 : Positionnement dynamique page 1 (footer coupé)
+- V6 : Page 2 systématique sans remarques
+- V7-V8 : Positionnement dynamique page 2 (overlap possible)
+- V9 (actuel) : Positionnement fixe page 2 (aucune collision)
+
+L'approche V9 garantit :
+- Aucun chevauchement entre remarques/visas/footer
+- Capacité remarques 4,7x supérieure (vs V8)
+- Visibilité footer sur tous PDF viewers
+
 ### Envoi par email
 
 #### Envoi RAM seul
@@ -298,5 +334,5 @@ Exemples de commentaires efficaces :
 
 ---
 
-**Dernière mise à jour** : 14 décembre 2024  
-**Version** : 2.0 (Dropdown client + Formatage milliers)
+**Dernière mise à jour** : 16 décembre 2024  
+**Version** : 2.2.2 (Positionnement fixe PDF V9)

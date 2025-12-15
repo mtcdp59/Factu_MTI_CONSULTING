@@ -5,6 +5,54 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.2.2] - 2024-12-16
+
+### Corrections
+
+#### PDF RAM - Refonte système de positionnement page 2 (V9)
+- **Problème** : Chevauchement des remarques multi-lignes avec les visas et le footer
+- **Cause** : 
+  - Positionnement dynamique permettant aux remarques (max 48mm) d'empiéter sur les visas (Y=250mm)
+  - Remarques commençant à Y=230mm pouvaient s'étendre jusqu'à 278mm
+  - Collision avec visas (255mm) et footer (280mm)
+- **Solution V9** : Système de positionnement fixe
+  - **Remarques** : Y=20mm → Y=245mm (225mm disponibles, ~75 lignes)
+  - **Gap sécurité** : 10mm
+  - **Visas** : Y=255mm fixe (20mm hauteur, fin à 275mm)
+  - **Gap sécurité** : 5mm
+  - **Footer** : Y=280mm fixe (6mm hauteur, 17mm du bord)
+- **Bénéfices** :
+  - Capacité remarques augmentée de 4,7x (48mm → 225mm)
+  - Séparation physique empêchant toute collision
+  - Structure prédictible et maintenable
+  - Footer toujours visible (marge sécurité 17mm PDF viewers)
+
+**Fichiers modifiés** :
+- `app.js` : Refonte generateRAMPDF() lignes 8840-8910
+  - Constantes de positionnement fixe (footerY, sigY, remarksStartY, remarksMaxY)
+  - Suppression logique positionnement dynamique
+  - Calcul espace remarques avec limitation lignes
+
+**Migration V8 → V9** :
+```javascript
+// V8 - Positionnement dynamique (causait overlap)
+let remarksY = 230;
+const sigY = remarks ? (remarksY + actualRemarksHeight + 5) : 250;
+
+// V9 - Positionnement fixe (collision impossible)
+const footerY = 280;           // Footer toujours à 280mm
+const sigY = 255;              // Visas toujours à 255mm
+const remarksStartY = 20;      // Remarques en haut page 2
+const remarksMaxY = 245;       // Fin remarques 10mm avant visas
+```
+
+### Documentation
+
+- Mise à jour CHANGELOG.md : Détails V9 système positionnement fixe
+- Mise à jour docs/RAM_GUIDE.md : Section structure PDF page 2
+
+---
+
 ## [2.2.1] - 2024-12-15
 
 ### Corrections

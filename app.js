@@ -8816,60 +8816,99 @@ async function generateRAMPDF(ram) {
     
     const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 5 : 220;
     
-    // Remarques (compactes)
-    let remarksHeight = 0;
+    // Remarques (compactes avec compression intelligente)
+    // Compression intelligente selon longueur des remarques
+    let remarksFontSize = 7;
+    let remarksLineHeight = 3;
+    
     if (remarks) {
-        doc.setFontSize(8);
-        doc.setFont(undefined, 'bold');
-        doc.text('Remarques :', 15, finalY);
-        doc.setFont(undefined, 'normal');
-        doc.setFontSize(7);
-        const remarksLines = doc.splitTextToSize(remarks, 175);
-        doc.text(remarksLines, 15, finalY + 4);
-        // Hauteur réelle basée sur le nombre de lignes (3mm par ligne + marges)
-        remarksHeight = remarksLines.length * 3 + 6;
-        doc.rect(15, finalY - 2, 180, remarksHeight);
+        const remarksLength = remarks.length;
+        
+        if (remarksLength > 500) {
+            // Remarques très longues : police 6, interligne 2.5mm
+            remarksFontSize = 6;
+            remarksLineHeight = 2.5;
+        } else if (remarksLength > 300) {
+            // Remarques moyennes : police 6.5, interligne 2.8mm
+            remarksFontSize = 6.5;
+            remarksLineHeight = 2.8;
+        }
+        
+        // Ne pas afficher les remarques sur page 1, elles seront sur page 2
     }
     
-    // Signatures (en bas de page, plus compact)
-    // Position adaptée à la hauteur réelle des remarques
-    let sigY = remarks ? finalY + remarksHeight + 5 : finalY + 5;
+    // Page 2 - Remarques, Visas et Footer
+    doc.addPage();
     
-    // SUPPRESSION DU SAUT DE PAGE FORCÉ
-    // jsPDF autoTable gère automatiquement les sauts de page du tableau
-    // finalY représente la position sur la dernière page du tableau
-    // Les visas doivent simplement continuer sur cette même page
-    // Pas besoin de condition : si le tableau tient sur 1 page, les visas aussi
-    // Si le tableau déborde sur page 2, les visas suivent naturellement
+    // Structure fixe pour éviter chevauchement :
+    // - Footer fixe à Y=280mm (hauteur 6mm)
+    // - Visas fixes à Y=255mm (hauteur 20mm, finissent à 275mm)
+    // - Remarques de Y=20mm à Y=245mm max (225mm disponibles)
     
+    const footerY = 280;
+    const sigY = 255;
+    const remarksStartY = 20;
+    const remarksMaxY = 245; // 10mm avant les visas
+    
+    // Afficher les remarques en haut de page 2 (si présentes)
+    if (remarks) {
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(8);
+        doc.text('Remarques', 15, remarksStartY);
+        
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(remarksFontSize);
+        const remarksLines = doc.splitTextToSize(remarks, 175);
+        
+        // Calculer hauteur max disponible pour remarques (jusqu'à 10mm avant visas)
+        const maxRemarksHeight = remarksMaxY - remarksStartY - 6; // 6mm pour titre + padding
+        const maxRemarksLines = Math.floor(maxRemarksHeight / remarksLineHeight);
+        const truncatedLines = remarksLines.slice(0, maxRemarksLines);
+        
+        if (remarksLines.length > maxRemarksLines) {
+            truncatedLines[truncatedLines.length - 1] += ' [...]';
+            console.warn(`Remarques tronquées: ${remarksLines.length} lignes → ${maxRemarksLines} lignes (hauteur max: ${maxRemarksHeight}mm)`);
+        }
+        
+        const actualRemarksHeight = truncatedLines.length * remarksLineHeight + 6;
+        doc.text(truncatedLines, 15, remarksStartY + 4);
+        doc.rect(15, remarksStartY - 2, 180, actualRemarksHeight);
+        
+        console.log(`✅ Remarques affichées en page 2 : Y=${remarksStartY}mm, hauteur=${actualRemarksHeight}mm (max: ${maxRemarksHeight}mm)`);
+    }
+    
+    // Visas FIXES à Y=255mm pour éviter chevauchement
     doc.setFontSize(8);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text('Visa Prestataire', 20, sigY);
-    doc.rect(15, sigY + 2, 80, 20);
     
-    // Ajouter la signature dans la case Prestataire (agrandie et centrée)
+    // Visas recentrés : marge 22mm de chaque côté
+    doc.text('Visa Prestataire', 24, sigY);
+    doc.rect(22, sigY + 2, 78, 20);
+    
+    // Ajouter la signature dans la case Prestataire (centrée)
     try {
         const signaturePath = 'assets/images/signature_pandadoc.png';
         const sigDataUri = await fetchImageAsDataUri(signaturePath);
         if (sigDataUri) {
-            // Case fait 80mm de large, signature 50mm centrée : début à 15 + (80-50)/2 = 30mm
-            doc.addImage(sigDataUri, 'PNG', 30, sigY + 4, 50, 15);
+            doc.addImage(sigDataUri, 'PNG', 36, sigY + 4, 50, 15);
         }
     } catch(e) {
         console.warn('Signature non chargée:', e);
     }
     
-    doc.text('Visa Superviseur Client', 120, sigY);
-    doc.rect(105, sigY + 2, 80, 20);
+    doc.text('Visa Superviseur Client', 112, sigY);
+    doc.rect(110, sigY + 2, 78, 20);
     
-    // Footer (tout en bas, sans superposition)
+    // Footer FIXE à Y=280mm (5mm après visas)
+    
     doc.setFontSize(6);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    const footerY = Math.max(sigY + 28, 285);
+    
     doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
     doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 3, { align: 'center' });
+    console.log('✅ Footer affiché en page 2 à Y=' + footerY + 'mm');
     
     return doc.output('datauristring').split(',')[1];
 }
