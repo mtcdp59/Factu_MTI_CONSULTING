@@ -1,91 +1,91 @@
-# VISUAL SUMMARY: Code Analysis Results
+# RÉSUMÉ VISUEL : Résultats de l'Analyse du Code
 
-## 🎯 Main Findings at a Glance
+## 🎯 Principaux constats en un coup d'œil
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    WORKSPACE vs GITHUB MAIN                     │
+│                    ESPACE DE TRAVAIL vs GITHUB MAIN             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  app.js (11,078 lines)        INDEX.html (2,371 lines)         │
-│  ✅ IDENTICAL                 ✅ IDENTICAL                      │
-│  No differences found         No differences found              │
+│  app.js (11 078 lignes)        INDEX.html (2 371 lignes)         │
+│  ✅ IDENTIQUE                 ✅ IDENTIQUE                      │
+│  Aucune différence trouvée    Aucune différence trouvée         │
 │                                                                 │
-│  Status: ✅ CODE IS UP-TO-DATE                                 │
+│  Statut : ✅ CODE À JOUR                                        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📍 Commune Search Location
+## 📍 Recherche de Commune
 
 ```
 INDEX.HTML
 │
-├─ CALCULS TAB
-│  └─ Line 1840: 🏙️ Commune (CFE personnalisée)
-│     ├─ Line 1841: <input id="communeInput">
-│     └─ Line 1842: <div id="communeAutocomplete">
+├─ Onglet CALCULS
+│  └─ Ligne 1840 : 🏙️ Commune (CFE personnalisée)
+│     ├─ Ligne 1841 : <input id="communeInput">
+│     └─ Ligne 1842 : <div id="communeAutocomplete">
 │
-└─ PARAMÈTRES TAB
-   └─ NO COMMUNE SEARCH (Correctly not here)
+└─ Onglet PARAMÈTRES
+   └─ PAS DE RECHERCHE COMMUNE (Correctement absent)
 
 APP.JS
 │
-├─ Event Listeners (Lines 4330-4345)
-│  └─ Trigger searchCommunesAPI() on input
+├─ Écouteurs d'événements (Lignes 4330-4345)
+│  └─ Déclenche searchCommunesAPI() sur saisie
 │
-├─ searchCommunesAPI() (Lines 4555-4620)
-│  └─ Query Open Data Soft API (34,934 communes)
+├─ searchCommunesAPI() (Lignes 4555-4620)
+│  └─ Interroge l'API Open Data Soft (34 934 communes)
 │
 ├─ displayCommunesResults() (Lines 4622-4645)
-│  └─ Show dropdown and handle clicks
+│  └─ Affiche la liste déroulante et gère les clics
 │
-└─ updateCFEEstimation() (Lines 4905-4970)
-   └─ Calculate CFE for selected commune
+└─ updateCFEEstimation() (Lignes 4905-4970)
+   └─ Calcule la CFE pour la commune sélectionnée
 ```
 
 ---
 
-## 🔗 URSSAF API Integration Flow
+## 🔗 Schéma d'intégration de l'API URSSAF
 
 ```
-PAGE LOAD
+CHARGEMENT DE LA PAGE
    │
-   ├─ DOMContentLoaded event (Line 4126)
-   │  └─ initUrssafIntegration() called
+   ├─ Événement DOMContentLoaded (Ligne 4126)
+   │  └─ Appel de initUrssafIntegration()
    │     │
-   │     ├─ loadFiscalThresholdsFromAPI() (Lines 4040-4115)
-   │     │  ├─ Check 24h cache (Line 3955-3963)
-   │     │  ├─ If missing: evaluateMonEntreprise() (Line 3914)
-   │     │  │  └─ POST to mon-entreprise.urssaf.fr/api/v1/evaluate
-   │     │  │     ├─ Query 3 Publicodes rules
-   │     │  │     ├─ Get TVA thresholds (~37,500€)
-   │     │  │     └─ Get micro-BNC limit (~77,700€)
+   │     ├─ loadFiscalThresholdsFromAPI() (Lignes 4040-4115)
+   │     │  ├─ Vérifie le cache 24h (Ligne 3955-3963)
+   │     │  ├─ Si absent : evaluateMonEntreprise() (Ligne 3914)
+   │     │  │  └─ POST vers mon-entreprise.urssaf.fr/api/v1/evaluate
+   │     │  │     ├─ Interroge 3 règles Publicodes
+   │     │  │     ├─ Récupère seuils TVA (~37 500€)
+   │     │  │     └─ Récupère plafond micro-BNC (~77 700€)
    │     │  │
-   │     │  └─ Store in taxSettings + cache (24h)
+   │     │  └─ Stocke dans taxSettings + cache (24h)
    │     │
-   │     └─ loadAdditionalFiscalParamsFromAPI() (Lines 4153-4191)
-   │        ├─ evaluateMonEntreprise() for VL rate, BNC deduction
-   │        └─ Store in taxSettings
+   │     └─ loadAdditionalFiscalParamsFromAPI() (Lignes 4153-4191)
+   │        ├─ evaluateMonEntreprise() pour taux VL, abattement BNC
+   │        └─ Stocke dans taxSettings
    │
-   └─ On Error (Lines 3917, 3938)
-      └─ console.warn() + use local defaults from taxSettings
+   └─ En cas d'erreur (Lignes 3917, 3938)
+      └─ console.warn() + utilise les valeurs locales de taxSettings
 
-USER NAVIGATES TO CALCULS TAB
+L'UTILISATEUR NAVIGUE VERS L'ONGLET CALCULS
    │
-   ├─ User types in commune search
-   │  └─ searchCommunesAPI() called (Line 4555)
-   │     ├─ Check communesSearchCache
-   │     ├─ If missing: Query Open Data Soft API
-   │     └─ Display results in dropdown
+   ├─ L'utilisateur saisit une commune
+   │  └─ Appel de searchCommunesAPI() (Ligne 4555)
+   │     ├─ Vérifie communesSearchCache
+   │     ├─ Si absent : interroge l'API Open Data Soft
+   │     └─ Affiche les résultats dans la liste déroulante
    │
-   └─ User selects commune
-      └─ getCFEFromAPI() called (Line 4481)
-         ├─ Check localStorage cache (30 days)
-         ├─ If missing: Query Open Data Soft API
-         └─ updateCFEEstimation() displays result
+   └─ L'utilisateur sélectionne une commune
+      └─ Appel de getCFEFromAPI() (Ligne 4481)
+         ├─ Vérifie le cache localStorage (30 jours)
+         ├─ Si absent : interroge l'API Open Data Soft
+         └─ updateCFEEstimation() affiche le résultat
 ```
 
 ---

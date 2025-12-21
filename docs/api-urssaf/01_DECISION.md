@@ -1,5 +1,12 @@
 # Décision Stratégique - Intégration API URSSAF
 
+> **Note terminologique (2025) :**
+> Les termes « Approche A », « Approche B » et « Approche C » sont utilisés ici uniquement pour la comparaison historique des méthodes de calcul. 
+> - **Approche A** = Taux Statiques (méthode historique, non utilisée)
+> - **Approche B** = Calculs Dynamiques API URSSAF (**implémentée**)
+> - **Approche C** = Hybride (jamais implémentée)
+> Toutes les références à « option B » ou « approche B » dans l'ancien code ou la documentation doivent être comprises comme « Calculs Dynamiques API URSSAF ».
+
 **Date:** Décembre 2025  
 **Statut:** ✅ **CALCULS DYNAMIQUES IMPLÉMENTÉS**  
 **Version:** 1.0.0
@@ -44,7 +51,7 @@ L'utilisateur a demandé l'implémentation des calculs dynamiques malgré la rec
 
 ## 📊 COMPARAISON DES 3 APPROCHES
 
-### Approche A : Taux Statiques (État initial)
+### Approche A : Taux Statiques (historique, non utilisée)
 
 **Synchronisation via API `/rules` :**
 - ✅ Seuils TVA (37 500 € / 39 100 €)
@@ -83,7 +90,7 @@ taxSettings.acreInactif = 24.8  // Vérifier si changement
 
 ---
 
-### Approche B : Calculs Dynamiques 100% API ✅ IMPLÉMENTÉE
+### Approche B : Calculs Dynamiques API URSSAF (implémentée)
 
 **Synchronisation via API `/evaluate` :**
 - ✅ **Tout** calculé dynamiquement à chaque simulation
@@ -137,7 +144,7 @@ async function calculateCotisations(ca, hasACRE, creationDate) {
 
 ---
 
-### Approche C : Hybride Améliorée (Alternative non implémentée)
+### Approche C : Hybride Améliorée (jamais implémentée)
 
 **Synchronisation mixte :**
 - ✅ Seuils via API `/rules` (comme Approche A)
@@ -184,7 +191,7 @@ const totalRateNoACRE = 24.6 + cfpRate    // 24.8%
 
 ## 📝 RECOMMANDATION INITIALE vs DÉCISION FINALE
 
-### Recommandation initiale : Approche A (Taux Statiques)
+### Recommandation initiale : Approche A (Taux Statiques, historique)
 
 **Justification :**
 1. Taux URSSAF stables (changent 1x/an maximum)
@@ -193,7 +200,7 @@ const totalRateNoACRE = 24.6 + cfpRate    // 24.8%
 4. Fiabilité maximale (pas de dépendance réseau)
 5. ACRE dégressif mieux géré côté application
 
-### ✅ Décision finale : Approche B (Calculs Dynamiques)
+### ✅ Décision finale : Approche B (Calculs Dynamiques API URSSAF)
 
 **Justification de l'utilisateur :**
 1. **Maintenance zéro** prioritaire sur performance

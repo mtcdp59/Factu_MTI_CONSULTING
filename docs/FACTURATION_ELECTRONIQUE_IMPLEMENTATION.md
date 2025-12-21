@@ -1,3 +1,37 @@
+---
+
+## 🔄 Gestion avancée du 429 sur l'API URSSAF
+
+Depuis décembre 2025, la gestion des erreurs 429 (Too Many Requests) sur l'API URSSAF a été renforcée pour garantir la robustesse de l'application et le respect des quotas imposés par l'API.
+
+### Fonctionnement
+
+- Lorsqu'une requête reçoit un code HTTP 429, le code lit désormais le header `Retry-After` si présent.
+  - Si ce header est un nombre, il est interprété comme un délai en secondes avant le prochain essai.
+  - S'il s'agit d'une date HTTP, le délai est calculé dynamiquement.
+- Si le header n'est pas présent, un backoff exponentiel classique est appliqué (1s, 2s, 4s, 8s, etc.).
+- Un jitter aléatoire est ajouté pour éviter la synchronisation des requêtes concurrentes.
+- Jusqu'à 5 tentatives sont effectuées avant de retourner une erreur/fallback local.
+
+### Avantages
+
+- Respect strict des consignes de l'API URSSAF
+- Réduction drastique du risque de blocage temporaire
+- Meilleure expérience utilisateur (moins d'échecs silencieux)
+- Code facilement adaptable à d'autres APIs REST
+
+### Exemple de log
+
+```
+Rate limited on evaluate, retry after 3000ms (attempt 2)
+```
+
+### Où trouver le code ?
+
+- Voir `app.js`, fonctions `evaluateMonEntreprise` et `fetchUrssafRule`
+- Bloc de gestion du 429 et du header `Retry-After`
+
+---
 # 🔌 Facturation Électronique - Guide d'Implémentation Technique
 
 **Date** : 16 décembre 2025  
@@ -7,6 +41,11 @@
 ---
 
 ## 🎯 Vue d'ensemble des options
+
+
+> **Note terminologique (2025) :**
+> Les termes « Option A », « Option B » et « Option C » sont utilisés ici uniquement pour la comparaison réglementaire des solutions de facturation électronique (plateforme agréée, solution interne, etc.).
+> Cela ne concerne pas les méthodes de calcul URSSAF (voir docs/api-urssaf/01_DECISION.md pour la terminologie technique).
 
 Deux approches possibles pour la conformité :
 
@@ -644,126 +683,55 @@ case 'sendToChorusPro':
 
 ---
 
-### Étape 6 : Tests bac à sable (2-3 jours)
+### Étape 6 : Procédure de test bac à sable / qualification
 
-#### Script de test PISTE (à exécuter dans Apps Script)
+#### 1. Environnements à utiliser
 
-```javascript
-/**
- * Test connexion PISTE avec credentials OAuth2 MTI CONSULTING
- * Application: PISTE_MTI_CONSULTING
- */
-function testPisteConnection() {
-  try {
-    Logger.log('🔍 Test connexion PISTE API...');
-    Logger.log('Application: PISTE_MTI_CONSULTING');
-    Logger.log('URL: https://api.piste.gouv.fr');
-    
-    // Utiliser sandbox pour les tests
-    const PISTE_BASE = 'https://sandbox-api.piste.gouv.fr';
-    
-    // 1. Obtenir token OAuth2
-    const tokenResponse = UrlFetchApp.fetch(PISTE_BASE + '/oauth/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      payload: {
-        grant_type: 'client_credentials',
-        client_id: '34b37cc5-2c5d-4272-b411-0940742714ec',
-        client_secret: '3af5bad7-5c77-4908-8dbb-ae67e6e82dc2',
-        scope: 'openid'
-      },
-      muteHttpExceptions: true
-    });
-    
-    Logger.log('Status OAuth: ' + tokenResponse.getResponseCode());
-    
-    if (tokenResponse.getResponseCode() !== 200) {
-      Logger.log('❌ Erreur OAuth: ' + tokenResponse.getContentText());
-      return;
-    }
-    
-    const tokenData = JSON.parse(tokenResponse.getContentText());
-    const token = tokenData.access_token;
-    Logger.log('✅ Token OAuth2 obtenu');
-    Logger.log('Token: ' + token.substring(0, 30) + '...');
-    Logger.log('Expires in: ' + tokenData.expires_in + ' secondes');
-    
-    // 2. Test annuaire Chorus Pro (rechercher un SIRET)
-    const siretTest = '13002526500013'; // SIRET test DGFiP
-    Logger.log('\n🔍 Test annuaire avec SIRET: ' + siretTest);
-    
-    const annuaireResponse = UrlFetchApp.fetch(
-      PISTE_BASE + '/cpro/v1/annuaire/rechercher?siret=' + siretTest,
-      {
-        headers: {
-          'Authorization': 'Bearer ' + token
-        },
-        muteHttpExceptions: true
-      }
-    );
-    
-    Logger.log('Status annuaire: ' + annuaireResponse.getResponseCode());
-    
-    if (annuaireResponse.getResponseCode() === 200) {
-      Logger.log('✅ Annuaire Chorus Pro accessible');
-      const annuaireData = JSON.parse(annuaireResponse.getContentText());
-      Logger.log('Résultats trouvés: ' + (annuaireData.length || 0));
-      if (annuaireData.length > 0) {
-        Logger.log('Premier résultat: ' + JSON.stringify(annuaireData[0], null, 2));
-      }
-    } else {
-      Logger.log('⚠️ Erreur annuaire: ' + annuaireResponse.getContentText());
-    }
-    
-    // 3. Vérifier compte émetteur MTI CONSULTING
-    Logger.log('\n🔍 Vérification compte MTI CONSULTING (SIRET: 99414990400017)');
-    
-    const compteResponse = UrlFetchApp.fetch(
-      PISTE_BASE + '/cpro/v1/structures/siret/99414990400017',
-      {
-        headers: {
-          'Authorization': 'Bearer ' + token
-        },
-        muteHttpExceptions: true
-      }
-    );
-    
-    Logger.log('Status compte: ' + compteResponse.getResponseCode());
-    
-    if (compteResponse.getResponseCode() === 200) {
-      Logger.log('✅ Compte MTI CONSULTING trouvé');
-      Logger.log('Détails: ' + compteResponse.getContentText());
-    } else {
-      Logger.log('⚠️ Compte non trouvé ou erreur: ' + compteResponse.getContentText());
-    }
-    
-    Logger.log('\n✅ Test PISTE terminé avec succès');
-    Logger.log('Raccordement Chorus Pro: Opérationnel');
-    
-  } catch (error) {
-    Logger.log('❌ Erreur: ' + error.toString());
-    Logger.log('Stack: ' + error.stack);
-  }
-}
-```
+- **Qualification / Sandbox PISTE** :
+  - Base API : https://sandbox-api.piste.gouv.fr/cpro/v1
+  - OAuth2 : https://sandbox-api.piste.gouv.fr/oauth/token
+  - Swagger : https://sandbox-api.piste.gouv.fr/swagger-ui.html
+- **Portail de qualification Chorus Pro** :
+  - https://qualif.chorus-pro.gouv.fr/
+  - Documentation : https://communaute.chorus-pro.gouv.fr/documentation/
 
-1. **Environnement de qualification**
-   - URLs PISTE qualification (déjà configurées dans `CHORUS_CONFIG`)
-   - Utiliser SIRET de test fournis par Chorus Pro
-   
-2. **Scénarios de test**
-   - [ ] Dépôt facture simple (1 ligne)
-   - [ ] Dépôt facture multi-lignes
-   - [ ] Consultation statut facture
-   - [ ] Gestion erreurs (SIRET invalide, format incorrect)
-   - [ ] Rejection workflow
+#### 2. SIRET à utiliser pour les tests
 
-3. **Validation**
-   - Vérifier XML CII conforme (validateur EN 16931)
-   - Tester PDF Factur-X avec lecteur compatible
-   - Consulter factures dans portail Chorus Pro
+- Utiliser uniquement les SIRET de démonstration fournis par Chorus Pro pour les appels annuaire/structure en sandbox.
+- Exemple : SIRET test DGFiP : 13002526500013
+- Les SIRET réels (ex : MTI CONSULTING) ne sont pas présents dans la base de test et renverront 404 (comportement normal).
+
+#### 3. Procédure de test
+
+1. Authentification OAuth2 sur https://sandbox-api.piste.gouv.fr/oauth/token avec vos credentials PISTE (voir plus haut).
+   - Succès attendu : code 200, token reçu.
+2. Appel annuaire avec SIRET de démonstration :
+   - Endpoint : /cpro/v1/annuaire/rechercher?siret=13002526500013
+   - Succès attendu : code 200, résultats trouvés.
+   - Si SIRET réel : code 404 attendu.
+3. Appel structure avec SIRET de démonstration ou réel :
+   - Endpoint : /cpro/v1/structures/siret/13002526500013
+   - Succès attendu : code 200 si SIRET de démo, 404 sinon.
+4. Tester l’envoi de facture, la récupération de statuts, etc. sur l’environnement de qualification.
+
+#### 4. Liens utiles
+
+- [Swagger API Sandbox](https://sandbox-api.piste.gouv.fr/swagger-ui.html)
+- [Portail qualification Chorus Pro](https://qualif.chorus-pro.gouv.fr/)
+- [Documentation officielle](https://communaute.chorus-pro.gouv.fr/documentation/)
+
+#### 5. Résultats attendus
+
+- OAuth2 : code 200, token reçu
+- Annuaire/structure avec SIRET de démo : code 200, données trouvées
+- Annuaire/structure avec SIRET réel : code 404 (normal)
+- Envoi facture : code 200 ou 201 si succès, erreurs détaillées sinon
+
+#### 6. Bonnes pratiques
+
+- Toujours séparer les credentials et endpoints prod/sandbox
+- Ne jamais tester de SIRET réel en sandbox pour l’annuaire
+- Documenter les jeux de tests utilisés
 
 ---
 

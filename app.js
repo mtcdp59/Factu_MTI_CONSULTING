@@ -3991,10 +3991,27 @@ async function evaluateMonEntreprise(situation, expressions, attempt = 1) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ situation, expressions })
         });
-        if (res.status === 429 && attempt < 3) {
-            // Rate limited; exponential backoff
-            const delay = Math.pow(2, attempt - 1) * 1000;
-            console.warn(`Rate limited on evaluate, retry after ${delay}ms`);
+        if (res.status === 429 && attempt < 5) {
+            // Gestion du Retry-After si présent, sinon backoff exponentiel
+            let delay = 0;
+            const retryAfter = res.headers.get('Retry-After');
+            if (retryAfter) {
+                // Retry-After peut être en secondes ou en date HTTP
+                const retryNum = parseInt(retryAfter, 10);
+                if (!isNaN(retryNum)) {
+                    delay = retryNum * 1000;
+                } else {
+                    // Si c'est une date, calculer la différence
+                    const retryDate = new Date(retryAfter);
+                    const now = new Date();
+                    delay = Math.max(retryDate - now, 1000);
+                }
+            } else {
+                delay = Math.pow(2, attempt - 1) * 1000;
+            }
+            // Ajout d'une gigue aléatoire (jitter)
+            delay += Math.floor(Math.random() * 500);
+            console.warn(`Rate limited on evaluate, retry after ${delay}ms (attempt ${attempt})`);
             await new Promise(resolve => setTimeout(resolve, delay));
             return evaluateMonEntreprise(situation, expressions, attempt + 1);
         }
@@ -4004,7 +4021,6 @@ async function evaluateMonEntreprise(situation, expressions, attempt = 1) {
         }
         const data = await res.json();
         console.log('URSSAF API raw response:', data);
-        
         // L'API retourne soit 'evaluate' (nouveau format) soit 'evaluations' (ancien format)
         const evaluations = data?.evaluate || data?.evaluations || null;
         return evaluations;
@@ -4021,10 +4037,24 @@ async function evaluateMonEntreprise(situation, expressions, attempt = 1) {
 async function fetchUrssafRule(rule, attempt = 1) {
     try {
         const res = await fetch(`${MON_ENTREPRISE_API_BASE}/rules/${encodeURIComponent(rule)}`);
-        if (res.status === 429 && attempt < 3) {
-            // Rate limited; exponential backoff
-            const delay = Math.pow(2, attempt - 1) * 1000;
-            console.warn(`Rate limited on ${rule}, retry after ${delay}ms`);
+        if (res.status === 429 && attempt < 5) {
+            // Gestion du Retry-After si présent, sinon backoff exponentiel
+            let delay = 0;
+            const retryAfter = res.headers.get('Retry-After');
+            if (retryAfter) {
+                const retryNum = parseInt(retryAfter, 10);
+                if (!isNaN(retryNum)) {
+                    delay = retryNum * 1000;
+                } else {
+                    const retryDate = new Date(retryAfter);
+                    const now = new Date();
+                    delay = Math.max(retryDate - now, 1000);
+                }
+            } else {
+                delay = Math.pow(2, attempt - 1) * 1000;
+            }
+            delay += Math.floor(Math.random() * 500);
+            console.warn(`Rate limited on ${rule}, retry after ${delay}ms (attempt ${attempt})`);
             await new Promise(resolve => setTimeout(resolve, delay));
             return fetchUrssafRule(rule, attempt + 1);
         }
@@ -4042,7 +4072,7 @@ let urssafThresholdCache = {
     data: null
 };
 
-// Cache for dynamic cotisations calculation (Option B)
+// Cache pour le calcul dynamique des cotisations via API URSSAF
 let cotisationsCache = {
     key: null,          // Composite key: "ca_hasACRE_creationDate"
     data: null,         // { montantAnnuel, taux }
@@ -4234,7 +4264,7 @@ async function loadAdditionalFiscalParamsFromAPI() {
 
 /**
  * Calcule dynamiquement les cotisations sociales via API URSSAF.
- * Option B: Utilise le simulateur officiel Mon-entreprise pour obtenir
+ * Calcul dynamique : Utilise le simulateur officiel Mon-entreprise pour obtenir
  * les taux exacts incluant cotisations + CFP (Contribution Formation Professionnelle).
  * 
  * @param {number} ca - Chiffre d'affaires annuel
@@ -4433,7 +4463,7 @@ function calculateTaxes() {
         creationDate = `01/01/${new Date().getFullYear()}`;
     }
     
-    // Calcul charges sociales : Option B (API dynamique) avec fallback
+    // Calcul des charges sociales : API URSSAF (calcul dynamique) avec fallback
     calculateCotisationsWithFallback(ca * 12, acreActive, creationDate).then(result => {
         // Stocker les données CFP pour finalizeTaxCalculation
         window.lastCFPMensuel = result.montantAnnuelCFP / 12;
@@ -4587,14 +4617,13 @@ function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif)
     }
 
     // 1. Charges sociales URSSAF et CFP (récupérées dynamiquement de l'API)
-    // L'API retourne URSSAF (12.3%) et CFP (0.2%) séparément
-    const cfpMensuel = window.lastCFPMensuel || (ca * (taxSettings.cfpBNC / 100));
-    const tauxCFP = window.lastTauxCFP || taxSettings.cfpBNC;
-    
-    // Montant URSSAF mensuel (déjà sans CFP depuis l'API)
-    const charges = chargesMensuelles;
-    // Taux URSSAF (déjà sans CFP depuis l'API)
-    const tauxURSSAF = tauxEffectif;
+    // Correction : URSSAF (hors CFP) et CFP séparés
+    // Si l'API retourne le taux total (URSSAF+CFP), on doit le corriger ici
+    // On force le taux URSSAF à la valeur hors CFP (taxSettings.acreActif ou acreInactif)
+    const tauxURSSAF = acreActive ? taxSettings.acreActif : taxSettings.acreInactif;
+    const charges = ca * (tauxURSSAF / 100);
+    const tauxCFP = taxSettings.cfpBNC;
+    const cfpMensuel = ca * (tauxCFP / 100);
 
     // 2. CFE mensuel
     const cfe = taxSettings.cfeAnnuel / 12;
