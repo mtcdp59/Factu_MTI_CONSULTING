@@ -3,14 +3,14 @@
 
 console.log('✅ app.js chargé - début du script');
 
-// Configuration production (credentials en dur comme en v42)
-const CONFIG = {
-    BACKEND_URL: 'https://script.google.com/macros/s/AKfycby7tGJVMVB51juVHJUWfv-gAmf8Fkp5K8nkSTdzpherNdH1Wn2kYK_Hu08pYoOTwCqL/exec',
+// Configuration : priorité à window.CONFIG (config.js), sinon valeurs par défaut
+const CONFIG = window.CONFIG || {
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwE4GfTi5MQaYdvcwgFg3UUW6l-VEyzbPFYXjhkFGW1ZowsAlrLANMnhp8K-zIQ622D/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
-    SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
-    CALENDAR_ID: 'mticonsulting59@gmail.com',
-    GOOGLE_CLIENT_ID: '913475747202-dg6rnc0hhu16thk3gckbnqkdcoei2a1n.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: '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',
+    SHEETS_ID: '17YPRArzfDaxQ5m1LKQLSzKOqeuCxfgLisKeQMthESi4',
+    CALENDAR_ID: 'contact@mticonsulting.fr',
+    GOOGLE_CLIENT_ID: '419421611576-v36rss6abjs0ahrv3vt9u6tcl4hhtos9.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: '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',
     GOOGLE_API_KEY: '',
     GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events',
     DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
@@ -313,7 +313,7 @@ let companyInfo = {
     address: '13A rue du Général de Gaulle',
     postalCode: '59110',
     city: 'La Madeleine',
-    email: 'mticonsulting59@gmail.com',
+    email: 'contact@mticonsulting.fr',
     phone: '07 77 37 17 39',
     iban: 'FR76 4061 8804 9700 0403 3099 557', // IBAN professionnel affiché en footer de facture
     bic: 'BOUSFRPPXXX'   // BIC (Code SWIFT) de la banque
@@ -1373,13 +1373,16 @@ function showEmailPreview() {
     // Use generateEmailBody to keep manual and automatic flows consistent
     const body = generateEmailBody({ number: invoiceNumber, date: invoiceDate, dueDate: dueDate, total: total }, { name: contactName, contact_name: contactName });
 
+
     // Display preview
     const emailToEl = document.getElementById('emailTo');
     const emailSubjectEl = document.getElementById('emailSubject');
     const emailBodyEl = document.getElementById('emailBody');
+    const emailFromEl = document.getElementById('emailFrom');
     if (emailToEl) emailToEl.textContent = emailTo || '(À compléter manuellement)';
     if (emailSubjectEl) emailSubjectEl.textContent = subject;
     if (emailBodyEl) emailBodyEl.textContent = body;
+    if (emailFromEl) emailFromEl.textContent = companyInfo.email || '(Expéditeur non configuré)';
 
     // Show warning if no email
     const warningDiv = document.getElementById('emailWarning');
@@ -7178,7 +7181,7 @@ Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
 Téléphone : +33 7 77 37 17 39
-Mail : mticonsulting59@gmail.com`;
+Mail : contact@mticonsulting.fr`;
 }
 
 // Helper: convert base64 (no prefix) to Blob
@@ -7811,19 +7814,27 @@ async function downloadRAMPDF(ramId) {
     }
     
     try {
-        showToast('⏳ Génération du PDF...');
+        showToast('⏳ Génération du PDF et sauvegarde sur Drive...');
         const pdfBase64 = await generateRAMPDF(ram);
-        
-        const link = document.createElement('a');
-        link.href = 'data:application/pdf;base64,' + pdfBase64;
         const monthStr = (ram.month + 1).toString().padStart(2, '0');
-        link.download = `RAM_${ram.year}${monthStr}_${ram.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
-        link.click();
-        
-        showToast('✅ PDF téléchargé !', 'success');
+        const filename = `RAM_${ram.year}${monthStr}_${ram.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        const saveRes = await callBackend('savePdfToDrive', {
+            pdfBase64,
+            pdfFilename: filename,
+            folderName: 'RAM'
+        });
+        if (!saveRes || !saveRes.success) {
+            showToast('❌ Erreur sauvegarde sur Drive', 'error');
+            return;
+        }
+        showToast('✅ PDF RAM sauvegardé sur Drive !', 'success');
+        // Afficher le lien de prévisualisation Drive
+        if (saveRes.data && saveRes.data.previewUrl) {
+            window.open(saveRes.data.previewUrl, '_blank');
+        }
     } catch (error) {
-        console.error('Erreur génération PDF:', error);
-        showToast('❌ Erreur lors de la génération du PDF: ' + error.message, 'error');
+        console.error('Erreur génération/sauvegarde PDF:', error);
+        showToast('❌ Erreur lors de la génération ou sauvegarde du PDF: ' + error.message, 'error');
     }
 }
 
@@ -9704,7 +9715,6 @@ function initQuoteForm() {
                 showToast('⚠️ Ajoutez au moins une ligne au devis', 'error');
                 return;
             }
-            
             // Créer un objet devis temporaire depuis le formulaire
             const tempQuote = {
                 number: document.getElementById('quoteNumber').value,
@@ -9716,28 +9726,27 @@ function initQuoteForm() {
                 items: [...currentQuoteItems],
                 total: currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0)
             };
-            
             try {
-                showToast('⏳ Génération du PDF...', 'info');
+                showToast('⏳ Génération du PDF et sauvegarde sur Drive...', 'info');
                 const pdfBase64 = await generateQuotePDFBase64(tempQuote);
-                
-                const byteCharacters = atob(pdfBase64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                const filename = `Devis_${tempQuote.number}_${tempQuote.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+                const saveRes = await callBackend('savePdfToDrive', {
+                    pdfBase64,
+                    pdfFilename: filename,
+                    folderName: 'Devis'
+                });
+                if (!saveRes || !saveRes.success) {
+                    showToast('❌ Erreur sauvegarde sur Drive', 'error');
+                    return;
                 }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: 'application/pdf' });
-                
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = `${tempQuote.number}-${tempQuote.client.replace(/\s+/g, '_')}.pdf`;
-                link.click();
-                
-                showToast('✅ PDF téléchargé', 'success');
+                showToast('✅ PDF Devis sauvegardé sur Drive !', 'success');
+                // Ouvre la prévisualisation Drive
+                if (saveRes.data && saveRes.data.previewUrl) {
+                    window.open(saveRes.data.previewUrl, '_blank');
+                }
             } catch (error) {
-                console.error('Erreur:', error);
-                showToast('❌ Erreur : ' + error.message, 'error');
+                console.error('Erreur génération/sauvegarde PDF:', error);
+                showToast('❌ Erreur lors de la génération ou sauvegarde du PDF: ' + error.message, 'error');
             }
         });
     }
@@ -9852,8 +9861,24 @@ function editQuoteInForm(index) {
     document.getElementById('quoteClientName').value = quote.client;
     document.getElementById('quoteClientSiret').value = quote.clientSiret || '';
     document.getElementById('quoteClientAddress').value = quote.clientAddress || '';
-    document.getElementById('quoteDate').value = quote.date;
-    document.getElementById('quoteValidityDate').value = quote.validityDate;
+    // Corrige le format de date pour le champ input type="date"
+    function formatDateForInput(dateStr) {
+        if (!dateStr) return '';
+        // Si déjà au format yyyy-MM-dd, retourne tel quel
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+        // Si format ISO, extrait la partie date
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+        // Fallback: retourne la chaîne d'origine
+        return dateStr;
+    }
+    document.getElementById('quoteDate').value = formatDateForInput(quote.date);
+    document.getElementById('quoteValidityDate').value = formatDateForInput(quote.validityDate);
     
     loadQuoteItems(quote.items);
     
@@ -10275,28 +10300,27 @@ async function downloadQuotePDF(index) {
     }
     
     try {
-        showToast('⏳ Génération du PDF...', 'info');
+        showToast('⏳ Génération du PDF et sauvegarde sur Drive...', 'info');
         const pdfBase64 = await generateQuotePDFBase64(quote);
-        
-        // Convertir base64 en blob
-        const byteCharacters = atob(pdfBase64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        // Nom de fichier cohérent : Devis_NUMERO_CLIENT.pdf
+        const filename = `Devis_${quote.number}_${quote.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        const saveRes = await callBackend('savePdfToDrive', {
+            pdfBase64,
+            pdfFilename: filename,
+            folderName: 'Devis'
+        });
+        if (!saveRes || !saveRes.success) {
+            showToast('❌ Erreur sauvegarde sur Drive', 'error');
+            return;
         }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        
-        // Télécharger
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `${quote.number}-${quote.client.replace(/\s+/g, '_')}.pdf`;
-        link.click();
-        
-        showToast('✅ PDF téléchargé', 'success');
+        showToast('✅ PDF Devis sauvegardé sur Drive !', 'success');
+        // Ouvre la prévisualisation Drive
+        if (saveRes.data && saveRes.data.previewUrl) {
+            window.open(saveRes.data.previewUrl, '_blank');
+        }
     } catch (error) {
-        console.error('Erreur génération PDF:', error);
-        showToast('❌ Erreur : ' + error.message, 'error');
+        console.error('Erreur génération/sauvegarde PDF:', error);
+        showToast('❌ Erreur lors de la génération ou sauvegarde du PDF: ' + error.message, 'error');
     }
 }
 
@@ -10318,7 +10342,7 @@ Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
 Téléphone : +33 7 77 37 17 39
-Mail : mticonsulting59@gmail.com`;
+Mail : contact@mticonsulting.fr`;
 }
 
 /**
