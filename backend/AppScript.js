@@ -6,7 +6,7 @@ const CONFIG = {
   DATA_FILE: 'mti_data.json',
   SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
   TIERS_SHEET: 'Tiers',
-  EMAIL_FROM: 'mticonsulting59@gmail.com'
+  EMAIL_FROM: 'contact@mticonsulting.fr'
 };
 
 const companyInfo = {
@@ -16,7 +16,7 @@ const companyInfo = {
   address: '13A rue du Général de Gaulle',
   postalCode: '59110',
   city: 'La Madeleine',
-  email: 'mticonsulting59@gmail.com',
+  email: 'contact@mticonsulting.fr',
   phone: '07 77 37 17 39',
   iban: 'FR76 4061 8804 9700 0403 3099 557',
   bic: 'BOUSFRPPXXX'
@@ -263,7 +263,8 @@ function sendEmail(data) {
     // Note: avoid forcing 'from' (alias) to prevent authorization issues; send from the account executing the script.
     GmailApp.sendEmail(to, subject, body, {
       attachments: [pdfBlob],
-      name: 'MTI CONSULTING'
+      name: 'MTI CONSULTING',
+      from: CONFIG.EMAIL_FROM
     });
     
     Logger.log('Email envoyé à: ' + to);
@@ -337,6 +338,12 @@ function importClients(sheetId) {
 
 // Exporter les clients vers Sheets
 function exportClients(sheetId, clients) {
+  if (!sheetId) {
+    return createResponse(false, 'Paramètre sheetId manquant');
+  }
+  if (!clients || !Array.isArray(clients) || clients.length === 0) {
+    return createResponse(false, 'Paramètre clients manquant ou invalide');
+  }
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId);
     let sheet = spreadsheet.getSheetByName(CONFIG.TIERS_SHEET);
@@ -385,6 +392,12 @@ function exportClients(sheetId, clients) {
 
 // Export invoices to the 'Factures' sheet (gid=0)
 function exportInvoices(sheetId, invoices) {
+  if (!sheetId) {
+    return createResponse(false, 'Paramètre sheetId manquant');
+  }
+  if (!invoices || !Array.isArray(invoices) || invoices.length === 0) {
+    return createResponse(false, 'Paramètre invoices manquant ou invalide');
+  }
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId);
     let sheet = spreadsheet.getSheetByName('Factures');
@@ -501,28 +514,82 @@ function savePdfToDrive(pdfBase64, pdfFilename, folderName) {
   try {
     if (!pdfBase64) return createResponse(false, 'pdfBase64 manquant');
     folderName = folderName || 'Factures';
+    pdfFilename = pdfFilename || 'document.pdf';
 
     // Ensure parent folder exists
     var parent = getOrCreateFolder(folderName);
 
-    // If a file with same name exists in this folder, remove it to avoid duplicates
+    // Contrôle doublon : si fichier existe, le supprimer
     try {
-      var existing = parent.getFilesByName(pdfFilename || 'facture.pdf');
+      var existing = parent.getFilesByName(pdfFilename);
       while (existing.hasNext()) {
         var ef = existing.next();
         try { ef.setTrashed(true); } catch (e) { /* ignore */ }
       }
     } catch (e) { /* ignore */ }
 
-    // Decode and create blob
-    var blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), 'application/pdf', pdfFilename || 'facture.pdf');
-
+    // Créer le blob PDF
+    var blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), 'application/pdf', pdfFilename);
     var file = parent.createFile(blob);
     Logger.log('PDF sauvegardé sur Drive: ' + file.getId());
 
-    return createResponse(true, { fileId: file.getId(), fileName: file.getName(), fileUrl: file.getUrl() });
+    // Générer l'URL de prévisualisation Drive
+    var fileUrl = file.getUrl();
+    var previewUrl = 'https://drive.google.com/file/d/' + file.getId() + '/preview';
+
+    return createResponse(true, {
+      fileId: file.getId(),
+      fileName: file.getName(),
+      fileUrl: fileUrl,
+      previewUrl: previewUrl
+    });
   } catch (err) {
     return createResponse(false, 'Erreur savePdfToDrive: ' + err.toString());
+  }
+}
+
+// Lister les fichiers PDF dans un dossier Drive
+function listFilesInFolder(folderName) {
+  try {
+    folderName = folderName || 'Factures';
+    var folder = getOrCreateFolder(folderName);
+    var files = folder.getFiles();
+    var out = [];
+    while (files.hasNext()) {
+      var file = files.next();
+      if (file.getMimeType() === MimeType.PDF) {
+        out.push({
+          fileId: file.getId(),
+          fileName: file.getName(),
+          fileUrl: file.getUrl(),
+          previewUrl: 'https://drive.google.com/file/d/' + file.getId() + '/preview'
+        });
+      }
+    }
+    return createResponse(true, { files: out });
+  } catch (err) {
+    return createResponse(false, 'Erreur listFilesInFolder: ' + err.toString());
+  }
+}
+
+// Supprimer un fichier PDF dans un dossier Drive
+function deleteFileFromFolder(folderName, fileName) {
+  try {
+    folderName = folderName || 'Factures';
+    if (!fileName) return createResponse(false, 'fileName manquant');
+    var folder = getOrCreateFolder(folderName);
+    var files = folder.getFilesByName(fileName);
+    var deleted = 0;
+    while (files.hasNext()) {
+      var file = files.next();
+      if (file.getMimeType() === MimeType.PDF) {
+        file.setTrashed(true);
+        deleted++;
+      }
+    }
+    return createResponse(true, { deleted: deleted, fileName: fileName });
+  } catch (err) {
+    return createResponse(false, 'Erreur deleteFileFromFolder: ' + err.toString());
   }
 }
 
@@ -540,7 +607,7 @@ function sendEmailWithDriveFile(data) {
 
     var blob = file.getBlob().setName(data.fileName || file.getName());
 
-    GmailApp.sendEmail(to, subject, body, { attachments: [blob], name: 'MTI CONSULTING' });
+    GmailApp.sendEmail(to, subject, body, { attachments: [blob], name: 'MTI CONSULTING', from: CONFIG.EMAIL_FROM });
 
     Logger.log('Email envoyé avec pièce jointe Drive: ' + to + ' / ' + fileId);
     return createResponse(true, { message: 'Email envoyé (Drive PJ)', to: to, fileId: fileId });
@@ -864,16 +931,17 @@ function createResponse(success, data) {
 // ==========================================
 
 function sendRAMEmail(params) {
+  if (!params || typeof params !== 'object') {
+    return createResponse(false, 'Paramètres manquants ou invalides');
+  }
+  const { to, client, month, year, pdfBase64 } = params;
+  if (!to) {
+    return createResponse(false, 'Email destinataire manquant');
+  }
+  if (!pdfBase64) {
+    return createResponse(false, 'PDF manquant');
+  }
   try {
-    const { to, client, month, year, pdfBase64 } = params;
-    
-    if (!to) {
-      throw new Error('Email destinataire manquant');
-    }
-    
-    if (!pdfBase64) {
-      throw new Error('PDF manquant');
-    }
     
     const subject = `Rapport d'Activité Mensuelle - ${client} - ${month} ${year}`;
     
@@ -902,7 +970,8 @@ SIRET: ${companyInfo.siret}`;
     
     GmailApp.sendEmail(to, subject, body, {
       attachments: [pdfBlob],
-      name: companyInfo.name
+      name: companyInfo.name,
+      from: CONFIG.EMAIL_FROM
     });
     
     Logger.log(`✅ RAM envoyé à ${to} pour ${client} - ${month} ${year}`);
@@ -918,12 +987,14 @@ SIRET: ${companyInfo.siret}`;
 }
 
 function exportRAMToSheets(params) {
+  if (!params || typeof params !== 'object') {
+    return createResponse(false, 'Paramètres manquants ou invalides');
+  }
+  const { ram } = params;
+  if (!ram || typeof ram !== 'object') {
+    return createResponse(false, 'Données RAM manquantes ou invalides');
+  }
   try {
-    const { ram } = params;
-    
-    if (!ram) {
-      throw new Error('Données RAM manquantes');
-    }
     
     const ss = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
     
@@ -1012,6 +1083,12 @@ function exportRAMToSheets(params) {
 
 // Synchroniser tous les RAMs vers Sheets (export)
 function syncRAMs(sheetId, rams) {
+  if (!sheetId) {
+    return createResponse(false, 'Paramètre sheetId manquant');
+  }
+  if (!rams || !Array.isArray(rams) || rams.length === 0) {
+    return createResponse(false, 'Paramètre rams manquant ou invalide');
+  }
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
     let sheet = spreadsheet.getSheetByName('RAM');
@@ -1160,6 +1237,19 @@ function importRAMs(sheetId) {
 }
 
 function sendInvoiceWithRAM(params) {
+  if (!params || typeof params !== 'object') {
+    return createResponse(false, 'Paramètres manquants ou invalides');
+  }
+  const { to, invoiceSubject, invoiceBody, invoicePdfBase64, invoiceFilename, ramPdfBase64, ramFilename, client, month, year } = params;
+  if (!to) {
+    return createResponse(false, 'Email destinataire manquant');
+  }
+  if (!invoicePdfBase64 || !ramPdfBase64) {
+    return createResponse(false, 'PDF manquant (facture ou RAM)');
+  }
+  if (!invoiceFilename || !ramFilename) {
+    return createResponse(false, 'Nom de fichier PDF manquant (facture ou RAM)');
+  }
   try {
     const { to, invoiceSubject, invoiceBody, invoicePdfBase64, invoiceFilename, ramPdfBase64, ramFilename, client, month, year } = params;
     
@@ -1206,7 +1296,8 @@ SIRET: ${companyInfo.siret}`;
     
     GmailApp.sendEmail(to, subject, body, {
       attachments: [invoiceBlob, ramBlob],
-      name: companyInfo.name
+      name: companyInfo.name,
+      from: CONFIG.EMAIL_FROM
     });
     
     Logger.log(`✅ Facture + RAM envoyés à ${to} pour ${client}`);

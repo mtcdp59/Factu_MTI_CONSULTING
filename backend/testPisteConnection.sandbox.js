@@ -4,7 +4,7 @@
 
 const axios = require('axios');
 
-// SANDBOX CREDENTIALS (APP_SANDBOX_mticonsulting59@gmail.com)
+// SANDBOX CREDENTIALS (APP_SANDBOX_contact@mticonsulting.fr)
 const CLIENT_ID = '834275b4-f4c0-487c-ab71-20b946f10f15';
 const CLIENT_SECRET = '2427eac9-e007-4e46-be3b-a7bda3fa2511';
 const OAUTH_URL = 'https://sandbox-oauth.piste.gouv.fr/api/oauth/token';

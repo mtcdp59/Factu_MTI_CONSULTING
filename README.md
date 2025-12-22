@@ -1,3 +1,61 @@
+
+## [22/12/2025] Migration complète MTI CONSULTING : email, backend, sécurité, configuration
+
+### Modifications apportées dans le commit :
+
+- **Email expéditeur** :
+  - L’expéditeur affiché dans la prévisualisation d’email est désormais dynamique (frontend/app.js) : le champ utilise la valeur de `companyInfo.email`.
+  - Backend (backend/AppScript.js) : tous les envois d’email (factures, RAM, devis, PJ Drive) utilisent `contact@mticonsulting.fr` comme expéditeur (CONFIG.EMAIL_FROM et companyInfo.email).
+  - Correction de l’ancien affichage statique et des envois depuis l’ancien compte.
+
+- **Configuration et migration** :
+  - Les fichiers de configuration (config.production.js, config.migration.json) sont mis à jour avec les nouveaux identifiants Google, backend URL, spreadsheetId, etc.
+  - La documentation migration (config.migration.json) détaille les nouveaux IDs et endpoints.
+
+- **Sécurité** :
+  - Les identifiants OAuth Google sont présents en dur dans le code (frontend et backend). GitHub Push Protection a été utilisé pour autoriser le commit.
+  - Il est recommandé d’externaliser ces secrets ou de protéger le dépôt.
+
+- **Backend Apps Script** :
+  - Tous les workflows email (sendEmail, sendRAMEmail, sendEmailWithDriveFile, sendInvoiceWithRAM) utilisent le nouvel expéditeur.
+  - Contrôle des doublons PDF sur Drive, suppression automatique avant upload.
+  - Ajout de la prévisualisation Drive pour les PDF générés.
+  - Amélioration de la robustesse des fonctions d’export/import (vérification des paramètres, gestion des erreurs).
+
+- **Frontend** :
+  - La fonction `showEmailPreview` met à jour dynamiquement le champ expéditeur dans la modale d’envoi d’email.
+  - Le workflow Devis/RAM/Facture est unifié pour stockage Drive et preview.
+
+- **Scripts et tâches VS Code** :
+  - Ajout d’un fichier tasks.json pour lancer un serveur local avec live-server.
+
+- **Sandbox PISTE** :
+  - Le script de test backend utilise désormais le compte contact@mticonsulting.fr pour les credentials.
+
+### Utilisation :
+
+- L’expéditeur affiché dans la modale d’email est toujours synchronisé avec la configuration société (modifiable dans l’app ou Drive).
+- Tous les emails envoyés par l’application (factures, RAM, devis) proviennent de contact@mticonsulting.fr.
+- Les PDF générés sont stockés sur Drive, avec contrôle des doublons et lien de prévisualisation.
+- La configuration (backend, spreadsheet, OAuth) est centralisée et documentée dans config.production.js et config.migration.json.
+
+### Sécurité :
+
+- Les identifiants OAuth Google sont présents dans le code : pensez à les externaliser ou à activer la protection GitHub.
+- La migration backend/Drive/Sheets est documentée dans config.migration.json.
+
+### Maintenance :
+
+- Pour changer l’expéditeur, modifiez companyInfo.email dans l’app ou le backend.
+- Pour migrer le backend, suivez les instructions de config.migration.json et DEPLOY_BACKEND.md.
+
+### Fichiers impactés :
+
+- app.js (frontend)
+- backend/AppScript.js (backend)
+- config.production.js, config.migration.json (configuration)
+- backend/testPisteConnection.sandbox.js (sandbox API)
+- .vscode/tasks.json (tâches VS Code)
 # 🧾 MTI CONSULTING - Gestion Freelance
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
