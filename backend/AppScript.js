@@ -1,3 +1,10 @@
+// Force la demande d'autorisation Gmail (à appeler une fois depuis l'éditeur Apps Script)
+function forceGmailAuthorization() {
+  // Cette fonction force Apps Script à demander les autorisations Gmail
+  // Appelez-la une fois depuis l'éditeur pour déclencher le consentement
+  GmailApp.getAliases();
+  GmailApp.sendEmail(Session.getActiveUser().getEmail(), 'Test autorisation Gmail', 'Ceci est un test pour forcer l’autorisation Gmail.');
+}
 // Importer les factures depuis Sheets
 function importInvoices(sheetId) {
   try {
