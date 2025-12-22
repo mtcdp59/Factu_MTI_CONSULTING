@@ -542,6 +542,52 @@ function setupLegacyBindings() {
     // Simple button mappings
     document.getElementById('cancelEditBtn')?.addEventListener('click', cancelEditMode);
     document.getElementById('newInvoiceBtn')?.addEventListener('click', resetInvoiceForm);
+    
+        // Import / Export invoices (form)
+        const importInvoicesBtn = document.getElementById('importInvoicesBtn');
+        if (importInvoicesBtn) importInvoicesBtn.addEventListener('click', () => { importInvoicesFromSheets(); });
+        const exportInvoicesBtn = document.getElementById('exportInvoicesBtn');
+        if (exportInvoicesBtn) exportInvoicesBtn.addEventListener('click', () => { exportInvoicesToSheets(); });
+
+        // Import / Export invoices (list)
+        const importInvoicesBtnList = document.getElementById('importInvoicesBtnList');
+        if (importInvoicesBtnList) importInvoicesBtnList.addEventListener('click', () => { importInvoicesFromSheets(); });
+        const exportInvoicesBtnList = document.getElementById('exportInvoicesBtnList');
+        if (exportInvoicesBtnList) exportInvoicesBtnList.addEventListener('click', () => { exportInvoicesToSheets(); });
+// Import invoices from Google Sheets
+async function importInvoicesFromSheets() {
+    try {
+        const result = await callBackend('importInvoicesFromSheets', { sheetId: CONFIG.SHEETS_ID });
+        if (!result || !result.success) {
+            showBackendRawResponse(result);
+            throw new Error(result && result.error ? result.error : 'Erreur import factures');
+        }
+        if (result.data && Array.isArray(result.data.invoices)) {
+            invoices = result.data.invoices;
+            localStorage.setItem('mti_invoices', JSON.stringify(invoices));
+            renderInvoiceList();
+            showToast(`✅ ${invoices.length} facture(s) importée(s)`,'success');
+            saveToDrive();
+        } else {
+            showToast('Aucune facture importée', 'info');
+        }
+    } catch (err) {
+        console.error('importInvoicesFromSheets error:', err);
+        alert('Erreur import factures: ' + (err.message || err));
+    }
+}
+
+// Export invoices to Google Sheets
+async function exportInvoicesToSheets() {
+    try {
+        const result = await callBackend('exportInvoicesToSheets', { sheetId: CONFIG.SHEETS_ID, invoices });
+        if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Erreur export factures');
+        showToast('✅ Export factures réussi','success');
+    } catch (err) {
+        console.error('exportInvoicesToSheets error:', err);
+        alert('Erreur export factures: ' + (err.message || err));
+    }
+}
 
     // Import / Export clients
     const importBtn = document.getElementById('importClientsBtn');
@@ -1382,7 +1428,13 @@ function showEmailPreview() {
     if (emailToEl) emailToEl.textContent = emailTo || '(À compléter manuellement)';
     if (emailSubjectEl) emailSubjectEl.textContent = subject;
     if (emailBodyEl) emailBodyEl.textContent = body;
-    if (emailFromEl) emailFromEl.textContent = companyInfo.email || '(Expéditeur non configuré)';
+    // Correction : forcer le champ 'De:' à afficher l'email paramétré et nettoyer tout contenu HTML/innerText
+    if (emailFromEl) {
+        emailFromEl.textContent = '';
+        emailFromEl.innerText = '';
+        emailFromEl.value = '';
+        emailFromEl.textContent = 'contact@mticonsulting.fr';
+    }
 
     // Show warning if no email
     const warningDiv = document.getElementById('emailWarning');

@@ -277,7 +277,7 @@ function saveToDrive(params) {
  *   address: '13A rue du Général de Gaulle',
  *   postalCode: '59110',
  *   city: 'La Madeleine',
- *   email: 'mticonsulting59@gmail.com',
+ *   email: 'contact@mticonsulting.fr',
  *   phone: '07 77 37 17 39',
  *   siret: '994 149 904 00017'
  * };

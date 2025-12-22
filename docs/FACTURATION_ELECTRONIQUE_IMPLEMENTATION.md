@@ -115,7 +115,7 @@ Trois normes AFNOR définissent le cadre technique (téléchargement gratuit) :
 #### Sur Chorus Pro
 1. **Créer un compte** : [portail.chorus-pro.gouv.fr](https://portail.chorus-pro.gouv.fr/)
    - SIRET : `994 149 904 00017`
-   - Email : `mticonsulting59@gmail.com`
+  - Email : `contact@mticonsulting.fr`
    
 2. **Activer l'API**
    - Menu "Gestion des comptes" → "Créer un compte technique"
@@ -946,5 +946,5 @@ Conformité:
 **Dernière mise à jour** : 16 décembre 2025  
 **Auteur** : GitHub Copilot  
 **Version** : 1.1 (spéc. DGFiP v3.1)  
-**Contact support** : mticonsulting59@gmail.com  
+**Contact support** : contact@mticonsulting.fr  
 **Spécifications B2B** : v3.1 (31/10/2025) - Conforme démarrage réforme 1er sept. 2026

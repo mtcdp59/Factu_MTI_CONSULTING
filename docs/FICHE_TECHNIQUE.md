@@ -80,7 +80,7 @@ const CONFIG = {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxTOqi84ohatIrRuZ12bb2GSPd__YnyqIKpO2Pz_YE78TdWjOTPv82gmOtQnF9w4GY_/exec',
     DRIVE_FILE_NAME: 'mti_data.json',
     SHEETS_ID: '1Zu6I-c64YrBdlfvWhiVnlbwbvhv6Mw5NL8iRn2mvXoE',
-    CALENDAR_ID: 'mticonsulting59@gmail.com',
+    CALENDAR_ID: 'contact@mticonsulting.fr',
     GOOGLE_CLIENT_ID: '913475747202-dg6rnc0hhu16thk3gckbnqkdcoei2a1n.apps.googleusercontent.com',
     GOOGLE_CLIENT_SECRET: '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',
     GOOGLE_API_KEY: '',
@@ -220,7 +220,7 @@ companyInfo = {
     address: '...',
     postalCode: '...',
     city: '...',
-    email: 'mticonsulting59@gmail.com',
+    email: 'contact@mticonsulting.fr',
     phone: '07 77 37 17 39',
     iban: 'FR76...',                // ⚠️ NOUVEAU v2.0 : Remplace RIB
     bic: 'ABCDEFGHXXX'              // ⚠️ NOUVEAU v2.0
@@ -839,7 +839,7 @@ Chargées dans `index.html` (lignes 1420-1476) :
 ## 📞 Support et Contact
 
 **Développeur actuel** : MTI CONSULTING  
-**Email** : mticonsulting59@gmail.com  
+**Email** : contact@mticonsulting.fr  
 **Repository** : https://github.com/mtcdp59/Factu_MTI_CONSULTING
 
 ### Ressources

@@ -485,7 +485,7 @@ MIT License - Voir LICENSE pour plus de détails
 ## 👤 Auteur
 
 **MTI CONSULTING**
-- Email : mticonsulting59@gmail.com
+- Email : contact@mticonsulting.fr
 - Téléphone : 07 77 37 17 39
 - SIRET : 994 149 904 00017
 - Adresse : 13A rue du Général de Gaulle, 59110 La Madeleine

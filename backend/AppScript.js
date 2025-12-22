@@ -1,3 +1,33 @@
+// Importer les factures depuis Sheets
+function importInvoices(sheetId) {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
+    const sheet = spreadsheet.getSheetByName('Factures');
+    if (!sheet) {
+      return createResponse(false, 'Feuille "Factures" non trouvée. Créez d\'abord un onglet "Factures" dans Google Sheets.');
+    }
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      // Seulement en-tête ou vide
+      return createResponse(true, { invoices: [] });
+    }
+    // Import générique : les entêtes du Sheets doivent correspondre aux champs attendus
+    const headers = data[0];
+    const invoices = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[0] && !row[1]) continue;
+      const invoice = {};
+      for (let j = 0; j < headers.length; j++) {
+        invoice[headers[j]] = row[j];
+      }
+      invoices.push(invoice);
+    }
+    return createResponse(true, { invoices: invoices });
+  } catch (error) {
+    return createResponse(false, 'Erreur import factures: ' + error.toString());
+  }
+}
 // MTI CONSULTING - Backend Google Apps Script
 // Services: Drive (stockage JSON) + Gmail API + Calendar API + Sheets API
 
@@ -98,6 +128,12 @@ function doPost(e) {
         break;
       case 'import_rams':
         response = importRAMs(data.sheetId);
+        break;
+      case 'importInvoicesFromSheets':
+        response = importInvoices(data.sheetId);
+        break;
+      case 'exportInvoicesToSheets':
+        response = exportInvoices(data.sheetId, data.invoices);
         break;
       case 'sync_quotes':
         response = syncQuotes(data.sheetId, data.quotes);
@@ -480,7 +516,6 @@ function syncCalendarAction(tasks) {
         results.push({ task: task, error: errTask.toString() });
       }
     });
-
     return createResponse(true, { message: 'Tâches synchronisées', count: tasks.length, details: results });
   } catch (error) {
     return createResponse(false, 'Erreur sync calendar: ' + error.toString());
