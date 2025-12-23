@@ -105,7 +105,8 @@ async function openGmailComposeWithPDF(invoice, toEmail) {
     try {
         const pdfBase64 = await generateInvoicePDFBase64(invoice);
         // Save to Drive (folder 'Factures') so user can attach; include link in body as hint
-        const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: 'Facture_' + (invoice.number || Date.now()) + '.pdf', folderName: 'Factures' });
+        const safeInvNum = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
+        const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: 'Facture_' + safeInvNum + '.pdf', folderName: 'Factures' });
         if (saveResp && saveResp.success && saveResp.data && saveResp.data.fileUrl) {
             body += '\n\n(La pièce jointe a été sauvegardée sur Drive: ' + saveResp.data.fileUrl + ')';
         }
@@ -117,7 +118,8 @@ async function openGmailComposeWithPDF(invoice, toEmail) {
             // Trigger download to make attaching easier
             const a = document.createElement('a');
             a.href = blobUrl;
-            a.download = `Facture_${invoice.number}.pdf`;
+            const dlInvNum = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
+            a.download = `Facture_${dlInvNum}.pdf`;
             document.body.appendChild(a);
             a.click();
             setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
@@ -1203,93 +1205,45 @@ function setupInvoiceFormListeners() {
     }
 
 // Render the invoice preview into the modal / preview DOM. If `showModal` is true, open modal.
-function renderInvoicePreview(inv, showModal) {
-    const companyAddressLine = companyInfo.address && companyInfo.postalCode && companyInfo.city
-        ? `${companyInfo.address}\n${companyInfo.postalCode} ${companyInfo.city}`
-        : '[À compléter dans Paramètres]';
+window.renderInvoicePreview = function(inv, showModal) {
+    renderInvoicePreviewImpl(inv, showModal);
+};
+function renderInvoicePreviewImpl(inv, showModal) {
+    // Préparer l'HTML complet de la facture en utilisant le même builder que le PDF
+    const previewHTML = buildInvoiceHtml({
+        clientName: inv.client || '',
+        clientAddress: inv.clientAddress || '',
+        invoiceNumber: inv.number || '',
+        invoiceDate: inv.date || '',
+        dueDate: inv.dueDate || '',
+        total: inv.total || 0,
+        tvaEnabled: !!inv.tvaEnabled,
+        items: inv.items && inv.items.length ? inv.items : [
+            { description: inv.description || '', quantity: inv.quantity || 0, unitPrice: inv.unitPrice || 0, total: inv.total || 0 }
+        ],
+        sourceQuoteNumber: inv.sourceQuoteNumber || ''
+    });
 
-    // Use local logo file (assets/images/MTI_CONSULTING.png) or configured URL
-    const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'assets/images/MTI_CONSULTING.png';
-    const logoHTML = logoSrc
-        ? `<img src="${logoSrc}" alt="Logo" style="max-width: 150px; max-height: 80px; object-fit: contain; margin-bottom: var(--space-12);" crossorigin="anonymous">`
-        : '';
-
-    const tvaEnabled = inv.tvaEnabled;
-    const totalHT = inv.total || 0;
-    const tva = tvaEnabled ? totalHT * 0.20 : 0;
-    const totalTTC = totalHT + tva;
-
-    const sourceQuoteBadge = inv.sourceQuoteNumber
-        ? `<div style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(37, 99, 235, 0.12); color: #1d4ed8; font-size: 12px; font-weight: 700;">Depuis devis ${inv.sourceQuoteNumber}</div>`
-        : '';
-
-    const previewHTML = `
-        <div class="invoice-header">
-            <div class="invoice-header-left">
-                ${logoHTML}
-                <div class="invoice-company">${companyInfo.name}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5; margin-top: 4px;">${companyAddressLine}</div>
-                <div style="font-size: 12px; margin-top: 4px;">SIRET: ${companyInfo.siret || ''}</div>
-            </div>
-            <div class="invoice-header-right">
-                <div style="font-weight: bold; margin-bottom: 4px;">${inv.client || ''}</div>
-                <div style="white-space: pre-line; font-size: 12px; line-height: 1.5;">${inv.clientAddress || ''}</div>
-            </div>
-        </div>
-
-        <div class="invoice-details">
-            <h2 class="invoice-number">FACTURE N° ${inv.number || ''}</h2>
-            <div style="font-size: 13px;"><div>Date: ${formatDateFR(inv.date)}</div><div>Échéance: ${formatDateFR(inv.dueDate)}</div></div>
-            ${sourceQuoteBadge}
-        </div>
-
-        <hr class="separator">
-
-        <table class="invoice-table">
-            <thead>
-                <tr>
-                    <th>Description</th>
-                    <th style="text-align: center;">Quantité</th>
-                    <th style="text-align: right;">Prix unitaire</th>
-                    <th style="text-align: right;">Total HT</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${(inv.items && inv.items.length > 0) 
-                    ? inv.items.map(item => `
-                        <tr>
-                            <td>${item.description || ''}</td>
-                            <td style="text-align: center;">${item.quantity || 0}</td>
-                            <td style="text-align: right;">${formatNumber(parseFloat(item.unitPrice || 0))} €</td>
-                            <td style="text-align: right;">${formatNumber(item.total || 0)} €</td>
-                        </tr>
-                    `).join('')
-                    : `
-                        <tr>
-                            <td>${inv.description || ''}</td>
-                            <td style="text-align: center;">${inv.quantity || 0}</td>
-                            <td style="text-align: right;">${formatNumber(parseFloat(inv.unitPrice || 0))} €</td>
-                            <td style="text-align: right;">${formatNumber(inv.total || 0)} €</td>
-                        </tr>
-                    `
-                }
-            </tbody>
-        </table>
-
-        <div class="invoice-total" style="margin-bottom: 30px;">
-            ${tvaEnabled ? `<div>Total HT: ${formatNumber(totalHT)} €</div><div>TVA (20%): ${formatNumber(tva)} €</div><div><strong>Total TTC: ${formatNumber(totalTTC)} €</strong></div>` : `<div>Total HT: ${formatNumber(totalHT)} €</div><div>TVA non applicable (art. 293 B du CGI)</div><div><strong>Total TTC: ${formatNumber(totalHT)} €</strong></div>`}
-        </div>
-
-        <div class="invoice-legal" style="margin-top: 30px; clear: both;"><p>Dispensé d'immatriculation RCS/RM | TVA non applicable art. 293B CGI | Conditions: Paiement à 30 jours</p><p>Retard: indemnité forfaitaire 40€ + intérêts au taux légal | Escompte: néant</p></div>
-    `;
-
-    const previewContent = document.getElementById('invoicePreviewContent');
-    if (previewContent) previewContent.innerHTML = previewHTML;
     if (showModal) {
-        const modal = document.getElementById('invoiceModal');
-        if (modal) modal.classList.add('show');
+        // Afficher dans un modal avec iframe (identique au devis)
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; overflow-y: auto;';
+        modal.innerHTML = `
+            <div style="position: relative; background: white; border-radius: 8px; max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
+                <button onclick="this.closest('div').parentElement.remove()" style="position: absolute; top: 10px; right: 10px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 18px; z-index: 10000;">×</button>
+                <iframe style="width: 100%; height: 600px; border: none; border-radius: 8px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } else {
+        // Remplir le conteneur d'aperçu si présent
+        const previewContent = document.getElementById('invoicePreviewContent');
+        if (previewContent) {
+            previewContent.innerHTML = `<iframe style="width: 100%; height: 600px; border: none; border-radius: 8px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>`;
+        }
     }
 }
+window.renderInvoicePreviewImpl = renderInvoicePreviewImpl;
 
     const closeModal = document.getElementById('closeModal');
     if (closeModal) {
@@ -3101,6 +3055,14 @@ function checkOverdueInvoices() {
 
 function getFilteredInvoices() {
     let filtered = [...invoices];
+    
+    // Check status filter first to decide about cancelled invoices
+    const statusFilter = document.getElementById('statusFilter') ? document.getElementById('statusFilter').value : 'all';
+    
+    // By default, exclude cancelled invoices unless explicitly selected
+    if (statusFilter !== 'Annulée') {
+        filtered = filtered.filter(inv => inv.status !== 'Annulée');
+    }
 
     // Period filter
     const periodEl = document.getElementById('periodFilter');
@@ -3152,10 +3114,11 @@ function getFilteredInvoices() {
         filtered = filtered.filter(inv => inv.client === clientFilter);
     }
 
-    // Status filter
-    const statusFilter = document.getElementById('statusFilter') ? document.getElementById('statusFilter').value : 'all';
-    if (statusFilter !== 'all') {
+    // Apply specific status filter if selected
+    if (statusFilter !== 'all' && statusFilter !== 'Annulée') {
         filtered = filtered.filter(inv => inv.status === statusFilter);
+    } else if (statusFilter === 'Annulée') {
+        filtered = filtered.filter(inv => inv.status === 'Annulée');
     }
 
     return filtered;
@@ -3230,10 +3193,17 @@ function renderInvoiceList() {
             <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
             <td>
                 <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
+                <button class="btn btn-sm btn-secondary" onclick="downloadInvoiceFromList(${index})" title="Télécharger PDF" style="margin-left: var(--space-4);">📥 Télécharger</button>
                 <button class="btn btn-sm btn-secondary" onclick="deleteInvoiceFromList(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
                 <button class="btn btn-sm btn-primary" onclick="generateRAMForInvoice(${index})" title="Générer Rapport d'Activité Mensuelle" style="margin-left: var(--space-4);">📊 RAM</button>
                 <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
                 ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button class="btn btn-sm btn-success" onclick="sendInvoiceWithRAM(${index})" title="Envoyer Facture + RAM ensemble" style="margin-left: var(--space-4);">📧+📊 Facture+RAM</button>` : ''}
+                <div style="margin-top: 6px; display: inline-flex; gap: 6px;">
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Brouillon')" title="Marquer Brouillon">📝 Brouillon</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Envoyée')" title="Marquer Envoyée">📤 Envoyée</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Payée')" title="Marquer Payée">✅ Payée</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Annulée')" title="Marquer Annulée">❌ Annulée</button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
@@ -3277,8 +3247,18 @@ function editInvoiceInForm(index) {
     if (clientSiretEl) clientSiretEl.value = invoice.clientSiret || '';
     const clientAddressEl = document.getElementById('clientAddress');
     if (clientAddressEl) clientAddressEl.value = invoice.clientAddress || '';
-    if (invoiceDateInput) invoiceDateInput.value = invoice.date;
-    if (dueDateInput) dueDateInput.value = invoice.dueDate;
+    // Normaliser les dates au format AAAA-MM-JJ pour les inputs HTML
+    const normalizeDateInput = (val) => {
+        if (!val) return '';
+        const d = new Date(val);
+        if (isNaN(d.getTime())) {
+            // Si chaîne non parsable, tenter de prendre les 10 premiers caractères
+            return String(val).slice(0, 10);
+        }
+        return d.toISOString().slice(0, 10);
+    };
+    if (invoiceDateInput) invoiceDateInput.value = normalizeDateInput(invoice.date);
+    if (dueDateInput) dueDateInput.value = normalizeDateInput(invoice.dueDate);
 
     // Load invoice items (multi-line support)
     if (invoice.items && invoice.items.length > 0) {
@@ -3361,6 +3341,12 @@ function filterInvoiceList() {
                 <button class="btn btn-sm btn-primary" onclick="generateRAMForInvoice(${index})" title="Générer Rapport d'Activité Mensuelle" style="margin-left: var(--space-4);">📊 RAM</button>
                 <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
                 ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button class="btn btn-sm btn-success" onclick="sendInvoiceWithRAM(${index})" title="Envoyer Facture + RAM ensemble" style="margin-left: var(--space-4);">📧+📊 Facture+RAM</button>` : ''}
+                <div style="margin-top: 6px; display: inline-flex; gap: 6px;">
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Brouillon')" title="Marquer Brouillon">📝 Brouillon</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Envoyée')" title="Marquer Envoyée">📤 Envoyée</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Payée')" title="Marquer Payée">✅ Payée</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Annulée')" title="Marquer Annulée">❌ Annulée</button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
@@ -3586,8 +3572,10 @@ function updateDateReception(index, value) {
 }
 
 function updateSummary(filteredInvoices = invoices) {
-    const totalFacture = filteredInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
-    const totalPaye = filteredInvoices.reduce((sum, inv) => sum + (parseFloat(inv.montantRecu) || 0), 0);
+    // Exclude cancelled invoices from summary
+    const activeInvoices = filteredInvoices.filter(inv => inv.status !== 'Annulée');
+    const totalFacture = activeInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    const totalPaye = activeInvoices.reduce((sum, inv) => sum + (parseFloat(inv.montantRecu) || 0), 0);
     const totalAttente = totalFacture - totalPaye;
     const tauxRecouvrement = totalFacture > 0 ? (totalPaye / totalFacture * 100) : 0;
 
@@ -3650,6 +3638,23 @@ function sendInvoiceEmail(index) {
 }
 
 window.sendInvoiceEmail = sendInvoiceEmail;
+
+// Quick status update for invoices
+function setInvoiceStatus(index, status) {
+    const invoice = invoices[index];
+    if (!invoice) return;
+    invoice.status = status;
+    renderInvoiceList();
+    applyFilters();
+    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
+    // Also refresh the annual CA counter tile when status changes
+    try { if (typeof updateCADisplay === 'function') updateCADisplay(); } catch (e) { console.warn('updateCADisplay failed', e); }
+    showToast(`Statut mis à jour: ${status}`);
+    autoSync('update');
+    saveToDrive();
+}
+
+window.setInvoiceStatus = setInvoiceStatus;
 
 // Filter event listeners
 function setupFilterListeners() {
@@ -5904,7 +5909,8 @@ function renderCAChart() {
     const data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     // FIX: Utiliser getFilteredInvoices() au lieu de invoices directement
-    const filteredInvoices = getFilteredInvoices();
+    // Exclude cancelled invoices from CA chart
+    const filteredInvoices = getFilteredInvoices().filter(inv => inv.status !== 'Annulée');
     filteredInvoices.forEach(inv => {
         const invDate = new Date(inv.date);
         const monthIndex = monthValues.indexOf(invDate.getMonth() + 1);
@@ -5954,7 +5960,7 @@ function renderStatusChart() {
     canvas.width = rect.width - 48;
     canvas.height = 300;
 
-    // Count by status
+    // Count by status (exclude cancelled from main chart)
     const statusCounts = {
         'Brouillon': 0,
         'Envoyée': 0,
@@ -5963,16 +5969,19 @@ function renderStatusChart() {
     };
 
     // FIX: Utiliser getFilteredInvoices() au lieu de invoices directement
-    const filteredInvoices = getFilteredInvoices();
+    // Exclude cancelled invoices from status chart
+    const filteredInvoices = getFilteredInvoices().filter(inv => inv.status !== 'Annulée');
     filteredInvoices.forEach(inv => {
         statusCounts[inv.status] = (statusCounts[inv.status] || 0) + 1;
     });
 
+    // Palette alignée sur les variables CSS pour cohérence avec les badges
+    const rootStyle = getComputedStyle(document.documentElement);
     const colors = {
-        'Brouillon': '#626C71',
-        'Envoyée': '#3B82F6',
-        'Payée': '#21808D',
-        'Retard': '#C0152F'
+        'Brouillon': rootStyle.getPropertyValue('--color-slate-500').trim() || '#626C71',
+        'Envoyée': '#1D4ED8',
+        'Payée': rootStyle.getPropertyValue('--color-success').trim() || '#10B981',
+        'Retard': rootStyle.getPropertyValue('--color-error').trim() || '#DC2626'
     };
 
     const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
@@ -6301,7 +6310,8 @@ async function sendInvoiceWithPDF(invoice) {
         // Trigger download to facilitate attaching in Gmail (browser may block automatic download)
         const a = document.createElement('a');
         a.href = blobUrl;
-        a.download = `Facture_${invoice.number}.pdf`;
+        const listDlInvNum = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
+        a.download = `Facture_${listDlInvNum}.pdf`;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
@@ -6326,9 +6336,10 @@ async function saveInvoicePdfToDrive(invoice) {
     const pdfBase64 = await generateInvoicePDFBase64(invoice);
     
     // Save to Drive via backend
+    const safeInvNumDrive = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
     const saveRes = await callBackend('savePdfToDrive', { 
         pdfBase64: pdfBase64, 
-        pdfFilename: `Facture_${invoice.number}.pdf`, 
+        pdfFilename: `Facture_${safeInvNumDrive}.pdf`, 
         folderName: 'Factures' 
     });
     
@@ -6341,7 +6352,7 @@ async function saveInvoicePdfToDrive(invoice) {
     const fileUrl = saveRes.data && saveRes.data.fileUrl;
     if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
     
-    return { fileId, fileName: `Facture_${invoice.number}.pdf`, fileUrl };
+    return { fileId, fileName: `Facture_${safeInvNumDrive}.pdf`, fileUrl };
 }
 
 // Preferred flow: generate PDF, save to Drive, then send email attaching that Drive file
@@ -6355,7 +6366,8 @@ async function sendInvoiceViaDrive(invoice, toEmail) {
     const pdfBase64 = await generateInvoicePDFBase64(invoice);
 
     // Save to Drive via backend
-    const saveRes = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: `Facture_${invoice.number}.pdf`, folderName: 'Factures' });
+    const safeInvNumSend = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
+    const saveRes = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: `Facture_${safeInvNumSend}.pdf`, folderName: 'Factures' });
     if (!saveRes || saveRes.success === false) {
         try { showBackendRawResponse(saveRes); } catch (e) {}
         throw new Error((saveRes && (saveRes.data || saveRes.error)) || 'Erreur sauvegarde PDF sur Drive');
@@ -6365,7 +6377,7 @@ async function sendInvoiceViaDrive(invoice, toEmail) {
     if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
 
     // Send email by referencing Drive file
-    const sendRes = await callBackend('sendEmailWithDriveFile', { to: toEmail, subject: subject, body: body, fileId: fileId, fileName: `Facture_${invoice.number}.pdf` });
+    const sendRes = await callBackend('sendEmailWithDriveFile', { to: toEmail, subject: subject, body: body, fileId: fileId, fileName: `Facture_${safeInvNumSend}.pdf` });
     if (!sendRes || sendRes.success === false) {
         try { showBackendRawResponse(sendRes); } catch (e) {}
         throw new Error((sendRes && (sendRes.data || sendRes.error)) || 'Erreur envoi email via Drive');
@@ -6378,6 +6390,8 @@ async function sendInvoiceViaDrive(invoice, toEmail) {
             invoices[idx].status = 'Envoyée';
             await saveToDrive();
             renderInvoiceList();
+            applyFilters();
+            try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
         }
     } catch (e) { console.warn('Impossible de marquer/sauver la facture après envoi Drive:', e); }
 
@@ -6514,7 +6528,11 @@ async function previewAndConfirmSend(invoice) {
 
     // Ensure the preview DOM matches the invoice
     try {
-        renderInvoicePreview(invoice, true); // Show modal preview
+        if (typeof renderInvoicePreview === 'function') {
+            renderInvoicePreview(invoice, true); // Show modal preview
+        } else {
+            console.warn('renderInvoicePreview not yet available, skipping preview');
+        }
     } catch (e) {
         console.warn('renderInvoicePreview failed', e);
     }
@@ -6540,7 +6558,7 @@ async function previewAndConfirmSend(invoice) {
         total: invoice.total,
         client: clientObj,
         fileId: null, // Will be generated on send
-        pdfFilename: `Facture_${invoice.number}.pdf`
+        pdfFilename: `Facture_${String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '')}.pdf`
     };
 
     // Show email preview modal (user can review/edit before confirming)
@@ -6697,14 +6715,19 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
         .separator { border: none; border-top: 2px solid #e0e0e0; margin: 20px 0; clear: both; }
         .invoice-details { margin-top: 30px; margin-bottom: 25px; line-height: 1.7; }
         .invoice-number { font-size: 24px; font-weight: bold; margin-bottom: 12px; color: #21808D; }
-        table { width: 100%; border-collapse: collapse; margin: 25px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 25px 0; table-layout: fixed; }
         th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #e0e0e0; }
         th { background-color: rgba(33, 128, 141, 0.12); font-weight: bold; font-size: 13px; color: #1a1a1a; }
         td { font-size: 14px; color: #333; }
+        /* Colonne description large; chiffres non-wrap pour éviter le retour à la ligne */
+        th:nth-child(1), td:nth-child(1) { width: 58%; }
+        th:nth-child(2), td:nth-child(2) { width: 10%; white-space: nowrap; text-align: center; }
+        th:nth-child(3), td:nth-child(3) { width: 16%; white-space: nowrap; text-align: right; }
+        th:nth-child(4), td:nth-child(4) { width: 16%; white-space: nowrap; text-align: right; }
         .totals { text-align: right; margin-top: 30px; padding-top: 20px; border-top: 3px solid #21808D; font-size: 15px; line-height: 1.8; }
         .legal { 
             position: absolute; 
-            bottom: 40px; 
+            bottom: 60px; 
             left: 50px; 
             right: 50px; 
             font-size: 9px; 
@@ -6716,6 +6739,15 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
             border-left: 3px solid #21808D; 
         }
         .legal p { margin: 3px 0; }
+        .footer {
+            position: absolute;
+            bottom: 10px;
+            left: 50px;
+            right: 50px;
+            font-size: 8px;
+            color: #666;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -6749,7 +6781,7 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
                     <tr>
                         <th>Description</th>
                         <th style="text-align: center;">Quantité</th>
-                        <th style="text-align: right;">Prix unitaire</th>
+                        <th style="text-align: right;">Prix unitaire HT</th>
                         <th style="text-align: right;">Total HT</th>
                     </tr>
                 </thead>
@@ -6782,6 +6814,12 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
             <p><strong>Pénalités de retard:</strong> 3 fois le taux d'intérêt légal en vigueur | <strong>Indemnité forfaitaire pour frais de recouvrement:</strong> 40€ (art. D.441-5 du Code de commerce)</p>
             <p><strong>TVA non applicable, art. 293 B du CGI</strong> (franchise en base) | Dispensé d'immatriculation au RCS et au RM (micro-entreprise)</p>
             ${(companyInfo.iban || companyInfo.bic) ? `<p style="margin-top: 6px;">${companyInfo.iban ? `<strong>IBAN:</strong> ${companyInfo.iban}` : ''}${companyInfo.iban && companyInfo.bic ? ' | ' : ''}${companyInfo.bic ? `<strong>BIC:</strong> ${companyInfo.bic}` : ''}</p>` : ''}
+        </div>
+
+        <div class="footer">
+            <div>${companyInfo.name} - SIRET: ${companyInfo.siret || ''}</div>
+            <div>${companyInfo.email} - ${companyInfo.phone}</div>
+            <div>${companyInfo.website || 'www.mticonsulting.fr'}</div>
         </div>
     </div>
 </body>
@@ -6911,20 +6949,84 @@ document.getElementById('downloadPDF')?.addEventListener('click', async () => {
     } catch (e) { console.warn('renderInvoicePreview failed', e); }
     try {
         const pdfBase64 = await generateInvoicePDFBase64(invoice);
-        const pdfFilename = 'Facture_' + (invoice.number || Date.now()) + '.pdf';
+        const safeNumGen = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
+        const pdfFilename = 'Facture_' + safeNumGen + '.pdf';
         const saveResp = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: pdfFilename, folderName: 'Factures' });
         if (!saveResp || saveResp.success === false) {
             try { showBackendRawResponse(saveResp); } catch (e) {}
             alert('Impossible de sauvegarder la facture sur Drive.');
             return;
         }
+        const previewUrl = saveResp.data && saveResp.data.previewUrl;
         const fileUrl = saveResp.data && saveResp.data.fileUrl;
-        if (fileUrl) {
-            window.open(fileUrl, '_blank');
+        if (previewUrl || fileUrl) {
+            window.open(previewUrl || fileUrl, '_blank');
             showToast('✅ Facture sauvegardée et ouverte depuis Drive');
         }
     } catch (e) { console.error('downloadPDF failed', e); alert('Erreur lors de la génération du PDF'); }
 });
+
+// Télécharger une facture depuis la liste (même logique que le générateur)
+async function downloadInvoiceFromList(index) {
+    const invoice = invoices[index];
+    if (!invoice) { showToast('❌ Facture introuvable', 'error'); return; }
+
+    // Validations minimales
+    if (!invoice.client || !invoice.clientAddress) {
+        alert('❌ Client ou adresse manquants pour cette facture');
+        return;
+    }
+    const items = (invoice.items && invoice.items.length > 0) ? invoice.items : [
+        { description: invoice.description || '', quantity: invoice.quantity || 0, unitPrice: invoice.unitPrice || 0, total: invoice.total || 0 }
+    ];
+    if (items.length === 0 || items.some(i => !i.description || i.description.trim() === '')) {
+        alert('❌ Lignes de facturation manquantes ou incomplètes');
+        return;
+    }
+    if (!invoice.total || invoice.total <= 0) {
+        alert('❌ Montant total de la facture invalide');
+        return;
+    }
+
+    const invForPdf = {
+        client: invoice.client,
+        clientAddress: invoice.clientAddress,
+        number: invoice.number,
+        date: invoice.date,
+        dueDate: invoice.dueDate,
+        items,
+        total: invoice.total,
+        tvaEnabled: (document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked) || false,
+        sourceQuoteNumber: invoice.sourceQuoteNumber || ''
+    };
+
+    try {
+        renderInvoicePreview(invForPdf, false);
+    } catch (e) { console.warn('renderInvoicePreview failed', e); }
+
+    try {
+        const pdfBase64 = await generateInvoicePDFBase64(invForPdf);
+        const safeNum = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
+        const pdfFilename = `Facture_${safeNum}.pdf`;
+        const saveResp = await callBackend('savePdfToDrive', { pdfBase64, pdfFilename, folderName: 'Factures' });
+        if (!saveResp || saveResp.success === false) {
+            try { showBackendRawResponse(saveResp); } catch (e) {}
+            alert('Impossible de sauvegarder la facture sur Drive.');
+            return;
+        }
+        const previewUrl = saveResp.data && saveResp.data.previewUrl;
+        const fileUrl = saveResp.data && saveResp.data.fileUrl;
+        if (previewUrl || fileUrl) {
+            window.open(previewUrl || fileUrl, '_blank');
+            showToast('✅ Facture sauvegardée et ouverte depuis Drive');
+        }
+    } catch (e) {
+        console.error('downloadInvoiceFromList failed', e);
+        alert('Erreur lors de la génération du PDF');
+    }
+}
+
+window.downloadInvoiceFromList = downloadInvoiceFromList;
 
 // Initialize app
 function initApp() {
@@ -6947,6 +7049,17 @@ function initApp() {
         }
     } catch (e) {
         console.warn('Erreur chargement RAMs localStorage:', e);
+    }
+
+    // Charger les factures depuis localStorage si disponibles et si aucune facture n'est chargée
+    try {
+        const storedInvoices = localStorage.getItem('mti_invoices');
+        if ((!invoices || invoices.length === 0) && storedInvoices) {
+            invoices = JSON.parse(storedInvoices);
+            console.log(`✅ ${invoices.length} factures chargées depuis localStorage`);
+        }
+    } catch (e) {
+        console.warn('Erreur chargement factures localStorage:', e);
     }
     
     // Setup lazy DOM references
@@ -7197,7 +7310,7 @@ async function sendInvoiceByEmail(index) {
             subject: `Facture ${invoice.number} - MTI CONSULTING`,
             body: generateEmailBody(invoice, client),
             pdfBase64: pdfBase64,
-            pdfFilename: `Facture_${invoice.number}.pdf`
+            pdfFilename: `Facture_${String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '')}.pdf`
         });
         if (!result || !result.success) {
             try { showBackendRawResponse(result); } catch (e) {}
@@ -7278,98 +7391,61 @@ async function generateInvoicePDFBase64(invoice) {
     tempContainer.style.width = 'auto';
     tempContainer.style.padding = '0';
 
-    // Try to fetch logo as data URI to avoid CORS issues when rendering canvas
+    // Try to fetch logo as data URI using LOCAL asset to avoid CORS
     let originalLogo = companyInfo.logoUrl;
     let logoDataUri = null;
     try {
-        // Use local logo file instead of GitHub URL
-        const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') ? companyInfo.logoUrl : 'assets/images/MTI_CONSULTING.png';
-        logoDataUri = await fetchImageAsDataUri(logoSrc);
+        logoDataUri = await fetchImageAsDataUri('assets/images/MTI_CONSULTING.png');
         if (logoDataUri) companyInfo.logoUrl = logoDataUri;
     } catch (e) {
-        console.warn('Could not inline logo', e);
-        // Fallback: try local file
-        try {
-            logoDataUri = await fetchImageAsDataUri('assets/images/MTI_CONSULTING.png');
-            if (logoDataUri) companyInfo.logoUrl = logoDataUri;
-        } catch (e2) {
-            console.warn('Fallback logo load failed', e2);
-        }
+        console.warn('Inline local logo failed', e);
     }
 
     try {
-        const previewNode = document.getElementById('invoicePreviewContent');
-        if (previewNode && previewNode.innerHTML && previewNode.innerHTML.trim().length > 0) {
-            // Clone the existing preview so PDF exactly matches the UI
-            const clone = previewNode.cloneNode(true);
-            // Ensure images in clone reference inlined logo if present
-            if (companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:')) {
-                const imgs = clone.querySelectorAll('img');
-                imgs.forEach(img => { if (img.src && img.src.indexOf('blob:') === -1) img.src = companyInfo.logoUrl; });
-            }
-            tempContainer.appendChild(clone);
-        } else {
-            // Fallback: use shared HTML builder
-            tempContainer.innerHTML = buildInvoiceHtml({
-                clientName: invoice.client || '',
-                clientAddress: invoice.clientAddress || '',
-                invoiceNumber: invoice.number || '',
-                invoiceDate: invoice.date || '',
-                dueDate: invoice.dueDate || '',
-                description: invoice.description || '',
-                quantity: invoice.quantity || 0,
-                unitPrice: invoice.unitPrice || 0,
-                total: invoice.total || 0,
-                tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked,
-                items: invoice.items || null,
-                sourceQuoteNumber: invoice.sourceQuoteNumber || ''
-            });
-        }
+        // Always use the shared HTML builder (same as Devis) for consistent layout/margins/footer
+        tempContainer.innerHTML = buildInvoiceHtml({
+            clientName: invoice.client || '',
+            clientAddress: invoice.clientAddress || '',
+            invoiceNumber: invoice.number || '',
+            invoiceDate: invoice.date || '',
+            dueDate: invoice.dueDate || '',
+            description: invoice.description || '',
+            quantity: invoice.quantity || 0,
+            unitPrice: invoice.unitPrice || 0,
+            total: invoice.total || 0,
+            tvaEnabled: document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked,
+            items: invoice.items || [],
+            sourceQuoteNumber: invoice.sourceQuoteNumber || ''
+        });
     } finally {
         // restore original logo setting
         companyInfo.logoUrl = originalLogo;
     }
 
     document.body.appendChild(tempContainer);
-
-    // If html2canvas is available, use it for faithful rendering
+    // Restore the html2canvas-first path (same as quotes)
     if (window.html2canvas && window.jspdf) {
         try {
-            // Render with html2canvas. Use scale 2.0 for excellent quality while keeping reasonable file size.
-            // Scale 2.0 gives ~150-200 Ko (good balance between quality and size)
-            const canvasScale = 2.0;
-            // Use exact A4 dimensions in pixels (at 96 DPI: 210mm = 794px, 297mm = 1123px)
             const { jsPDF } = window.jspdf;
             const pdfDoc = new jsPDF('p', 'mm', 'a4');
-            const pageWidth = pdfDoc.internal.pageSize.getWidth(); // 210mm
-            const pageHeight = pdfDoc.internal.pageSize.getHeight(); // 297mm
-            
-            // A4 at 96 DPI = 794x1123px, scale up for quality
+            const pageWidth = pdfDoc.internal.pageSize.getWidth();
+            const pageHeight = pdfDoc.internal.pageSize.getHeight();
             const a4WidthPx = 794;
             const a4HeightPx = 1123;
             tempContainer.style.width = a4WidthPx + 'px';
             tempContainer.style.height = a4HeightPx + 'px';
 
+            const canvasScale = 2.0;
             const canvas = await html2canvas(tempContainer, { scale: canvasScale, useCORS: true, backgroundColor: '#ffffff' });
-            // Use JPEG with 0.85 quality for much smaller file size while preserving visual quality
             const imgData = canvas.toDataURL('image/jpeg', 0.85);
-
-            // canvas dimensions in px
-            const imgProps = { width: canvas.width, height: canvas.height };
-            // Convert px -> mm taking canvas scale (effective DPI = 96 * scale)
-            const pxToMm = (px) => px * 25.4 / effectiveDpi;
-            // Simply add the full canvas as one image covering the entire PDF page
-            // Canvas should already be at correct A4 proportions (794x1123 * scale)
             pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
-            
             const dataUri = pdfDoc.output('datauristring');
-            // Cleanup
             try { document.body.removeChild(tempContainer); } catch(e) {}
             return dataUri.split(',')[1];
         } catch (err) {
             console.warn('html2canvas/pdf path failed, falling back to legacy jsPDF:', err);
             try { document.body.removeChild(tempContainer); } catch(e) {}
-            // fall through to legacy below
+            // Fall through to legacy below
         }
     } else {
         try { document.body.removeChild(tempContainer); } catch(e) {}
@@ -7382,17 +7458,9 @@ async function generateInvoicePDFBase64(invoice) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
-    // Logo - try to inline as data URI first
-    if (companyInfo.logoUrl) {
-        try {
-            const dataUri = await (async function(){
-                try { return await fetchImageAsDataUri(companyInfo.logoUrl); } catch(e){ return null; }
-            })();
-            const imgToUse = dataUri || companyInfo.logoUrl;
-            if (imgToUse) {
-                try { doc.addImage(imgToUse, 'PNG', 20, 20, 30, 30); } catch(e) { /* ignore */ }
-            }
-        } catch(e) { /* ignore */ }
+    // Logo - prefer previously inlined local data URI; never fetch GitHub
+    if (logoDataUri) {
+        try { doc.addImage(logoDataUri, 'PNG', 20, 20, 30, 30); } catch(e) { /* ignore */ }
     }
 
     // En-tête
@@ -7437,7 +7505,9 @@ async function generateInvoicePDFBase64(invoice) {
         doc.autoTable({
             startY: 120,
             head: [['Description', 'Quantité', 'Prix unitaire', 'Total HT']],
-            body: tableBody
+            body: tableBody,
+            colWidth: [85, 25, 35, 35],
+            margin: { top: 10, right: 20, bottom: 50, left: 20 }
         });
     } else {
         // Fallback sans autoTable
@@ -7461,14 +7531,14 @@ async function generateInvoicePDFBase64(invoice) {
     doc.setFontSize(12);
     doc.text(`Total TTC : ${formatNumber(ttc)} €`, 120, finalY + 14);
 
-    // Footer en bas de page
+    // Footer en bas de page (Y=270 pour marge sûre avant limite 297mm A4)
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    const footerY = 280;
+    const footerY = 270;
     doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
     doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 4, { align: 'center' });
-    doc.text(`${companyInfo.website}`, 105, footerY + 8, { align: 'center' });
+    doc.text(`${companyInfo.website || 'www.mticonsulting.fr'}`, 105, footerY + 8, { align: 'center' });
 
     return doc.output('datauristring').split(',')[1];
 }
@@ -8719,7 +8789,7 @@ async function sendInvoiceWithRAM(invoiceIndex) {
         const ramPdf = await generateRAMPDF(linkedRAM);
         
         // Noms de fichiers
-        const invoiceFilename = `Facture_${invoice.number.replace(/\//g, '_')}.pdf`;
+        const invoiceFilename = `Facture_${String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '').replace(/\//g, '_')}.pdf`;
         const ramFilename = `RAM_${linkedRAM.year}_${linkedRAM.monthName}_${invoice.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
         
         // Corps de l'email
@@ -8944,10 +9014,11 @@ async function generateRAMPDF(ram) {
     doc.addPage();
     
     // Structure fixe pour éviter chevauchement :
-    // - Footer fixe à Y=280mm (hauteur 6mm)
+    // - Footer fixe à Y=275mm (hauteur 6mm, marge sûre avant limite 297mm)
     // - Visas fixes à Y=255mm (hauteur 20mm, finissent à 275mm)
     // - Remarques de Y=20mm à Y=245mm max (225mm disponibles)
     
+    // Placer le footer sous les visas pour éviter chevauchement
     const footerY = 280;
     const sigY = 255;
     const remarksStartY = 20;
@@ -9011,7 +9082,7 @@ async function generateRAMPDF(ram) {
     
     doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
     doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 3, { align: 'center' });
-    doc.text(`${companyInfo.website}`, 105, footerY + 6, { align: 'center' });
+    doc.text(`${companyInfo.website || 'www.mticonsulting.fr'}`, 105, footerY + 6, { align: 'center' });
     console.log('✅ Footer affiché en page 2 à Y=' + footerY + 'mm');
     
     return doc.output('datauristring').split(',')[1];
@@ -9247,11 +9318,15 @@ window.importQuotesFromSheets = importQuotesFromSheets;
  * @returns {number} CA total en euros
  */
 function getCAnnuel(annee = new Date().getFullYear()) {
+    const isPaid = (status) => {
+        const s = String(status || '').toLowerCase();
+        return s === 'payée' || s === 'paid';
+    };
     return invoices
         .filter(inv => {
             if (!inv.date) return false;
             const invYear = new Date(inv.date).getFullYear();
-            return invYear === annee && inv.status === 'paid';
+            return invYear === annee && isPaid(inv.status);
         })
         .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
 }
@@ -9262,11 +9337,15 @@ function getCAnnuel(annee = new Date().getFullYear()) {
  * @returns {number} CA cumulé en euros
  */
 function getCACumule(annee = new Date().getFullYear()) {
+    const isCancelled = (status) => {
+        const s = String(status || '').toLowerCase();
+        return s === 'annulée' || s === 'cancelled';
+    };
     return invoices
         .filter(inv => {
             if (!inv.date) return false;
             const invYear = new Date(inv.date).getFullYear();
-            return invYear === annee && inv.status !== 'cancelled';
+            return invYear === annee && !isCancelled(inv.status);
         })
         .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
 }
@@ -9567,16 +9646,17 @@ function renderQuoteList() {
             <td>${linkedInvoiceBadge}</td>
             <td><span class="status-badge status-${statusClass}">${quote.status || 'Brouillon'}</span></td>
             <td>
-                <button class="btn btn-sm btn-secondary" onclick="editQuoteInForm(${index})" title="Modifier">✏️</button>
-                <button class="btn btn-sm btn-secondary" onclick="downloadQuotePDF(${index})" title="Télécharger PDF">📥</button>
-                <button class="btn btn-sm btn-primary" onclick="sendQuoteEmail(${index})" title="Envoyer par email">📧</button>
-                <button class="btn btn-sm btn-success" onclick="convertQuoteToInvoice(${index})" title="Convertir en facture">🔄</button>
-                <div style="display:inline-flex; gap:4px; margin-left:8px;">
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Envoyé')" title="Marquer comme envoyé">📤</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Accepté')" title="Marquer comme accepté">✅</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Refusé')" title="Marquer comme refusé">❌</button>
+                <button class="btn btn-sm btn-secondary" onclick="editQuoteInForm(${index})" title="Modifier">✏️ Modifier</button>
+                <button class="btn btn-sm btn-secondary" onclick="downloadQuotePDF(${index})" title="Télécharger PDF" style="margin-left: var(--space-4);">📥 Télécharger</button>
+                <button class="btn btn-sm btn-primary" onclick="sendQuoteEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
+                <button class="btn btn-sm btn-success" onclick="convertQuoteToInvoice(${index})" title="Convertir en facture" style="margin-left: var(--space-4);">🔄 Convertir</button>
+                <div style="margin-top: 6px; display: inline-flex; gap: 6px;">
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Brouillon')" title="Marquer Brouillon">📝 Brouillon</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Envoyé')" title="Marquer Envoyé">📤 Envoyé</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Accepté')" title="Marquer Accepté">✅ Accepté</button>
+                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Refusé')" title="Marquer Refusé">❌ Refusé</button>
                 </div>
-                <button class="btn btn-sm btn-danger" onclick="deleteQuote(${index})" title="Supprimer">🗑️</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteQuote(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
             </td>
         `;
         tbody.appendChild(row);
@@ -9775,8 +9855,13 @@ function initQuoteForm() {
     const downloadPDFBtn = document.getElementById('downloadQuotePDF');
     if (downloadPDFBtn) {
         downloadPDFBtn.addEventListener('click', async () => {
-            if (currentQuoteItems.length === 0) {
-                showToast('⚠️ Ajoutez au moins une ligne au devis', 'error');
+            // Validations bloquantes (mêmes exigences que facture)
+            if (!currentQuoteItems || currentQuoteItems.length === 0) {
+                showToast('❌ Ajoutez au moins une ligne au devis', 'error');
+                return;
+            }
+            if (currentQuoteItems.some(i => !i.description || i.description.trim() === '')) {
+                showToast('❌ Chaque ligne doit avoir une description', 'error');
                 return;
             }
             // Créer un objet devis temporaire depuis le formulaire
@@ -9790,10 +9875,24 @@ function initQuoteForm() {
                 items: [...currentQuoteItems],
                 total: currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0)
             };
+            if (!tempQuote.client || !tempQuote.clientAddress) {
+                showToast('❌ Client ou adresse manquants pour ce devis', 'error');
+                return;
+            }
+            if (!tempQuote.date || !tempQuote.validityDate) {
+                showToast('❌ Dates du devis incomplètes (émission/validité)', 'error');
+                return;
+            }
+            if (!tempQuote.total || tempQuote.total <= 0) {
+                showToast('❌ Montant total du devis invalide', 'error');
+                return;
+            }
             try {
                 showToast('⏳ Génération du PDF et sauvegarde sur Drive...', 'info');
                 const pdfBase64 = await generateQuotePDFBase64(tempQuote);
-                const filename = `Devis_${tempQuote.number}_${tempQuote.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+                const safeQuoteNum = String(tempQuote.number || Date.now()).replace(/^(DEVIS|DEVI|Devis)[-_ ]?/i, '');
+                const safeClient = (tempQuote.client || 'CLIENT').replace(/[^a-z0-9]/gi, '_');
+                const filename = `Devis_${safeQuoteNum}_${safeClient}.pdf`;
                 const saveRes = await callBackend('savePdfToDrive', {
                     pdfBase64,
                     pdfFilename: filename,
@@ -10069,14 +10168,19 @@ function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, vali
         .separator { border: none; border-top: 2px solid #e0e0e0; margin: 20px 0; clear: both; }
         .invoice-details { margin-top: 30px; margin-bottom: 25px; line-height: 1.7; }
         .invoice-number { font-size: 24px; font-weight: bold; margin-bottom: 12px; color: #21808D; }
-        table { width: 100%; border-collapse: collapse; margin: 25px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 25px 0; table-layout: fixed; }
         th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #e0e0e0; }
         th { background-color: rgba(33, 128, 141, 0.12); font-weight: bold; font-size: 13px; color: #1a1a1a; }
         td { font-size: 14px; color: #333; }
+        /* Colonne description large; chiffres non-wrap pour éviter le retour à la ligne */
+        th:nth-child(1), td:nth-child(1) { width: 58%; }
+        th:nth-child(2), td:nth-child(2) { width: 10%; white-space: nowrap; text-align: center; }
+        th:nth-child(3), td:nth-child(3) { width: 16%; white-space: nowrap; text-align: right; }
+        th:nth-child(4), td:nth-child(4) { width: 16%; white-space: nowrap; text-align: right; }
         .totals { text-align: right; margin-top: 30px; padding-top: 20px; border-top: 3px solid #21808D; font-size: 15px; line-height: 1.8; }
         .legal { 
             position: absolute; 
-            bottom: 40px; 
+            bottom: 60px; 
             left: 50px; 
             right: 50px; 
             font-size: 9px; 
@@ -10096,6 +10200,15 @@ function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, vali
             margin: 15px 0;
             font-size: 12px;
             color: #856404;
+        }
+        .footer {
+            position: absolute;
+            bottom: 10px;
+            left: 50px;
+            right: 50px;
+            font-size: 8px;
+            color: #666;
+            text-align: center;
         }
     </style>
 </head>
@@ -10159,6 +10272,11 @@ function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, vali
             <p><strong>Conditions de validité:</strong> Ce devis est valable ${Math.ceil((new Date(validityDate) - new Date(quoteDate)) / (1000 * 60 * 60 * 24))} jours à compter de la date d'émission | <strong>Conditions de paiement:</strong> À définir après acceptation</p>
             <p><strong>Mentions légales:</strong> ${companyInfo.name} | SIRET: ${companyInfo.siret || ''} | TVA non applicable (art. 293 B du CGI) | Dispensé d'immatriculation au RCS et au RM (micro-entreprise)</p>
             ${(companyInfo.iban || companyInfo.bic) ? `<p style="margin-top: 6px;">${companyInfo.iban ? `<strong>IBAN:</strong> ${companyInfo.iban}` : ''}${companyInfo.iban && companyInfo.bic ? ' | ' : ''}${companyInfo.bic ? `<strong>BIC:</strong> ${companyInfo.bic}` : ''}</p>` : ''}
+        </div>
+        <div class="footer">
+            <div>${companyInfo.name} - SIRET: ${companyInfo.siret || ''}</div>
+            <div>${companyInfo.email} - ${companyInfo.phone}</div>
+            <div>${companyInfo.website || 'www.mticonsulting.fr'}</div>
         </div>
     </div>
 </body>
@@ -10318,13 +10436,15 @@ async function generateQuotePDFBase64(quote) {
             startY: 120,
             head: [['Description', 'Quantité', 'Prix unitaire HT', 'Total HT']],
             body: tableBody,
+            colWidth: [85, 25, 35, 35],
+            margin: { top: 10, right: 20, bottom: 50, left: 20 },
             headStyles: { fillColor: [33, 128, 141] },
             styles: { fontSize: 10 },
             columnStyles: {
-                0: { cellWidth: 80 },    // Description plus large
+                0: { cellWidth: 85 },    // Description
                 1: { cellWidth: 25 },    // Quantité
-                2: { cellWidth: 40 },    // Prix unitaire
-                3: { cellWidth: 35 }     // Total HT (plus d'espace pour le €)
+                2: { cellWidth: 35 },    // Prix unitaire
+                3: { cellWidth: 35 }     // Total HT
             }
         });
     }
@@ -10345,14 +10465,14 @@ async function generateQuotePDFBase64(quote) {
     doc.text(`⚠️ Bon pour accord - Valable jusqu'au ${formatDateFR(quote.validityDate)}`, 20, finalY + 20);
     doc.setTextColor(0, 0, 0);
 
-    // Footer en bas de page
+    // Footer en bas de page (Y=270 pour marge sûre avant limite 297mm A4)
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    const footerY = 280;
+    const footerY = 270;
     doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
     doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 4, { align: 'center' });
-    doc.text(`${companyInfo.website}`, 105, footerY + 8, { align: 'center' });
+    doc.text(`${companyInfo.website || 'www.mticonsulting.fr'}`, 105, footerY + 8, { align: 'center' });
 
     return doc.output('datauristring').split(',')[1];
 }
@@ -10371,12 +10491,31 @@ async function downloadQuotePDF(index) {
         showToast('❌ jsPDF manquant - impossible de générer le PDF', 'error');
         return;
     }
+    // Validations bloquantes (cohérentes avec factures)
+    if (!quote.client || !quote.clientAddress) {
+        showToast('❌ Client ou adresse manquants pour ce devis', 'error');
+        return;
+    }
+    const items = (quote.items && quote.items.length > 0) ? quote.items : [];
+    if (items.length === 0 || items.some(i => !i.description || i.description.trim() === '')) {
+        showToast('❌ Lignes de devis manquantes ou incomplètes', 'error');
+        return;
+    }
+    if (!quote.total || quote.total <= 0) {
+        showToast('❌ Montant total du devis invalide', 'error');
+        return;
+    }
+    if (!quote.date || !quote.validityDate) {
+        showToast('❌ Dates du devis incomplètes (émission/validité)', 'error');
+        return;
+    }
     
     try {
         showToast('⏳ Génération du PDF et sauvegarde sur Drive...', 'info');
         const pdfBase64 = await generateQuotePDFBase64(quote);
-        // Nom de fichier cohérent : Devis_NUMERO_CLIENT.pdf
-        const filename = `Devis_${quote.number}_${quote.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        // Nom de fichier cohérent : Devis_NUMERO_CLIENT.pdf (sans préfixe redondant)
+        const safeQuoteNum2 = String(quote.number || Date.now()).replace(/^(DEVIS|DEVI|Devis)[-_ ]?/i, '');
+        const filename = `Devis_${safeQuoteNum2}_${quote.client.replace(/[^a-z0-9]/gi, '_')}.pdf`;
         const saveRes = await callBackend('savePdfToDrive', {
             pdfBase64,
             pdfFilename: filename,

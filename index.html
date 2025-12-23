@@ -368,10 +368,11 @@ tr:hover {
 /* Status Badges */
 .status-badge {
     display: inline-block;
-    padding: var(--space-4) var(--space-12);
+    padding: var(--space-6) var(--space-12);
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
 }
 
 .status-brouillon {
@@ -384,12 +385,30 @@ tr:hover {
     color: #1D4ED8;
 }
 
+/* Harmonize quote/invoice sent status (Envoyé/Envoyée) */
+.status-envoyee, .status-envoye {
+    background-color: var(--color-bg-1);
+    color: #1D4ED8;
+}
+
 .status-payee {
     background-color: rgba(var(--color-teal-500-rgb), 0.15);
     color: var(--color-success);
 }
 
+/* Accepted (Devis) */
+.status-accepte {
+    background-color: rgba(var(--color-teal-500-rgb), 0.15);
+    color: var(--color-success);
+}
+
 .status-retard {
+    background-color: rgba(var(--color-red-500-rgb), 0.15);
+    color: var(--color-error);
+}
+
+/* Refused (Devis) and Cancelled (Facture) */
+.status-refuse, .status-annulee {
     background-color: rgba(var(--color-red-500-rgb), 0.15);
     color: var(--color-error);
 }
@@ -709,6 +728,7 @@ tr:hover {
             <img src="assets/images/MTI_CONSULTING.png" alt="MTI CONSULTING Logo" class="logo">
             <h1 class="header-title">MTI CONSULTING</h1>
             <div style="margin-left: auto; display:flex; gap:8px; align-items:center;">
+                <button id="toggleStatusShowcaseBtn" class="btn btn-sm btn-secondary" title="Afficher l’aperçu des badges" onclick="(function(){ const el=document.getElementById('statusShowcase'); if(!el) return; const isHidden=(el.style.display==='none'||getComputedStyle(el).display==='none'); el.style.display=isHidden?'block':'none'; if(!isHidden) return; setTimeout(()=>{ el.scrollIntoView({behavior:'smooth', block:'start'}); }, 50); })()">👁️ Aperçu badges</button>
                 <span style="font-size:13px; color:var(--color-text-secondary);">📧 Envoi automatique avec aperçu | 📅 Google Calendar synchronisé</span>
             </div>
         </div>
@@ -2390,6 +2410,27 @@ tr:hover {
     <!-- Toast Notification Container -->
     <div id="toastContainer" style="position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: var(--space-8);"></div>
 
+    <!-- Vitrine visuelle des badges de statut (pour vérification rapide) -->
+    <div id="statusShowcase" style="display:none; margin: var(--space-24); padding: var(--space-16); border: 1px dashed var(--color-border); border-radius: var(--radius-base); background: var(--color-bg-1);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <h3 style="margin:0; font-size: var(--font-size-md);">Aperçu des badges de statut</h3>
+            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('statusShowcase').style.display='none'">Masquer</button>
+        </div>
+        <div style="display:flex; gap: var(--space-12); flex-wrap: wrap; margin-top: var(--space-12);">
+            <span class="status-badge status-brouillon">Brouillon</span>
+            <span class="status-badge status-envoye">Envoyé</span>
+            <span class="status-badge status-envoyee">Envoyée</span>
+            <span class="status-badge status-accepte">Accepté</span>
+            <span class="status-badge status-payee">Payée</span>
+            <span class="status-badge status-refuse">Refusé</span>
+            <span class="status-badge status-annulee">Annulée</span>
+            <span class="status-badge status-retard">Retard</span>
+        </div>
+        <p style="margin-top: var(--space-12); color: var(--color-text-secondary); font-size: var(--font-size-xs);">
+            Astuce: utilisez Windows+Maj+S pour capturer rapidement chaque badge.
+        </p>
+    </div>
+
     <!-- App script (load after DOM) -->
     <!-- jsPDF + autotable for client-side PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -2416,6 +2457,24 @@ tr:hover {
         </div>
     </div>
     <script src="app.js"></script>
+        <script>
+            (function(){
+                try {
+                    var cfg = window.CONFIG || (function(){ try { return JSON.parse(localStorage.getItem('mti_app_config')||'{}'); } catch(e){ return {}; } })();
+                    if (!cfg || !cfg.DEBUG_UI_BADGES) {
+                        var showcase = document.getElementById('statusShowcase');
+                        var toggleBtn = document.getElementById('toggleStatusShowcaseBtn');
+                        if (showcase) showcase.remove();
+                        if (toggleBtn) toggleBtn.remove();
+                    }
+                } catch(e) {
+                    var showcase = document.getElementById('statusShowcase');
+                    var toggleBtn = document.getElementById('toggleStatusShowcaseBtn');
+                    if (showcase) showcase.remove();
+                    if (toggleBtn) toggleBtn.remove();
+                }
+            })();
+        </script>
 
 </body>
 </html>
