@@ -28,7 +28,12 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 - Blocage du téléchargement PDF d’un devis si données critiques manquantes (client/adresse, lignes non vides, total > 0, dates)
 - Contrôles appliqués depuis la liste et depuis le formulaire (bouton « Télécharger PDF »)
+### Factures: validations preview strictes
 
+- Bouton "👁️ Aperçu" : validations bloquantes identiques aux devis (client, adresse, dates, lignes avec description/quantité/prix)
+- Bouton "🔎 Prévisualiser et confirmer" : mêmes validations strictes avant envoi
+- Remplacement de `alert()` par `showToast()` pour UX cohérente avec les devis
+- Messages d'erreur explicites avec émoji ⚠️ par champ manquant
 ### Fichiers impactés
 
 - app.js: prévisualisation facture/ devis unifiée, validations devis, bouton Télécharger facture, couleurs graphiques
