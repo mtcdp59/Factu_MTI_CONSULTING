@@ -1055,7 +1055,7 @@ function setupInvoiceFormListeners() {
             
             // Vérifier les éléments de base
             if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput) {
-                alert('❌ Erreur: Éléments du formulaire introuvables');
+                showToast('❌ Erreur: Éléments du formulaire introuvables', 'error');
                 return;
             }
 
@@ -1068,14 +1068,24 @@ function setupInvoiceFormListeners() {
             // Récupérer les items (multi-ligne) depuis currentInvoiceItems
             const items = currentInvoiceItems;
             
-            // Validation
-            if (!clientName || !clientAddress || !invoiceDate || !dueDate) {
-                alert('❌ Veuillez remplir tous les champs obligatoires (client, adresse, dates)');
+            // Validations bloquantes (même pattern que devis)
+            if (!clientName) {
+                showToast('⚠️ Veuillez saisir le nom du client', 'error');
+                return;
+            }
+            
+            if (!clientAddress) {
+                showToast('⚠️ Veuillez saisir l\'adresse du client', 'error');
+                return;
+            }
+            
+            if (!invoiceDate || !dueDate) {
+                showToast('⚠️ Veuillez remplir les dates (émission et échéance)', 'error');
                 return;
             }
             
             if (!items || items.length === 0) {
-                alert('❌ Veuillez ajouter au moins une ligne de facturation');
+                showToast('⚠️ Ajoutez au moins une ligne de facturation', 'error');
                 return;
             }
             
@@ -1083,15 +1093,15 @@ function setupInvoiceFormListeners() {
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
                 if (!item.description || !item.description.trim()) {
-                    alert(`❌ La ligne ${i + 1} doit avoir une description`);
+                    showToast(`⚠️ La ligne ${i + 1} doit avoir une description`, 'error');
                     return;
                 }
                 if (!item.quantity || item.quantity <= 0) {
-                    alert(`❌ La ligne ${i + 1} doit avoir une quantité > 0`);
+                    showToast(`⚠️ La ligne ${i + 1} doit avoir une quantité > 0`, 'error');
                     return;
                 }
                 if (!item.unitPrice || item.unitPrice <= 0) {
-                    alert(`❌ La ligne ${i + 1} doit avoir un prix unitaire > 0`);
+                    showToast(`⚠️ La ligne ${i + 1} doit avoir un prix unitaire > 0`, 'error');
                     return;
                 }
             }
