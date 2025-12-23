@@ -460,7 +460,9 @@ Fin : 31/12/2025 (fin T4 2025)
 ## Support
 
 Pour toute question ou bug concernant le calculateur :
+- Site web : www.mticonsulting.fr
 - Email : contact@mticonsulting.fr
+- Téléphone : 07 56 98 99 59
 - GitHub Issues : [Factu_MTI_CONSULTING/issues](https://github.com/mtcdp59/Factu_MTI_CONSULTING/issues)
 
 ---

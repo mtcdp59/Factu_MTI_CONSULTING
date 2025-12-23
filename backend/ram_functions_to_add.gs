@@ -278,7 +278,7 @@ function saveToDrive(params) {
  *   postalCode: '59110',
  *   city: 'La Madeleine',
  *   email: 'contact@mticonsulting.fr',
- *   phone: '07 77 37 17 39',
+ *   phone: '07 56 98 99 59',
  *   siret: '994 149 904 00017'
  * };
  */

@@ -29,8 +29,6 @@
 - **Scripts et tâches VS Code** :
   - Ajout d’un fichier tasks.json pour lancer un serveur local avec live-server.
 
-- **Sandbox PISTE** :
-  - Le script de test backend utilise désormais le compte contact@mticonsulting.fr pour les credentials.
 
 ### Utilisation :
 
@@ -54,17 +52,27 @@
 - app.js (frontend)
 - backend/AppScript.js (backend)
 - config.production.js, config.migration.json (configuration)
-- backend/testPisteConnection.sandbox.js (sandbox API)
+
 - .vscode/tasks.json (tâches VS Code)
 # 🧾 MTI CONSULTING - Gestion Freelance
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.2.1-blue)
+![Version](https://img.shields.io/badge/version-2.2.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
 
 ## Historique des versions
+
+### v2.2.2 (Décembre 2025)
+
+**Mises à jour des informations de contact**
+- Mise à jour du numéro de téléphone : 07 56 98 99 59
+- Ajout du site web www.mticonsulting.fr dans :
+  - Footer des PDF (RAM, Factures, Devis)
+  - Signatures emails (factures et devis)
+  - Configuration companyInfo (frontend et backend)
+- Documentation enrichie avec domaines d'expertise
 
 ### v2.2.1 (Décembre 2024)
 
@@ -485,8 +493,13 @@ MIT License - Voir LICENSE pour plus de détails
 ## 👤 Auteur
 
 **MTI CONSULTING**
+- Entreprise : Consulting spécialisé en gestion de projets SI, décisionnel et contrôle de gestion
+- Consultant expert : Mickaël TOURDOT-IGUEDJETAL
+- Domaines d'expertise : Gestion de Projets SI (ERP, SIRH, BI), Pilotage de la Performance, Data governance
+- Expérience : 15 ans
+- Site web : www.mticonsulting.fr
 - Email : contact@mticonsulting.fr
-- Téléphone : 07 77 37 17 39
+- Téléphone : 07 56 98 99 59
 - SIRET : 994 149 904 00017
 - Adresse : 13A rue du Général de Gaulle, 59110 La Madeleine
 
@@ -558,5 +571,5 @@ MIT License - Voir LICENSE pour plus de détails
 ---
 
 **Dernière mise à jour** : Décembre 2025  
-**Version** : 2.1  
+**Version** : 2.2.1  
 **Statut** : Production

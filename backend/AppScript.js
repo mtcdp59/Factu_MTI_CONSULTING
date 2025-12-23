@@ -54,7 +54,8 @@ const companyInfo = {
   postalCode: '59110',
   city: 'La Madeleine',
   email: 'contact@mticonsulting.fr',
-  phone: '07 77 37 17 39',
+  phone: '07 56 98 99 59',
+  website: 'www.mticonsulting.fr',
   iban: 'FR76 4061 8804 9700 0403 3099 557',
   bic: 'BOUSFRPPXXX'
 };

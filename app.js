@@ -314,7 +314,8 @@ let companyInfo = {
     postalCode: '59110',
     city: 'La Madeleine',
     email: 'contact@mticonsulting.fr',
-    phone: '07 77 37 17 39',
+    phone: '07 56 98 99 59',
+    website: 'www.mticonsulting.fr',
     iban: 'FR76 4061 8804 9700 0403 3099 557', // IBAN professionnel affiché en footer de facture
     bic: 'BOUSFRPPXXX'   // BIC (Code SWIFT) de la banque
 };
@@ -7232,8 +7233,9 @@ Conditions de paiement : 30 jours nets
 Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
-Téléphone : +33 7 77 37 17 39
-Mail : contact@mticonsulting.fr`;
+Téléphone : +33 7 56 98 99 59
+Mail : contact@mticonsulting.fr
+Web : www.mticonsulting.fr`;
 }
 
 // Helper: convert base64 (no prefix) to Blob
@@ -7458,6 +7460,15 @@ async function generateInvoicePDFBase64(invoice) {
     doc.text(`TVA 20% : ${formatNumber(tva)} €`, 120, finalY + 7);
     doc.setFontSize(12);
     doc.text(`Total TTC : ${formatNumber(ttc)} €`, 120, finalY + 14);
+
+    // Footer en bas de page
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    const footerY = 280;
+    doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
+    doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 4, { align: 'center' });
+    doc.text(`${companyInfo.website}`, 105, footerY + 8, { align: 'center' });
 
     return doc.output('datauristring').split(',')[1];
 }
@@ -9000,6 +9011,7 @@ async function generateRAMPDF(ram) {
     
     doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
     doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 3, { align: 'center' });
+    doc.text(`${companyInfo.website}`, 105, footerY + 6, { align: 'center' });
     console.log('✅ Footer affiché en page 2 à Y=' + footerY + 'mm');
     
     return doc.output('datauristring').split(',')[1];
@@ -10333,6 +10345,15 @@ async function generateQuotePDFBase64(quote) {
     doc.text(`⚠️ Bon pour accord - Valable jusqu'au ${formatDateFR(quote.validityDate)}`, 20, finalY + 20);
     doc.setTextColor(0, 0, 0);
 
+    // Footer en bas de page
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    const footerY = 280;
+    doc.text(`${companyInfo.name} - SIRET: ${companyInfo.siret}`, 105, footerY, { align: 'center' });
+    doc.text(`${companyInfo.email} - ${companyInfo.phone}`, 105, footerY + 4, { align: 'center' });
+    doc.text(`${companyInfo.website}`, 105, footerY + 8, { align: 'center' });
+
     return doc.output('datauristring').split(',')[1];
 }
 
@@ -10393,8 +10414,9 @@ Ce devis en attente de votre accord constitue une offre ferme et précise.
 Cordialement,
 Mickaël TOURDOT-IGUEDJETAL
 MTI CONSULTING
-Téléphone : +33 7 77 37 17 39
-Mail : contact@mticonsulting.fr`;
+Téléphone : +33 7 56 98 99 59
+Mail : contact@mticonsulting.fr
+Web : www.mticonsulting.fr`;
 }
 
 /**

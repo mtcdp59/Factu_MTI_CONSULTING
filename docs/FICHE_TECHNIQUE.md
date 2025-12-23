@@ -2,8 +2,8 @@
 
 **Application de gestion freelance (BNC) - Single Page Application**
 
-**Version** : 2.1.3  
-**Date** : 10 Décembre 2025  
+**Version** : 2.2.2  
+**Date** : 23 Décembre 2025  
 **Langage** : JavaScript (ES6+), HTML5, CSS3  
 **Statut** : Production
 
@@ -221,7 +221,8 @@ companyInfo = {
     postalCode: '...',
     city: '...',
     email: 'contact@mticonsulting.fr',
-    phone: '07 77 37 17 39',
+    phone: '07 56 98 99 59',
+    website: 'www.mticonsulting.fr',      // ⚠️ NOUVEAU v2.2.2 : Site web dans footers PDF
     iban: 'FR76...',                // ⚠️ NOUVEAU v2.0 : Remplace RIB
     bic: 'ABCDEFGHXXX'              // ⚠️ NOUVEAU v2.0
 }
@@ -839,7 +840,9 @@ Chargées dans `index.html` (lignes 1420-1476) :
 ## 📞 Support et Contact
 
 **Développeur actuel** : MTI CONSULTING  
+**Site web** : www.mticonsulting.fr  
 **Email** : contact@mticonsulting.fr  
+**Téléphone** : 07 56 98 99 59  
 **Repository** : https://github.com/mtcdp59/Factu_MTI_CONSULTING
 
 ### Ressources
