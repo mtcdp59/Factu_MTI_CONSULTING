@@ -64,6 +64,26 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 
 ## Historique des versions
 
+### v2.2.3 (Décembre 2025)
+
+**Harmonisation Devis ↔ Factures**
+- Prévisualisation unifiée via iframe (mêmes marges/footer/couleurs)
+- Noms de PDF nettoyés (suppression redondances)
+- Mentions légales remontées (pas de chevauchement)
+- Bouton « 📥 Télécharger » dans la liste Factures
+- Sauvegarde Drive → ouverture automatique du `previewUrl`
+- Passage auto au statut « Envoyée » après envoi
+- Statistiques/KPIs : « Annulée » exclue; compteur CA rafraîchi
+
+**Statuts & Graphiques**
+- Badges Devis/Factures unifiés (palette cohérente)
+- Graphiques alignés sur couleurs des badges
+- Vitrine statuts (debug-only) masquée en prod (`DEBUG_UI_BADGES`)
+
+**Devis – validations strictes PDF**
+- Blocage si client/adresse manquants, items vides, total ≤ 0, dates absentes
+- Contrôles appliqués depuis la liste et le formulaire
+
 ### v2.2.2 (Décembre 2025)
 
 **Mises à jour des informations de contact**

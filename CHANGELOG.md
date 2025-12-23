@@ -5,6 +5,38 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.2.3] - 2025-12-24
+
+### Harmonisation Devis ↔ Factures, PDF et Statuts
+
+- Prévisualisation unifiée via iframe `srcdoc` pour Devis et Factures (même builder HTML, mêmes marges/footer/couleurs)
+- Noms de PDF nettoyés (suppression des redondances « Devis_DEVIS… », « Facture_FACTURE… »)
+- Mentions légales remontées pour éviter tout chevauchement avec le footer
+- Bouton « 📥 Télécharger » ajouté dans la liste des Factures (même logique que le générateur)
+- Sauvegarde Drive: ouverture automatique de `previewUrl` (fallback `fileUrl`)
+- Passage automatique au statut « Envoyée » après envoi via Drive
+- Statistiques/KPIs « Suivi »: exclusion de « Annulée » des calculs et graphiques
+- Compteur de CA rafraîchi après annulation/modification
+
+### Palette statuts unifiée + vitrine debug
+
+- Badges de statut harmonisés entre Devis et Factures (classes et couleurs alignées)
+- Palette des graphiques alignée sur les badges (Brouillon → slate, Envoyée → blue, Payée → success, Retard → error)
+- Vitrine visuelle des statuts (QA) ajoutée et masquée en production par défaut via `DEBUG_UI_BADGES: false`
+
+### Devis: validations PDF strictes
+
+- Blocage du téléchargement PDF d’un devis si données critiques manquantes (client/adresse, lignes non vides, total > 0, dates)
+- Contrôles appliqués depuis la liste et depuis le formulaire (bouton « Télécharger PDF »)
+
+### Fichiers impactés
+
+- app.js: prévisualisation facture/ devis unifiée, validations devis, bouton Télécharger facture, couleurs graphiques
+- index.html: CSS des badges statuts, vitrine de statut (debug-only)
+- config.production.js: ajout `DEBUG_UI_BADGES: false`
+
+---
+
 ## [2.2.2] - 2024-12-16
 
 ### Corrections
