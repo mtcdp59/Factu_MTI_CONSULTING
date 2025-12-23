@@ -6661,9 +6661,62 @@ function setupEmailPreviewHandlersForConfirmSend() {
     const btn = document.getElementById('previewConfirmSendBtn');
     if (!btn) return;
     btn.addEventListener('click', async () => {
+        // Validations bloquantes (même pattern que preview)
+        const clientNameEl = document.getElementById('clientName');
+        const clientAddressEl = document.getElementById('clientAddress');
+        
+        if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput) {
+            showToast('❌ Erreur: Éléments du formulaire introuvables', 'error');
+            return;
+        }
+
+        const clientName = clientNameEl.value.trim();
+        const clientAddress = clientAddressEl.value.trim();
+        const invoiceDate = invoiceDateInput.value;
+        const dueDate = dueDateInput.value;
+        const items = currentInvoiceItems;
+        
+        if (!clientName) {
+            showToast('⚠️ Veuillez saisir le nom du client', 'error');
+            return;
+        }
+        
+        if (!clientAddress) {
+            showToast('⚠️ Veuillez saisir l\'adresse du client', 'error');
+            return;
+        }
+        
+        if (!invoiceDate || !dueDate) {
+            showToast('⚠️ Veuillez remplir les dates (émission et échéance)', 'error');
+            return;
+        }
+        
+        if (!items || items.length === 0) {
+            showToast('⚠️ Ajoutez au moins une ligne de facturation', 'error');
+            return;
+        }
+        
+        // Vérifier que chaque item est valide
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item.description || !item.description.trim()) {
+                showToast(`⚠️ La ligne ${i + 1} doit avoir une description`, 'error');
+                return;
+            }
+            if (!item.quantity || item.quantity <= 0) {
+                showToast(`⚠️ La ligne ${i + 1} doit avoir une quantité > 0`, 'error');
+                return;
+            }
+            if (!item.unitPrice || item.unitPrice <= 0) {
+                showToast(`⚠️ La ligne ${i + 1} doit avoir un prix unitaire > 0`, 'error');
+                return;
+            }
+        }
+        
+        // Toutes les validations passées, on peut continuer
         const invoice = getCurrentInvoiceForPreview();
-        if (!invoice) { alert('Aucune facture trouvée pour prévisualisation'); return; }
-        try { await previewAndConfirmSend(invoice); } catch (e) { console.error('previewAndConfirmSend failed', e); alert('Erreur lors de la préparation de l\'envoi'); }
+        if (!invoice) { showToast('❌ Aucune facture trouvée pour prévisualisation', 'error'); return; }
+        try { await previewAndConfirmSend(invoice); } catch (e) { console.error('previewAndConfirmSend failed', e); showToast('❌ Erreur lors de la préparation de l\'envoi', 'error'); }
     });
     setupEmailPreviewHandlersForConfirmSend();
 }
