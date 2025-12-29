@@ -1300,14 +1300,35 @@ function renderInvoicePreviewImpl(inv, showModal) {
         sourceQuoteNumber: inv.sourceQuoteNumber || ''
     });
 
+    // Build reminder history HTML
+    const relancesHTML = inv.relances && inv.relances.length > 0 
+        ? inv.relances.map(r => {
+            const levelLabels = { 1: 'Rappel aimable', 2: 'Relance ferme', 3: 'Mise en demeure' };
+            const sentLabel = r.sent ? '✅ Envoyée' : '⏳ Brouillon';
+            const manualLabel = r.manual ? ' (Manuel)' : ' (Auto)';
+            return `
+            <div style="padding: 8px 12px; border-left: 4px solid ${r.level === 3 ? '#dc3545' : r.level === 2 ? '#ff9800' : '#4caf50'}; background: ${r.level === 3 ? 'rgba(220,53,69,0.05)' : r.level === 2 ? 'rgba(255,152,0,0.05)' : 'rgba(76,175,80,0.05)'}; border-radius: 4px; margin-bottom: 8px; font-size: 13px;">
+                <div style="font-weight: bold; color: #1a1a1a;">${levelLabels[r.level] || 'Niveau ' + r.level} ${sentLabel} ${manualLabel}</div>
+                <div style="color: #666; margin-top: 4px;">📅 ${formatDateFR(r.date)} • 📊 ${r.daysLate} jours de retard</div>
+            </div>
+            `;
+        }).join('')
+        : '<p style="color: #999; font-style: italic; text-align: center; padding: 16px; margin: 0;">Aucune relance envoyée</p>';
+
     if (showModal) {
-        // Afficher dans un modal avec iframe (identique au devis)
+        // Afficher dans un modal avec iframe + historique relances
         const modal = document.createElement('div');
         modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; overflow-y: auto;';
         modal.innerHTML = `
-            <div style="position: relative; background: white; border-radius: 8px; max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
+            <div style="position: relative; background: white; border-radius: 8px; max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto; padding: 20px;">
                 <button onclick="this.closest('div').parentElement.remove()" style="position: absolute; top: 10px; right: 10px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 18px; z-index: 10000;">×</button>
-                <iframe style="width: 100%; height: 600px; border: none; border-radius: 8px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>
+                <iframe style="width: 100%; height: 600px; border: none; border-radius: 8px; margin-bottom: 20px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>
+                <div style="border-top: 2px solid #e0e0e0; padding-top: 20px;">
+                    <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #1a1a1a;">📧 Historique des relances</h3>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        ${relancesHTML}
+                    </div>
+                </div>
             </div>
         `;
         document.body.appendChild(modal);
@@ -1315,7 +1336,15 @@ function renderInvoicePreviewImpl(inv, showModal) {
         // Remplir le conteneur d'aperçu si présent
         const previewContent = document.getElementById('invoicePreviewContent');
         if (previewContent) {
-            previewContent.innerHTML = `<iframe style="width: 100%; height: 600px; border: none; border-radius: 8px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>`;
+            previewContent.innerHTML = `
+                <iframe style="width: 100%; height: 600px; border: none; border-radius: 8px; margin-bottom: 20px;" srcdoc="${previewHTML.replace(/"/g, '&quot;')}"></iframe>
+                <div style="border-top: 2px solid #e0e0e0; padding-top: 20px; margin-top: 20px;">
+                    <h3 style="margin: 0 0 16px 0; font-size: 16px; color: #1a1a1a;">📧 Historique des relances</h3>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        ${relancesHTML}
+                    </div>
+                </div>
+            `;
         }
     }
 }
