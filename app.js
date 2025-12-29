@@ -6548,8 +6548,12 @@ async function sendInvoiceViaDrive(invoice, toEmail) {
         }
     } catch (e) { console.warn('Impossible de marquer/sauver la facture après envoi Drive:', e); }
 
-    showToast('✅ Email envoyé avec pièce jointe depuis Drive', 'success');
-    return sendRes;
+    if (sentOk) {
+        showToast('✅ Email envoyé avec pièce jointe depuis Drive', 'success');
+        return { success: true };
+    }
+    // Should not reach here: failure throws above
+    throw new Error('Envoi email via Drive non confirmé');
 }
 
 // Make sync function global
