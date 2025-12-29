@@ -1,10 +1,9 @@
 // Force la demande d'autorisation Gmail (à appeler une fois depuis l'éditeur Apps Script)
 function forceGmailAuthorization() {
-  // Cette fonction force Apps Script à demander les autorisations Gmail
-  // Appelez-la une fois depuis l'éditeur pour déclencher le consentement
   GmailApp.getAliases();
   GmailApp.sendEmail(Session.getActiveUser().getEmail(), 'Test autorisation Gmail', 'Ceci est un test pour forcer l’autorisation Gmail.');
 }
+
 // Importer les factures depuis Sheets
 function importInvoices(sheetId) {
   try {
@@ -15,10 +14,8 @@ function importInvoices(sheetId) {
     }
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) {
-      // Seulement en-tête ou vide
       return createResponse(true, { invoices: [] });
     }
-    // Import générique : les entêtes du Sheets doivent correspondre aux champs attendus
     const headers = data[0];
     const invoices = [];
     for (let i = 1; i < data.length; i++) {
@@ -35,6 +32,7 @@ function importInvoices(sheetId) {
     return createResponse(false, 'Erreur import factures: ' + error.toString());
   }
 }
+
 // MTI CONSULTING - Backend Google Apps Script
 // Services: Drive (stockage JSON) + Gmail API + Calendar API + Sheets API
 
@@ -60,30 +58,16 @@ const companyInfo = {
   bic: 'BOUSFRPPXXX'
 };
 
-// ==========================================
-// ROUTING
-// ==========================================
-
-// Point d'entrée POST
+// Point d'entrée POST (version antérieure, sans enveloppe ContentService)
 function doPost(e) {
   try {
-    // Accepter à la fois JSON et formulaire
-    let data;
-    if (e.postData.type === 'application/x-www-form-urlencoded' && e.parameter.data) {
-      // Données envoyées via formulaire
-      data = JSON.parse(e.parameter.data);
-    } else {
-      // Données JSON directes
-      data = JSON.parse(e.postData.contents);
-    }
-    
+    const data = JSON.parse(e.postData.contents);
     const action = data.action;
-    
+
     Logger.log('Action: ' + action);
-    
-    // Créer la réponse avec headers CORS
+
     let response;
-    
+
     switch(action) {
       case 'saveToDrive':
         response = saveToDrive(data.data);
@@ -98,7 +82,6 @@ function doPost(e) {
         response = sendEmail(data);
         break;
       case 'send_invoice':
-        // Expect either full pdfBase64 in payload or instruct client to provide it
         response = sendInvoiceAction(data);
         break;
       case 'sync_invoices':
@@ -109,6 +92,9 @@ function doPost(e) {
         break;
       case 'savePdfToDrive':
         response = savePdfToDrive(data.pdfBase64, data.pdfFilename, data.folderName);
+        break;
+      case 'listFilesInFolder':
+        response = listFilesInFolder(data.folderName);
         break;
       case 'sendEmailWithDriveFile':
         response = sendEmailWithDriveFile(data);
@@ -158,6 +144,12 @@ function doPost(e) {
       case 'import_quotes':
         response = importQuotes(data.sheetId);
         break;
+      case 'sendRelance':
+        response = sendRelanceManual(data);
+        break;
+      case 'checkRelances':
+        response = checkAndSendRelances();
+        break;
       case 'sendInvoiceWithRAM':
         response = sendInvoiceWithRAM(data);
         break;
@@ -167,103 +159,66 @@ function doPost(e) {
       case 'generateFEC':
         response = generateFEC(data);
         break;
-      case 'sendRelance':
-        response = sendRelanceManual(data);
-        break;
-      case 'checkRelances':
-        response = checkAndSendRelances();
-        return createResponse(true, 'Relances traitées');
       default:
         response = createResponse(false, 'Action inconnue: ' + action);
     }
-    
-    // Retourner avec headers CORS
-    return ContentService
-      .createTextOutput(JSON.stringify(response))
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader('Access-Control-Allow-Origin', '*')
-      .setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-      .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    return response;
   } catch (error) {
     Logger.log('Erreur: ' + error.toString());
-    const errorResponse = createResponse(false, error.toString());
-    return ContentService
-      .createTextOutput(JSON.stringify(errorResponse))
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader('Access-Control-Allow-Origin', '*');
+    return createResponse(false, error.toString());
   }
 }
 
-// Gérer les requêtes OPTIONS (preflight CORS)
-function doOptions(e) {
-  return ContentService
-    .createTextOutput('')
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
-
-// Point d'entrée GET (test)
+// Point d'entrée GET (version antérieure avec JSONP simple)
 function doGet(e) {
   try {
-    // Supporter les appels avec action et data pour éviter CORS preflight
     if (e && e.parameter && e.parameter.action) {
-      const action = e.parameter.action;
-      const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
-      let response;
-      
-      // Router les actions comme dans doPost
+      var action = e.parameter.action;
+      var callback = e.parameter.callback;
+      var resultText = '';
+
       switch (action) {
         case 'ensureStorage':
-          response = ensureStorage();
+          resultText = ensureStorage().getContent();
           break;
         case 'loadFromDrive':
-          response = loadFromDrive();
-          break;
-        case 'checkRelances':
-          response = checkAndSendRelances();
-          response = createResponse(true, 'Relances traitées');
-          break;
-        case 'sendRelance':
-          response = sendRelanceManual(data);
+          resultText = loadFromDrive().getContent();
           break;
         case 'importClients':
-          const sheetId = e.parameter.sheetId || CONFIG.SHEETS_ID;
-          response = importClients(sheetId);
+          var sheetId = e.parameter.sheetId || CONFIG.SHEETS_ID;
+          resultText = importClients(sheetId).getContent();
+          break;
+          case 'listFilesInFolder':
+            var folderName = e.parameter.folderName || 'Factures';
+            resultText = listFilesInFolder(folderName).getContent();
+            break;
+        case 'sendRelance':
+          var invNum = e.parameter.invoiceNumber;
+          var lvl = parseInt(e.parameter.level || '1', 10);
+          resultText = sendRelanceManual({ invoiceNumber: invNum, level: lvl }).getContent();
           break;
         default:
-          response = createResponse(false, 'Action inconnue (GET): ' + action);
+          resultText = createResponse(false, 'Action inconnue (GET): ' + action).getContent();
       }
-      
-      // Retourner avec CORS headers
-      return ContentService
-        .createTextOutput(JSON.stringify(response))
-        .setMimeType(ContentService.MimeType.JSON)
-        .setHeader('Access-Control-Allow-Origin', '*')
-        .setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-        .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (callback) {
+        return ContentService.createTextOutput(callback + '(' + resultText + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+      } else {
+        return ContentService.createTextOutput(resultText).setMimeType(ContentService.MimeType.JSON);
+      }
     }
 
-    // Réponse par défaut avec CORS
-    const defaultResponse = {
+    const defaultResponse = ContentService.createTextOutput(JSON.stringify({
       success: true,
       message: 'MTI CONSULTING Backend OK',
       timestamp: new Date().toISOString()
-    };
-    return ContentService
-      .createTextOutput(JSON.stringify(defaultResponse))
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader('Access-Control-Allow-Origin', '*');
+    })).setMimeType(ContentService.MimeType.JSON);
+    return defaultResponse;
   } catch (err) {
-    const errorResponse = createResponse(false, 'Erreur doGet: ' + err.toString());
-    return ContentService
-      .createTextOutput(JSON.stringify(errorResponse))
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader('Access-Control-Allow-Origin', '*');
+    return createResponse(false, 'Erreur doGet: ' + err.toString());
   }
 }
-
 // ==========================================
 // GOOGLE DRIVE - STOCKAGE JSON
 // ==========================================
@@ -358,8 +313,7 @@ function sendEmail(data) {
     // Note: avoid forcing 'from' (alias) to prevent authorization issues; send from the account executing the script.
     GmailApp.sendEmail(to, subject, body, {
       attachments: [pdfBlob],
-      name: 'MTI CONSULTING',
-      from: CONFIG.EMAIL_FROM
+      name: 'MTI CONSULTING'
     });
     
     Logger.log('Email envoyé à: ' + to);
@@ -2376,11 +2330,17 @@ function sendRelanceEmail(invoice, client, level) {
       body = body.replace(new RegExp(key, 'g'), replacements[key]);
     });
     
-    // Adresse email du client
-    const recipientEmail = client && client.email ? client.email : invoice.clientEmail;
+    // Adresse email du client (préfère email_facturation si présent)
+    var recipientEmail = null;
+    if (client) {
+      recipientEmail = client.email_facturation || client.email || null;
+    }
+    if (!recipientEmail) {
+      recipientEmail = invoice.clientEmail || null;
+    }
     
     if (!recipientEmail) {
-      Logger.log('⚠️ Pas d\'email pour le client de la facture ' + invoice.number);
+      Logger.log('⚠️ Pas d\'email de facturation pour la facture ' + invoice.number + ' (client: ' + (client ? client.name : invoice.client) + ')');
       return false;
     }
     
@@ -2389,7 +2349,6 @@ function sendRelanceEmail(invoice, client, level) {
     
     // Préparer les options d'email
     const emailOptions = {
-      from: CONFIG.EMAIL_FROM,
       name: CONFIG.COMPANY_NAME,
       htmlBody: body.replace(/\n/g, '<br>')
     };

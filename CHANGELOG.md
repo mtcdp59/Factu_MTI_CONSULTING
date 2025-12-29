@@ -72,6 +72,29 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
+## [2.4.1] - 2025-12-30
+
+### Corrections et robustesse relances (CORS/JSONP, alias Gmail, PDF Drive)
+
+- Backend: retrait du champ `from` lors des envois Gmail pour éviter les erreurs d'alias; envoi se fait depuis le compte du script.
+- Backend: action `sendRelance` exposée aussi via `doGet` (JSONP) pour contourner les préflights CORS en local.
+- Backend: action `listFilesInFolder` exposée via `doPost` et `doGet` (JSONP) pour permettre au frontend de détecter les PDFs déjà présents.
+- Backend: sélection de l'email destinataire fiabilisée (`client.email_facturation` → `client.email` → `invoice.clientEmail`).
+- Frontend: `sendRelanceFromList()`
+  - Vérifie si le PDF facture existe déjà dans Drive (`Factures/Facture_<ref>.pdf`) et évite une régénération si présent.
+  - Sauvegarde le PDF en Drive si manquant, puis envoie la relance.
+  - Fallback JSONP si le POST échoue (CORS), pour éviter l’ouverture du compose Gmail.
+- Maintenance: nettoyage des duplications dans `backend/AppScript.js` (doPost/doGet) et retour au comportement du 24/12 (réponses directes JSON/JSONP, sans en-têtes CORS).
+- Tests: ajout d’un fichier de tests Apps Script `backend/tests_relances.gs` pour valider relances auto et manuelles sans CORS.
+
+### Fichiers impactés
+
+- `backend/AppScript.js` : doGet JSONP `sendRelance`, exposition `listFilesInFolder`, retrait `from` dans mails, sélection d’email de facturation.
+- `app.js` : fallback JSONP pour relance, réutilisation PDF Drive si présent, sauvegarde conditionnelle.
+- `backend/tests_relances.gs` : scénarios de test relances (création facture, relances auto/manuelles).
+
+---
+
 ## [2.3.0] - 2025-12-29
 
 ### Nouvelle fonctionnalité : Export FEC (Fichier des Écritures Comptables)

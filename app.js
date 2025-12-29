@@ -295,16 +295,9 @@ async function syncToDrive() {
     return await saveToDrive();
 }
 
-// Charger toutes les données depuis Google Drive
+// Charger toutes les données depuis Google Drive (POST puis fallback JSONP si CORS)
 async function loadFromDrive() {
-    try {
-        const result = await callBackend('loadFromDrive');
-        if (!result.success) {
-            console.log('Pas de données Drive, utilisation données par défaut');
-            return false;
-        }
-
-        const data = result.data;
+    const applyData = (data) => {
         if (data.clients) clients = data.clients;
         if (data.invoices) invoices = data.invoices;
         if (data.quotes) quotes = data.quotes;
@@ -314,10 +307,8 @@ async function loadFromDrive() {
         if (data.companyInfo) companyInfo = data.companyInfo;
         if (data.taxSettings) taxSettings = data.taxSettings;
 
-
-    
         console.log('✅ Données chargées depuis Drive');
-        
+
         // Sauvegarde backup localStorage
         try {
             if (quotes && quotes.length > 0) {
@@ -341,10 +332,28 @@ async function loadFromDrive() {
         if (typeof renderRAMList === 'function') renderRAMList();
         if (typeof renderRecurringList === 'function') renderRecurringList();
         if (typeof updateCADisplay === 'function') updateCADisplay();
+    };
 
+    try {
+        const result = await callBackend('loadFromDrive');
+        if (!result.success) {
+            console.log('Pas de données Drive, utilisation données par défaut');
+            return false;
+        }
+        applyData(result.data || {});
         return true;
     } catch (error) {
-        console.error('❌ Erreur chargement:', error);
+        console.warn('loadFromDrive POST failed, trying JSONP fallback', error);
+        try {
+            const result = await callBackendJSONP('loadFromDrive');
+            if (result && result.success) {
+                applyData(result.data || {});
+                console.log('✅ Données chargées via JSONP (fallback)');
+                return true;
+            }
+        } catch (jsonpErr) {
+            console.warn('loadFromDrive JSONP failed:', jsonpErr);
+        }
         try { showBackendRawResponse(error && (error.stack || error.message || JSON.stringify(error))); } catch (e) {}
         return false;
     }
@@ -7514,14 +7523,60 @@ async function sendRelanceFromList(index) {
     }
 
     try {
-        // Call backend to send relance (same as sendInvoiceViaDrive pattern)
+        // Ensure the invoice PDF exists in Drive; avoid re-generation if already present
+        const safeInvNum = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '').replace(/^FAC-/i, '');
+        const expectedName = 'Facture_' + safeInvNum + '.pdf';
+
+        let pdfExists = false;
+        try {
+            const listRes = await callBackend('listFilesInFolder', { folderName: 'Factures' });
+            if (listRes && listRes.success && Array.isArray(listRes.data)) {
+                pdfExists = listRes.data.some(f => String(f.fileName).trim() === expectedName);
+            }
+        } catch (listErr) {
+            // Fallback to JSONP listing if POST failed
+            try {
+                const jsonpList = await callBackendJSONP('listFilesInFolder', { folderName: 'Factures' });
+                if (jsonpList && jsonpList.success && Array.isArray(jsonpList.data)) {
+                    pdfExists = jsonpList.data.some(f => String(f.fileName).trim() === expectedName);
+                }
+            } catch (jsonpListErr) {
+                console.warn('Liste fichiers (Drive) indisponible, on tentera de créer le PDF:', jsonpListErr);
+            }
+        }
+
+        if (!pdfExists) {
+            try {
+                const pdfBase64 = await generateInvoicePDFBase64(invoice);
+                await callBackend('savePdfToDrive', {
+                    pdfBase64,
+                    pdfFilename: expectedName,
+                    folderName: 'Factures'
+                });
+            } catch (prepErr) {
+                console.warn('Préparation PDF relance (Drive) échouée, tentative d\'envoi sans PJ:', prepErr);
+            }
+        }
+
+        // Call backend to send relance
         const result = await callBackend('sendRelance', {
             invoiceNumber: invoice.number,
             level: parseInt(level)
         });
         if (!result || !result.success) {
             try { showBackendRawResponse(result); } catch (e) {}
-            throw new Error((result && (result.data || result.error)) || 'Erreur lors de l\'envoi de la relance');
+            // Fallback to JSONP to avoid CORS issues
+            try {
+                const jsonpRes = await callBackendJSONP('sendRelance', {
+                    invoiceNumber: invoice.number,
+                    level: parseInt(level)
+                });
+                if (!jsonpRes || !jsonpRes.success) {
+                    throw new Error((jsonpRes && (jsonpRes.data || jsonpRes.error)) || 'Erreur lors de l\'envoi de la relance (JSONP)');
+                }
+            } catch (jsonpErr) {
+                throw jsonpErr;
+            }
         }
 
         // Record relance in invoice and persist
