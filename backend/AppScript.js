@@ -2297,6 +2297,33 @@ function checkAndSendRelances() {
 }
 
 /**
+ * Récupère le PDF d'une facture depuis Drive
+ * @param {string} invoiceNumber - Numéro de facture
+ * @returns {Blob|null} Blob du PDF ou null si non trouvé
+ */
+function getInvoicePdfFromDrive(invoiceNumber) {
+  try {
+    const folderName = 'Factures';
+    const pdfFilename = 'Facture_' + invoiceNumber + '.pdf';
+    
+    const folder = getOrCreateFolder(folderName);
+    const files = folder.getFilesByName(pdfFilename);
+    
+    if (files.hasNext()) {
+      const file = files.next();
+      Logger.log('📄 PDF trouvé: ' + file.getName());
+      return file.getBlob();
+    } else {
+      Logger.log('⚠️ PDF non trouvé: ' + pdfFilename);
+      return null;
+    }
+  } catch (error) {
+    Logger.log('❌ Erreur getInvoicePdfFromDrive: ' + error.toString());
+    return null;
+  }
+}
+
+/**
  * Envoie un email de relance pour une facture
  * @param {Object} invoice - Facture
  * @param {Object} client - Client
@@ -2353,12 +2380,26 @@ function sendRelanceEmail(invoice, client, level) {
       return false;
     }
     
-    // Envoyer l'email
-    GmailApp.sendEmail(recipientEmail, subject, body, {
+    // Récupérer le PDF de la facture depuis Drive
+    const pdfBlob = getInvoicePdfFromDrive(invoice.number);
+    
+    // Préparer les options d'email
+    const emailOptions = {
       from: CONFIG.EMAIL_FROM,
       name: CONFIG.COMPANY_NAME,
       htmlBody: body.replace(/\n/g, '<br>')
-    });
+    };
+    
+    // Ajouter la pièce jointe si le PDF existe
+    if (pdfBlob) {
+      emailOptions.attachments = [pdfBlob.setName('Facture_' + invoice.number + '.pdf')];
+      Logger.log('📎 PDF joint à l\'email');
+    } else {
+      Logger.log('⚠️ Email envoyé sans PDF (fichier introuvable)');
+    }
+    
+    // Envoyer l'email
+    GmailApp.sendEmail(recipientEmail, subject, body, emailOptions);
     
     Logger.log('📧 Email relance niveau ' + level + ' envoyé à ' + recipientEmail);
     return true;
@@ -2450,7 +2491,7 @@ function sendRelanceManual(params) {
       
       // Sauvegarder
       dataContent.data.invoices = invoices;
-      saveToDrive(dataContent);
+      saveToDrive(dataContent.data);  // ← Sauvegarder dataContent.data, pas dataContent
       
       return createResponse(true, {
         message: 'Relance niveau ' + level + ' envoyée avec succès',
