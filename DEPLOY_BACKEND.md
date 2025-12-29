@@ -32,7 +32,7 @@ Error: Action inconnue: sync_quotes
 6. Collez le nouveau code (Ctrl+V)
 7. Enregistrez (Ctrl+S)
 
-### 3. Déployer la nouvelle version
+### 3. Déployer la nouvelle version (incluant relances et envoi factures)
 
 #### Option A : Via l'interface graphique
 
@@ -60,6 +60,19 @@ Error: Action inconnue: sync_quotes
 7. Copiez la **nouvelle URL** de déploiement
 8. ⚠️ Si vous créez un nouveau déploiement, mettez à jour `BACKEND_URL` dans [app.js](app.js) (ligne 6)
 
+#### Permissions requises
+
+- Gmail (envoi d'emails)
+- Google Drive (création/lecture de fichiers PDF)
+
+Lors du premier envoi, Apps Script demandera l'autorisation. Acceptez les scopes Gmail/Drive.
+
+#### Nouvelles actions exposées (JSON/JSONP)
+
+- `sendRelance` (POST/GET) → envoi relances niveau 1/2/3 avec PJ PDF
+- `listFilesInFolder` (POST/GET) → lister fichiers Drive (ex: Factures)
+- `sendEmailWithDriveFile` (POST/GET) → envoyer une facture en PJ depuis Drive (fileId)
+
 ### 4. Vérifier le déploiement
 
 1. Une fois déployé, Google Apps Script affichera :
@@ -75,6 +88,12 @@ Error: Action inconnue: sync_quotes
      method: 'POST',
      body: JSON.stringify({ action: 'ensureStorage' })
    }).then(r => r.json()).then(console.log)
+
+// Envoi relance (JSONP GET)
+const cb = '__cb' + Date.now();
+window[cb] = (res) => console.log(res);
+const u = 'https://script.google.com/macros/s/VOTRE_ID/exec?action=sendRelance&invoiceNumber=FAC-202512-001&level=1&callback=' + cb;
+var s = document.createElement('script'); s.src = u; document.body.appendChild(s);
    ```
 
 ### 5. Tester dans l'application
@@ -142,7 +161,8 @@ Si ce n'est pas déjà fait :
 **Solution** :
 1. Vérifiez que `BACKEND_URL` dans app.js pointe vers la bonne URL
 2. Dans Google Apps Script, vérifiez que "Qui peut accéder" = "Tout le monde"
-3. Redéployez si nécessaire
+3. Essayez le fallback JSONP (GET avec `callback`), par ex. `action=sendRelance`
+4. Redéployez si nécessaire
 
 ## 📊 Nouvelles fonctions ajoutées
 
