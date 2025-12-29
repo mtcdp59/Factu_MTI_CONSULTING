@@ -147,6 +147,9 @@ function doPost(e) {
       case 'sendRelance':
         response = sendRelanceManual(data);
         break;
+      case 'sendEmailWithDriveFile':
+        response = sendEmailWithDriveFile(data);
+        break;
       case 'checkRelances':
         response = checkAndSendRelances();
         break;
@@ -197,6 +200,14 @@ function doGet(e) {
           var invNum = e.parameter.invoiceNumber;
           var lvl = parseInt(e.parameter.level || '1', 10);
           resultText = sendRelanceManual({ invoiceNumber: invNum, level: lvl }).getContent();
+          break;
+        case 'sendEmailWithDriveFile':
+          var to = e.parameter.to;
+          var subject = e.parameter.subject;
+          var body = e.parameter.body;
+          var fileId = e.parameter.fileId;
+          var fileName = e.parameter.fileName;
+          resultText = sendEmailWithDriveFile({ to: to, subject: subject, body: body, fileId: fileId, fileName: fileName }).getContent();
           break;
         default:
           resultText = createResponse(false, 'Action inconnue (GET): ' + action).getContent();
@@ -655,7 +666,7 @@ function sendEmailWithDriveFile(data) {
 
     var blob = file.getBlob().setName(data.fileName || file.getName());
 
-    GmailApp.sendEmail(to, subject, body, { attachments: [blob], name: 'MTI CONSULTING', from: CONFIG.EMAIL_FROM });
+    GmailApp.sendEmail(to, subject, body, { attachments: [blob], name: 'MTI CONSULTING' });
 
     Logger.log('Email envoyé avec pièce jointe Drive: ' + to + ' / ' + fileId);
     return createResponse(true, { message: 'Email envoyé (Drive PJ)', to: to, fileId: fileId });

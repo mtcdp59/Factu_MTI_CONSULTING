@@ -84,6 +84,10 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
   - Vérifie si le PDF facture existe déjà dans Drive (`Factures/Facture_<ref>.pdf`) et évite une régénération si présent.
   - Sauvegarde le PDF en Drive si manquant, puis envoie la relance.
   - Fallback JSONP si le POST échoue (CORS), pour éviter l’ouverture du compose Gmail.
+- Frontend: `sendInvoiceViaDrive()` aligné
+  - Réutilisation du PDF existant en Drive si présent (listing Drive).
+  - Sauvegarde conditionnelle si absent.
+  - Fallback JSONP pour l'envoi d'email `sendEmailWithDriveFile` si le POST échoue.
 - Maintenance: nettoyage des duplications dans `backend/AppScript.js` (doPost/doGet) et retour au comportement du 24/12 (réponses directes JSON/JSONP, sans en-têtes CORS).
 - Tests: ajout d’un fichier de tests Apps Script `backend/tests_relances.gs` pour valider relances auto et manuelles sans CORS.
 

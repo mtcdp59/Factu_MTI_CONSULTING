@@ -6480,25 +6480,60 @@ async function sendInvoiceViaDrive(invoice, toEmail) {
     const subject = `Facture ${invoice.number} - MTI CONSULTING`;
     const body = generateEmailBody(invoice, client || { name: invoice.client });
 
-    // Generate PDF base64
-    const pdfBase64 = await generateInvoicePDFBase64(invoice);
-
-    // Save to Drive via backend
+    // Reuse existing PDF in Drive if present to avoid regeneration
     const safeInvNumSend = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
-    const saveRes = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: `Facture_${safeInvNumSend}.pdf`, folderName: 'Factures' });
-    if (!saveRes || saveRes.success === false) {
-        try { showBackendRawResponse(saveRes); } catch (e) {}
-        throw new Error((saveRes && (saveRes.data || saveRes.error)) || 'Erreur sauvegarde PDF sur Drive');
+    const expectedName = `Facture_${safeInvNumSend}.pdf`;
+
+    let fileId = null;
+    try {
+        const listRes = await callBackend('listFilesInFolder', { folderName: 'Factures' });
+        if (listRes && listRes.success && Array.isArray(listRes.data)) {
+            const match = listRes.data.find(f => String(f.fileName).trim() === expectedName);
+            if (match) fileId = match.fileId;
+        }
+    } catch (listErr) {
+        try {
+            const jsonpList = await callBackendJSONP('listFilesInFolder', { folderName: 'Factures' });
+            if (jsonpList && jsonpList.success && Array.isArray(jsonpList.data)) {
+                const match = jsonpList.data.find(f => String(f.fileName).trim() === expectedName);
+                if (match) fileId = match.fileId;
+            }
+        } catch (jsonpListErr) {
+            // listing unavailable; we'll generate
+        }
     }
 
-    const fileId = saveRes.data && saveRes.data.fileId;
-    if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
+    if (!fileId) {
+        // Generate PDF base64 and save to Drive via backend
+        const pdfBase64 = await generateInvoicePDFBase64(invoice);
+        const saveRes = await callBackend('savePdfToDrive', { pdfBase64: pdfBase64, pdfFilename: expectedName, folderName: 'Factures' });
+        if (!saveRes || saveRes.success === false) {
+            try { showBackendRawResponse(saveRes); } catch (e) {}
+            throw new Error((saveRes && (saveRes.data || saveRes.error)) || 'Erreur sauvegarde PDF sur Drive');
+        }
+        fileId = saveRes.data && saveRes.data.fileId;
+        if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
+    }
 
     // Send email by referencing Drive file
-    const sendRes = await callBackend('sendEmailWithDriveFile', { to: toEmail, subject: subject, body: body, fileId: fileId, fileName: `Facture_${safeInvNumSend}.pdf` });
-    if (!sendRes || sendRes.success === false) {
-        try { showBackendRawResponse(sendRes); } catch (e) {}
-        throw new Error((sendRes && (sendRes.data || sendRes.error)) || 'Erreur envoi email via Drive');
+    let sentOk = false;
+    try {
+        const sendRes = await callBackend('sendEmailWithDriveFile', { to: toEmail, subject, body, fileId, fileName: expectedName });
+        sentOk = !!(sendRes && sendRes.success);
+        if (!sentOk) {
+            try { showBackendRawResponse(sendRes); } catch (e) {}
+        }
+    } catch (postErr) {
+        // try JSONP fallback
+        try {
+            const jsonpRes = await callBackendJSONP('sendEmailWithDriveFile', { to: toEmail, subject, body, fileId, fileName: expectedName });
+            sentOk = !!(jsonpRes && jsonpRes.success);
+            if (!sentOk) {
+                throw new Error((jsonpRes && (jsonpRes.data || jsonpRes.error)) || 'Erreur envoi email via Drive (JSONP)');
+            }
+        } catch (jsonpErr) {
+            throw jsonpErr;
+        }
     }
 
     // Mark invoice sent and persist
