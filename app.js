@@ -57,15 +57,19 @@ async function callBackend(action, payload = {}) {
     }
     
     try {
+        // Prepare the body with action and payload
         const body = JSON.stringify(Object.assign({ action }, payload));
-        console.debug('Calling backend:', CONFIG.BACKEND_URL, body);
+        
+        console.debug('Calling backend:', CONFIG.BACKEND_URL, 'action:', action);
 
-        // Avoid setting 'application/json' Content-Type to prevent CORS preflight.
-        // Sending a plain text body (JSON string) will keep Content-Type as a simple type
-        // (text/plain;charset=UTF-8) and avoid the OPTIONS preflight on most browsers.
+        // POST without explicit Content-Type header to avoid CORS preflight
+        // This keeps the Content-Type as text/plain;charset=UTF-8 which is a "simple" request
+        // Simple requests don't trigger CORS preflight OPTIONS
         const resp = await fetch(CONFIG.BACKEND_URL, {
             method: 'POST',
-            body
+            body: body,
+            // Don't set Content-Type header explicitly - let browser use text/plain
+            // This prevents CORS preflight which Google Apps Script doesn't handle well
         });
 
         // If the response is opaque due to CORS misconfiguration, resp.ok will be false or fetch may throw
@@ -3273,6 +3277,7 @@ function renderInvoiceList() {
                 <button class="btn btn-sm btn-primary" onclick="generateRAMForInvoice(${index})" title="Générer Rapport d'Activité Mensuelle" style="margin-left: var(--space-4);">📊 RAM</button>
                 <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
                 ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button class="btn btn-sm btn-success" onclick="sendInvoiceWithRAM(${index})" title="Envoyer Facture + RAM ensemble" style="margin-left: var(--space-4);">📧+📊 Facture+RAM</button>` : ''}
+                <button class="btn btn-sm btn-warning" onclick="sendRelanceFromList(${index})" title="Envoyer une relance" style="margin-left: var(--space-4);">🔔 Relancer</button>
                 <div style="margin-top: 6px; display: inline-flex; gap: 6px;">
                     <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Brouillon')" title="Marquer Brouillon">📝 Brouillon</button>
                     <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Envoyée')" title="Marquer Envoyée">📤 Envoyée</button>
@@ -7459,6 +7464,54 @@ async function sendInvoiceByEmail(index) {
         alert(`✅ Facture envoyée à ${client.email_facturation}`);
     } catch (error) {
         console.error('❌ Erreur:', error);
+        alert('Erreur : ' + (error.message || error));
+    }
+}
+
+// Envoyer une relance pour une facture (même pattern que sendInvoiceByEmail)
+async function sendRelanceFromList(index) {
+    const invoice = invoices[index];
+    const client = clients.find(c => c.name === invoice.client);
+
+    if (!client || !client.email_facturation) {
+        alert('❌ Email de facturation manquant');
+        return;
+    }
+
+    // Ask for reminder level
+    const level = prompt('Niveau de relance :\n1 = Rappel aimable\n2 = Relance ferme\n3 = Mise en demeure\n\nEntrez 1, 2 ou 3:', '1');
+    if (!level || ![1, 2, 3].includes(parseInt(level))) {
+        return;
+    }
+
+    try {
+        // Call backend to send relance
+        const result = await callBackend('sendRelance', {
+            invoiceNumber: invoice.number,
+            level: parseInt(level)
+        });
+        if (!result || !result.success) {
+            try { showBackendRawResponse(result); } catch (e) {}
+            throw new Error((result && (result.data || result.error)) || 'Erreur lors de l\'envoi de la relance');
+        }
+
+        // Record relance in invoice and persist
+        try {
+            if (!invoice.relances) invoice.relances = [];
+            invoice.relances.push({
+                date: new Date().toISOString(),
+                level: parseInt(level),
+                daysLate: Math.floor((new Date() - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24)),
+                sent: true,
+                manual: true
+            });
+            await saveToDrive();
+            renderInvoiceList();
+        } catch (e) { console.warn('Impossible de mettre à jour la facture après relance:', e); }
+
+        showToast(`✅ Relance niveau ${level} envoyée à ${client.email_facturation}`, 'success');
+    } catch (error) {
+        console.error('❌ Erreur relance:', error);
         alert('Erreur : ' + (error.message || error));
     }
 }
