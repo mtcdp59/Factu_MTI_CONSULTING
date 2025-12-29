@@ -67,7 +67,16 @@ const companyInfo = {
 // Point d'entrée POST
 function doPost(e) {
   try {
-    const data = JSON.parse(e.postData.contents);
+    // Accepter à la fois JSON et formulaire
+    let data;
+    if (e.postData.type === 'application/x-www-form-urlencoded' && e.parameter.data) {
+      // Données envoyées via formulaire
+      data = JSON.parse(e.parameter.data);
+    } else {
+      // Données JSON directes
+      data = JSON.parse(e.postData.contents);
+    }
+    
     const action = data.action;
     
     Logger.log('Action: ' + action);
@@ -158,15 +167,41 @@ function doPost(e) {
       case 'generateFEC':
         response = generateFEC(data);
         break;
+      case 'sendRelance':
+        response = sendRelanceManual(data);
+        break;
+      case 'checkRelances':
+        response = checkAndSendRelances();
+        return createResponse(true, 'Relances traitées');
       default:
         response = createResponse(false, 'Action inconnue: ' + action);
     }
     
-    return response;
+    // Retourner avec headers CORS
+    return ContentService
+      .createTextOutput(JSON.stringify(response))
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader('Access-Control-Allow-Origin', '*')
+      .setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+      .setHeader('Access-Control-Allow-Headers', 'Content-Type');
   } catch (error) {
     Logger.log('Erreur: ' + error.toString());
-    return createResponse(false, error.toString());
+    const errorResponse = createResponse(false, error.toString());
+    return ContentService
+      .createTextOutput(JSON.stringify(errorResponse))
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader('Access-Control-Allow-Origin', '*');
   }
+}
+
+// Gérer les requêtes OPTIONS (preflight CORS)
+function doOptions(e) {
+  return ContentService
+    .createTextOutput('')
+    .setMimeType(ContentService.MimeType.JSON)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
 // Point d'entrée GET (test)
@@ -2043,5 +2078,378 @@ function formatMontantFEC(montant) {
 function sanitizeForFEC(str) {
   if (!str) return '';
   return str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15);
+}
+
+// ==========================================
+// RELANCES AUTOMATIQUES IMPAYÉS
+// ==========================================
+
+/**
+ * Templates d'emails de relance (3 niveaux)
+ */
+const RELANCE_TEMPLATES = {
+  level1: {
+    subject: 'Rappel aimable - Facture {invoiceNumber}',
+    body: `Bonjour {clientName},
+
+Nous vous contactons concernant la facture {invoiceNumber} d'un montant de {amount}€, dont l'échéance était fixée au {dueDate}.
+
+À ce jour, nous n'avons pas encore reçu votre règlement. Il s'agit peut-être d'un simple oubli de votre part.
+
+Nous vous remercions de bien vouloir régulariser cette situation dans les meilleurs délais.
+
+Si vous avez déjà effectué le paiement, merci de ne pas tenir compte de ce message.
+
+Pour toute question, n'hésitez pas à nous contacter.
+
+Cordialement,
+{companyName}
+{companyPhone}
+{companyEmail}`
+  },
+  
+  level2: {
+    subject: 'RELANCE - Facture {invoiceNumber} impayée',
+    body: `Bonjour {clientName},
+
+Nous revenons vers vous concernant la facture {invoiceNumber} d'un montant de {amount}€, échue depuis le {dueDate}.
+
+Malgré notre précédent rappel, nous constatons que cette facture demeure impayée.
+
+Nous vous demandons de procéder au règlement dans un délai de 7 jours.
+
+En l'absence de régularisation, nous nous verrons contraints d'appliquer les pénalités de retard prévues par nos conditions générales de vente, ainsi que l'indemnité forfaitaire pour frais de recouvrement (40€).
+
+Si vous rencontrez des difficultés, nous vous invitons à nous contacter rapidement afin de trouver une solution amiable.
+
+Cordialement,
+{companyName}
+{companyPhone}
+{companyEmail}`
+  },
+  
+  level3: {
+    subject: 'MISE EN DEMEURE - Facture {invoiceNumber}',
+    body: `MISE EN DEMEURE
+
+{clientName}
+{clientAddress}
+
+Objet : Mise en demeure de payer - Facture {invoiceNumber}
+
+Madame, Monsieur,
+
+Par la présente, nous vous mettons formellement en demeure de régler la facture {invoiceNumber} d'un montant de {amount}€, échue depuis le {dueDate}.
+
+Malgré nos relances des {relance1Date} et {relance2Date}, cette facture demeure impayée à ce jour, soit un retard de {daysLate} jours.
+
+Conformément aux articles L.441-6 et D.441-5 du Code de commerce, nous appliquons :
+- Pénalités de retard : taux BCE + 10 points
+- Indemnité forfaitaire pour frais de recouvrement : 40€
+
+Vous disposez d'un délai de 8 jours à compter de la réception de cette mise en demeure pour procéder au règlement INTÉGRAL de cette somme.
+
+À défaut de paiement dans ce délai, nous engagerons sans autre préavis une procédure de recouvrement judiciaire, entraînant des frais supplémentaires à votre charge.
+
+Pour éviter ces désagréments, nous vous invitons à régulariser votre situation immédiatement.
+
+{companyName}
+{companyPhone}
+{companyEmail}
+{companySiret}`
+  }
+};
+
+/**
+ * Vérifie et envoie les relances automatiques pour les factures impayées
+ * À appeler quotidiennement via déclencheur Google Apps Script
+ */
+function checkAndSendRelances() {
+  try {
+    Logger.log('🔔 Début vérification relances automatiques...');
+    
+    // Charger les données
+    const dataResponse = loadFromDrive();
+    if (!dataResponse || !dataResponse.getContent) {
+      Logger.log('❌ Impossible de charger les données');
+      return;
+    }
+    
+    const dataContent = JSON.parse(dataResponse.getContent());
+    if (!dataContent.success) {
+      Logger.log('❌ Erreur chargement données');
+      return;
+    }
+    
+    const invoices = dataContent.data.invoices || [];
+    const clients = dataContent.data.clients || [];
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let relancesSent = 0;
+    let relancesSkipped = 0;
+    
+    // Parcourir toutes les factures
+    invoices.forEach(function(invoice) {
+      // FILTRES D'EXCLUSION
+      
+      // 1. Statut : uniquement "En attente" (impayées)
+      if (invoice.status !== 'En attente' && invoice.status !== 'En attente de paiement') {
+        return;
+      }
+      
+      // 2. Vérifier si facture a option "ne pas relancer"
+      if (invoice.noAutoRelance === true) {
+        relancesSkipped++;
+        Logger.log('⏭️ Facture ' + invoice.number + ' : relances désactivées (facture)');
+        return;
+      }
+      
+      // 3. Vérifier si client a option "ne jamais relancer"
+      const client = clients.find(function(c) { return c.name === invoice.client; });
+      if (client && client.noAutoRelance === true) {
+        relancesSkipped++;
+        Logger.log('⏭️ Facture ' + invoice.number + ' : relances désactivées (client)');
+        return;
+      }
+      
+      // 4. Vérifier qu'il y a une date d'échéance
+      if (!invoice.dueDate) {
+        Logger.log('⚠️ Facture ' + invoice.number + ' : pas de date d\'échéance');
+        return;
+      }
+      
+      const dueDate = new Date(invoice.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      
+      // Nombre de jours de retard
+      const daysLate = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+      
+      if (daysLate <= 0) {
+        return; // Pas encore en retard
+      }
+      
+      // Initialiser l'historique des relances si absent
+      if (!invoice.relances) {
+        invoice.relances = [];
+      }
+      
+      // Déterminer le niveau de relance à envoyer
+      let relanceLevel = null;
+      
+      Logger.log('📊 Facture ' + invoice.number + ' : ' + daysLate + ' jours de retard, ' + invoice.relances.length + ' relances déjà envoyées');
+      
+      if (daysLate >= 30 && invoice.relances.length === 2) {
+        relanceLevel = 3; // Mise en demeure (J+30)
+      } else if (daysLate >= 15 && invoice.relances.length === 1) {
+        relanceLevel = 2; // Relance ferme (J+15)
+      } else if (daysLate >= 7 && invoice.relances.length === 0) {
+        relanceLevel = 1; // Relance courtoise (J+7)
+      }
+      
+      Logger.log('📌 Niveau de relance calculé : ' + relanceLevel);
+      
+      if (relanceLevel) {
+        // Envoyer la relance
+        const sent = sendRelanceEmail(invoice, client, relanceLevel);
+        
+        if (sent) {
+          // Enregistrer la relance dans l'historique
+          invoice.relances.push({
+            date: today.toISOString().split('T')[0],
+            level: relanceLevel,
+            daysLate: daysLate,
+            sent: true
+          });
+          
+          relancesSent++;
+          Logger.log('✅ Relance niveau ' + relanceLevel + ' envoyée pour facture ' + invoice.number);
+        }
+      }
+    });
+    
+    // Sauvegarder les données mises à jour
+    if (relancesSent > 0) {
+      dataContent.data.invoices = invoices;
+      saveToDrive(dataContent);
+      Logger.log('💾 Données sauvegardées avec historique relances');
+    }
+    
+    Logger.log('🎯 Relances traitées : ' + relancesSent + ' envoyées, ' + relancesSkipped + ' ignorées');
+    
+  } catch (error) {
+    Logger.log('❌ Erreur checkAndSendRelances: ' + error.toString());
+  }
+}
+
+/**
+ * Envoie un email de relance pour une facture
+ * @param {Object} invoice - Facture
+ * @param {Object} client - Client
+ * @param {number} level - Niveau de relance (1, 2 ou 3)
+ * @return {boolean} true si envoyé avec succès
+ */
+function sendRelanceEmail(invoice, client, level) {
+  try {
+    const template = RELANCE_TEMPLATES['level' + level];
+    if (!template) {
+      Logger.log('❌ Template relance niveau ' + level + ' introuvable');
+      return false;
+    }
+    
+    // Préparer les données pour le template
+    const dueDate = new Date(invoice.dueDate);
+    const today = new Date();
+    const daysLate = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+    
+    // Remplacer les placeholders
+    let subject = template.subject;
+    let body = template.body;
+    
+    const replacements = {
+      '{invoiceNumber}': invoice.number || 'N/A',
+      '{clientName}': client ? client.name : invoice.client,
+      '{clientAddress}': client ? (client.address || '') : '',
+      '{amount}': invoice.total || '0',
+      '{dueDate}': formatDate(invoice.dueDate),
+      '{daysLate}': daysLate,
+      '{companyName}': CONFIG.COMPANY_NAME || 'MTI CONSULTING',
+      '{companyPhone}': CONFIG.COMPANY_PHONE || '07 56 98 99 59',
+      '{companyEmail}': CONFIG.EMAIL_FROM || 'contact@mticonsulting.fr',
+      '{companySiret}': CONFIG.COMPANY_SIRET || '994 149 904 00017'
+    };
+    
+    // Ajouter les dates des relances précédentes pour niveau 3
+    if (level === 3 && invoice.relances && invoice.relances.length >= 2) {
+      replacements['{relance1Date}'] = formatDate(invoice.relances[0].date);
+      replacements['{relance2Date}'] = formatDate(invoice.relances[1].date);
+    }
+    
+    // Appliquer les remplacements
+    Object.keys(replacements).forEach(function(key) {
+      subject = subject.replace(new RegExp(key, 'g'), replacements[key]);
+      body = body.replace(new RegExp(key, 'g'), replacements[key]);
+    });
+    
+    // Adresse email du client
+    const recipientEmail = client && client.email ? client.email : invoice.clientEmail;
+    
+    if (!recipientEmail) {
+      Logger.log('⚠️ Pas d\'email pour le client de la facture ' + invoice.number);
+      return false;
+    }
+    
+    // Envoyer l'email
+    GmailApp.sendEmail(recipientEmail, subject, body, {
+      from: CONFIG.EMAIL_FROM,
+      name: CONFIG.COMPANY_NAME,
+      htmlBody: body.replace(/\n/g, '<br>')
+    });
+    
+    Logger.log('📧 Email relance niveau ' + level + ' envoyé à ' + recipientEmail);
+    return true;
+    
+  } catch (error) {
+    Logger.log('❌ Erreur sendRelanceEmail: ' + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Formate une date au format français DD/MM/YYYY
+ */
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return day + '/' + month + '/' + year;
+}
+
+/**
+ * Envoie une relance manuelle (déclenchée par l'utilisateur)
+ * @param {Object} params - {invoiceNumber, level}
+ */
+function sendRelanceManual(params) {
+  try {
+    if (!params || !params.invoiceNumber) {
+      return createResponse(false, 'Numéro de facture manquant');
+    }
+    
+    // Charger les données
+    const dataResponse = loadFromDrive();
+    if (!dataResponse || !dataResponse.getContent) {
+      return createResponse(false, 'Impossible de charger les données');
+    }
+    
+    const dataContent = JSON.parse(dataResponse.getContent());
+    if (!dataContent.success) {
+      return createResponse(false, 'Erreur chargement données');
+    }
+    
+    const invoices = dataContent.data.invoices || [];
+    const clients = dataContent.data.clients || [];
+    
+    // Trouver la facture
+    const invoice = invoices.find(function(inv) {
+      return inv.number === params.invoiceNumber;
+    });
+    
+    if (!invoice) {
+      return createResponse(false, 'Facture introuvable');
+    }
+    
+    // Trouver le client
+    const client = clients.find(function(c) {
+      return c.name === invoice.client;
+    });
+    
+    // Déterminer le niveau de relance
+    let level = params.level || 1;
+    if (!invoice.relances) {
+      invoice.relances = [];
+    }
+    
+    // Forcer le niveau si demandé, sinon calculer automatiquement
+    if (!params.level) {
+      level = invoice.relances.length + 1;
+      if (level > 3) level = 3; // Maximum niveau 3
+    }
+    
+    // Envoyer la relance
+    const sent = sendRelanceEmail(invoice, client, level);
+    
+    if (sent) {
+      // Enregistrer dans l'historique
+      const dueDate = new Date(invoice.dueDate);
+      const today = new Date();
+      const daysLate = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+      
+      invoice.relances.push({
+        date: today.toISOString().split('T')[0],
+        level: level,
+        daysLate: daysLate,
+        sent: true,
+        manual: true
+      });
+      
+      // Sauvegarder
+      dataContent.data.invoices = invoices;
+      saveToDrive(dataContent);
+      
+      return createResponse(true, {
+        message: 'Relance niveau ' + level + ' envoyée avec succès',
+        invoice: invoice
+      });
+    } else {
+      return createResponse(false, 'Erreur lors de l\'envoi de la relance');
+    }
+    
+  } catch (error) {
+    Logger.log('❌ Erreur sendRelanceManual: ' + error.toString());
+    return createResponse(false, error.toString());
+  }
 }
 
