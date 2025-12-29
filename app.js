@@ -181,6 +181,62 @@ async function testBackend() {
     }
 }
 
+// Export FEC (Fichier des Écritures Comptables)
+async function exportFEC() {
+    try {
+        // Demander l'exercice comptable à l'utilisateur
+        const yearStr = prompt('Année de l\'exercice comptable (ex: 2025):', new Date().getFullYear());
+        if (!yearStr) return;
+        
+        const year = parseInt(yearStr);
+        if (isNaN(year) || year < 2000 || year > 2100) {
+            showToast('⚠️ Année invalide', 'error');
+            return;
+        }
+        
+        // Format YYYYMMDD pour le FEC
+        const exerciceStart = year + '0101'; // 1er janvier
+        const exerciceEnd = year + '1231';   // 31 décembre
+        
+        // Extraire SIREN du SIRET (9 premiers chiffres)
+        const siret = companyInfo.siret || '000000000';
+        const siren = siret.replace(/\s/g, '').substring(0, 9);
+        
+        showToast('⏳ Génération du FEC en cours...', 'info');
+        
+        const result = await callBackend('generateFEC', {
+            exerciceStart: exerciceStart,
+            exerciceEnd: exerciceEnd,
+            siren: siren
+        });
+        
+        if (!result.success) {
+            showToast('❌ Erreur: ' + result.message, 'error');
+            return;
+        }
+        
+        const { filename, content, lineCount, invoiceCount } = result.data;
+        
+        // Télécharger le fichier FEC
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast(`✅ FEC exporté : ${invoiceCount} facture(s), ${lineCount} ligne(s)`, 'success');
+        
+        console.log('FEC généré:', filename, 'Lignes:', lineCount, 'Factures:', invoiceCount);
+    } catch (error) {
+        console.error('Erreur export FEC:', error);
+        showToast('❌ Erreur lors de l\'export FEC: ' + error.message, 'error');
+    }
+}
+
 // Affiche la réponse brute du backend dans la modal de test (utile pour diagnostiquer)
 function showBackendRawResponse(text) {
     try {
@@ -7191,6 +7247,10 @@ function initApp() {
     // Backend test button binding
     const testBtn = document.getElementById('testBackendBtn');
     if (testBtn) testBtn.addEventListener('click', testBackend);
+    
+    // Export FEC button binding
+    const exportFECBtn = document.getElementById('exportFECBtn');
+    if (exportFECBtn) exportFECBtn.addEventListener('click', exportFEC);
 
     // Initialize preview-confirm button (always uses Drive mode)
     try { initPreviewConfirmButton(); } catch (e) { console.warn('initPreviewConfirmButton failed', e); }

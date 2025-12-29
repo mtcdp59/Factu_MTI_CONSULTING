@@ -5,6 +5,53 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.3.0] - 2025-12-29
+
+### Nouvelle fonctionnalité : Export FEC (Fichier des Écritures Comptables)
+
+**Conformité DGFIP pour contrôles fiscaux**
+- Export FEC conforme article A.47 A-1 du Livre des Procédures Fiscales
+- Format 18 colonnes séparé par pipe (|), validé par l'outil Test Compta Démat
+- Nom de fichier normalisé : `SirenFECAAAAMMJJ.txt`
+
+**Fonctionnalités**
+- Génération automatique des écritures comptables depuis les factures
+- Filtrage par exercice comptable (année)
+- Écritures de vente (Journal VE) :
+  - Créance client (compte 411xxx)
+  - Produit de vente (compte 706000 - Prestations de services)
+  - TVA collectée (compte 445710)
+- Écritures d'encaissement (Journal BQ) pour factures payées :
+  - Débit banque (compte 512000)
+  - Crédit client avec lettrage automatique
+
+**Workflow et validations**
+- Seules les factures VALIDÉES sont incluses (statuts : En attente, Payée, Envoyée)
+- Exclusion automatique des devis et factures brouillon
+- Validation stricte des dates au format YYYYMMDD (8 chiffres)
+- Montants avec 2 décimales et virgule (format français)
+- Gestion robuste des données manquantes ou invalides
+
+**Interface utilisateur**
+- Bouton "📊 Exporter FEC" dans Paramètres > Divers
+- Saisie de l'année d'exercice via prompt
+- Téléchargement automatique du fichier TXT
+- Feedback utilisateur : nombre de factures et lignes exportées
+
+**Technique**
+- Backend : fonction `generateFEC()` dans AppScript.js
+- Frontend : fonction `exportFEC()` dans app.js
+- Extraction SIREN depuis SIRET de l'entreprise
+- Format date robuste : gestion ISO 8601, Date objects, validation
+- Logs détaillés pour debug et audit
+
+**Fichiers impactés**
+- `backend/AppScript.js` : générateur FEC avec comptabilité BNC
+- `app.js` : interface utilisateur et appel backend
+- `index.html` : bouton export dans onglet Paramètres
+
+---
+
 ## [2.2.3] - 2025-12-24
 
 ### Harmonisation Devis ↔ Factures, PDF et Statuts

@@ -155,6 +155,9 @@ function doPost(e) {
       case 'clearRAMSheet':
         response = clearRAMSheet();
         break;
+      case 'generateFEC':
+        response = generateFEC(data);
+        break;
       default:
         response = createResponse(false, 'Action inconnue: ' + action);
     }
@@ -1696,5 +1699,349 @@ function parseQuoteDescription(description) {
       total: 0
     };
   });
+}
+
+// ==========================================
+// FEC (FICHIER DES ÉCRITURES COMPTABLES)
+// ==========================================
+
+/**
+ * Génère un fichier FEC (Fichier des Écritures Comptables) conforme à la norme DGFIP
+ * Format: 18 colonnes séparées par pipe (|)
+ * Arrêté du 29 juillet 2013
+ * 
+ * @param {string} exerciceStart - Date début exercice (YYYYMMDD)
+ * @param {string} exerciceEnd - Date fin exercice (YYYYMMDD)
+ * @param {string} siren - SIREN de l'entreprise
+ */
+function generateFEC(params) {
+  try {
+    if (!params || typeof params !== 'object') {
+      return createResponse(false, 'Paramètres manquants');
+    }
+    
+    const { exerciceStart, exerciceEnd, siren } = params;
+    
+    if (!exerciceStart || !exerciceEnd || !siren) {
+      return createResponse(false, 'Paramètres requis: exerciceStart, exerciceEnd, siren (format YYYYMMDD)');
+    }
+    
+    // Charger les données depuis Drive
+    const dataResponse = loadFromDrive();
+    if (!dataResponse || !dataResponse.getContent) {
+      return createResponse(false, 'Impossible de charger les données');
+    }
+    
+    const dataContent = JSON.parse(dataResponse.getContent());
+    if (!dataContent.success) {
+      return createResponse(false, 'Erreur chargement données: ' + dataContent.data);
+    }
+    
+    const invoices = dataContent.data.invoices || [];
+    
+    // Filtrer les factures de l'exercice
+    const startDate = new Date(
+      parseInt(exerciceStart.substring(0, 4)),
+      parseInt(exerciceStart.substring(4, 6)) - 1,
+      parseInt(exerciceStart.substring(6, 8))
+    );
+    
+    const endDate = new Date(
+      parseInt(exerciceEnd.substring(0, 4)),
+      parseInt(exerciceEnd.substring(4, 6)) - 1,
+      parseInt(exerciceEnd.substring(6, 8))
+    );
+    
+    const filteredInvoices = invoices.filter(function(inv) {
+      // EXCLURE les devis et factures non validées (brouillon, etc.)
+      // Seules les factures DÉFINITIVES doivent apparaître dans le FEC
+      if (!inv.date) return false;
+      
+      // Vérifier le statut/type de document
+      // On n'inclut QUE les factures (pas les devis)
+      if (inv.type && inv.type.toLowerCase() === 'devis') return false;
+      
+      // Exclure les factures en brouillon ou annulées
+      // Statuts acceptés pour le FEC : 'En attente', 'Payée', 'Envoyée'
+      const validStatuses = ['En attente', 'Payée', 'Envoyée', 'En attente de paiement'];
+      if (inv.status && !validStatuses.includes(inv.status)) {
+        Logger.log('⚠️ Facture exclue du FEC (statut invalide): ' + (inv.number || 'sans numéro') + ' - Statut: ' + inv.status);
+        return false;
+      }
+      
+      // Filtrer par période d'exercice
+      const invDate = new Date(inv.date);
+      return invDate >= startDate && invDate <= endDate;
+    });
+    
+    // Générer les lignes FEC
+    const fecLines = [];
+    
+    // En-tête FEC (18 colonnes)
+    const header = [
+      'JournalCode',
+      'JournalLib',
+      'EcritureNum',
+      'EcritureDate',
+      'CompteNum',
+      'CompteLib',
+      'CompAuxNum',
+      'CompAuxLib',
+      'PieceRef',
+      'PieceDate',
+      'EcritureLib',
+      'Debit',
+      'Credit',
+      'EcritureLet',
+      'DateLet',
+      'ValidDate',
+      'Montantdevise',
+      'Idevise'
+    ].join('|');
+    
+    fecLines.push(header);
+    
+    // Générer les écritures pour chaque facture
+    let ecritureNum = 1;
+    
+    filteredInvoices.forEach(function(invoice) {
+      const dateStr = formatDateFEC(invoice.date);
+      
+      // VALIDATION CRITIQUE: Ignorer les factures sans date valide (obligatoire pour FEC)
+      if (!dateStr || dateStr.length !== 8) {
+        Logger.log('⚠️ Facture ignorée (date invalide): ' + (invoice.number || 'sans numéro'));
+        return; // Passer à la facture suivante
+      }
+      
+      const montantHT = parseFloat(invoice.total) || 0;
+      const tva = invoice.tvaEnabled ? montantHT * 0.20 : 0;
+      const montantTTC = montantHT + tva;
+      
+      const pieceRef = invoice.number || ('FAC' + ecritureNum);
+      const clientName = invoice.client || 'Client inconnu';
+      
+      // Ligne 1: Créance client (411xxx)
+      // Note: EcritureNum doit être UNIQUE sur tout le FEC (numérotation continue)
+      fecLines.push([
+        'VE',                                    // JournalCode
+        'Ventes',                                // JournalLib
+        String(ecritureNum),                     // EcritureNum (numérotation continue sans préfixe)
+        dateStr,                                 // EcritureDate
+        '411' + sanitizeForFEC(clientName).substring(0, 3).toUpperCase(), // CompteNum
+        'Clients',                               // CompteLib
+        sanitizeForFEC(clientName),             // CompAuxNum
+        clientName,                             // CompAuxLib
+        pieceRef,                               // PieceRef
+        dateStr,                                // PieceDate
+        'Facture ' + pieceRef,                  // EcritureLib
+        formatMontantFEC(montantTTC),           // Debit
+        formatMontantFEC(0),                    // Credit (doit être 0,00 et non vide)
+        '',                                     // EcritureLet (à blanc si non utilisé)
+        '',                                     // DateLet (à blanc si non utilisé)
+        dateStr,                                // ValidDate
+        '',                                     // Montantdevise (à blanc si non utilisé)
+        ''                                      // Idevise (à blanc si non utilisé)
+      ].join('|'));
+      
+      // Ligne 2: Produit de vente (706xxx ou 708xxx selon activité BNC)
+      fecLines.push([
+        'VE',
+        'Ventes',
+        String(ecritureNum),
+        dateStr,
+        '706000',                               // CompteNum - Prestations de services
+        'Prestations de services',              // CompteLib
+        '',                                     // CompAuxNum (à blanc si non utilisé)
+        '',                                     // CompAuxLib (à blanc si non utilisé)
+        pieceRef,
+        dateStr,
+        'Facture ' + pieceRef,
+        formatMontantFEC(0),                    // Debit (doit être 0,00)
+        formatMontantFEC(montantHT),            // Credit
+        '',
+        '',
+        dateStr,
+        '',                                     // Montantdevise (à blanc)
+        ''                                      // Idevise (à blanc)
+      ].join('|'));
+      
+      // Ligne 3: TVA collectée (si applicable)
+      if (tva > 0) {
+        fecLines.push([
+          'VE',
+          'Ventes',
+          String(ecritureNum),
+          dateStr,
+          '445710',                             // CompteNum - TVA collectée
+          'TVA collectee',                      // CompteLib (sans accent pour compatibilité)
+          '',
+          '',
+          pieceRef,
+          dateStr,
+          'TVA 20% - Facture ' + pieceRef,
+          formatMontantFEC(0),                  // Debit (doit être 0,00)
+          formatMontantFEC(tva),                // Credit
+          '',
+          '',
+          dateStr,
+          '',                                   // Montantdevise (à blanc)
+          ''                                    // Idevise (à blanc)
+        ].join('|'));
+      }
+      
+      // Si facture payée, générer l'écriture d'encaissement (journal BQ)
+      if (invoice.status === 'Payée' && invoice.dateReception && invoice.montantRecu) {
+        const datePaiement = formatDateFEC(invoice.dateReception);
+        const montantRecu = parseFloat(invoice.montantRecu) || 0;
+        
+        ecritureNum++;
+        
+        // Ligne 4: Encaissement banque
+        fecLines.push([
+          'BQ',                                 // JournalCode - Banque
+          'Banque',                             // JournalLib
+          String(ecritureNum),
+          datePaiement,
+          '512000',                             // CompteNum - Banque
+          'Banque',                             // CompteLib
+          '',
+          '',
+          'PAIEMENT-' + pieceRef,
+          datePaiement,
+          'Paiement facture ' + pieceRef,
+          formatMontantFEC(montantRecu),        // Debit
+          formatMontantFEC(0),                  // Credit (doit être 0,00)
+          '',
+          '',
+          datePaiement,
+          '',                                   // Montantdevise (à blanc)
+          ''                                    // Idevise (à blanc)
+        ].join('|'));
+        
+        // Ligne 5: Apurement créance client
+        fecLines.push([
+          'BQ',
+          'Banque',
+          String(ecritureNum),
+          datePaiement,
+          '411' + sanitizeForFEC(clientName).substring(0, 3).toUpperCase(),
+          'Clients',
+          sanitizeForFEC(clientName),
+          clientName,
+          'PAIEMENT-' + pieceRef,
+          datePaiement,
+          'Paiement facture ' + pieceRef,
+          formatMontantFEC(0),                  // Debit (doit être 0,00)
+          formatMontantFEC(montantRecu),        // Credit
+          'X',                                  // EcritureLet - Lettrage
+          datePaiement,                         // DateLet
+          datePaiement,
+          '',                                   // Montantdevise (à blanc)
+          ''                                    // Idevise (à blanc)
+        ].join('|'));
+      }
+      
+      ecritureNum++;
+    });
+    
+    // Générer le nom de fichier conforme: SirenFECAAAAMMJJ (AAAA = année clôture)
+    const anneeClot = exerciceEnd.substring(0, 4);
+    const moisClot = exerciceEnd.substring(4, 6);
+    const jourClot = exerciceEnd.substring(6, 8);
+    const filename = siren + 'FEC' + anneeClot + moisClot + jourClot + '.txt';
+    
+    const fecContent = fecLines.join('\n');
+    
+    Logger.log('✅ FEC généré: ' + filteredInvoices.length + ' factures, ' + fecLines.length + ' lignes');
+    
+    return createResponse(true, {
+      filename: filename,
+      content: fecContent,
+      lineCount: fecLines.length,
+      invoiceCount: filteredInvoices.length,
+      exerciceStart: exerciceStart,
+      exerciceEnd: exerciceEnd,
+      siren: siren
+    });
+    
+  } catch (error) {
+    Logger.log('❌ Erreur generateFEC: ' + error.toString());
+    return createResponse(false, 'Erreur génération FEC: ' + error.toString());
+  }
+}
+
+/**
+ * Formate une date au format FEC (YYYYMMDD) - OBLIGATOIRE pour le validateur DGFIP
+ * @param {string} dateStr - Date au format ISO (YYYY-MM-DD) ou Date object
+ * @return {string} Date au format YYYYMMDD (8 chiffres) ou chaîne vide si invalide
+ */
+function formatDateFEC(dateStr) {
+  if (!dateStr) return '';
+  
+  try {
+    var date;
+    
+    // Si c'est déjà un objet Date
+    if (dateStr instanceof Date) {
+      date = dateStr;
+    }
+    // Si c'est une chaîne au format ISO (YYYY-MM-DD)
+    else if (typeof dateStr === 'string') {
+      // Nettoyer et extraire la date
+      var cleanStr = dateStr.trim().split('T')[0]; // Enlever l'heure si présente
+      
+      if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+        // Format ISO valide
+        var parts = cleanStr.split('-');
+        date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      } else if (/^\d{8}$/.test(cleanStr)) {
+        // Déjà au format YYYYMMDD
+        return cleanStr;
+      } else {
+        // Essayer de parser quand même
+        date = new Date(dateStr);
+      }
+    } else {
+      return '';
+    }
+    
+    // Vérifier que la date est valide
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+    
+    // Formater en YYYYMMDD (8 chiffres obligatoires)
+    var year = date.getFullYear();
+    var month = String(date.getMonth() + 1).padStart(2, '0');
+    var day = String(date.getDate()).padStart(2, '0');
+    
+    return String(year) + month + day;
+    
+  } catch (e) {
+    Logger.log('Erreur formatDateFEC: ' + e.toString() + ' pour date: ' + dateStr);
+    return '';
+  }
+}
+
+/**
+ * Formate un montant pour le FEC (2 décimales, virgule comme séparateur selon norme française)
+ * Les montants Debit et Credit sont OBLIGATOIRES : 0,00 si zéro (jamais vide)
+ * @param {number} montant - Montant à formater
+ * @return {string} Montant formaté (ex: 1234,56 ou 0,00)
+ */
+function formatMontantFEC(montant) {
+  if (!montant || montant === 0) return '0,00';
+  // Convertir en string avec 2 décimales et remplacer point par virgule
+  return montant.toFixed(2).replace('.', ',');
+}
+
+/**
+ * Nettoie une chaîne pour l'utiliser dans le FEC (alphanumerique uniquement)
+ * @param {string} str - Chaîne à nettoyer
+ * @return {string} Chaîne nettoyée
+ */
+function sanitizeForFEC(str) {
+  if (!str) return '';
+  return str.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15);
 }
 

@@ -58,11 +58,22 @@
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.2.2-blue)
+![Version](https://img.shields.io/badge/version-2.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
 
 ## Historique des versions
+
+### v2.3.0 (Décembre 2025)
+
+**Export FEC (Fichier des Écritures Comptables)**
+- Génération automatique du FEC conforme DGFIP (article A.47 A-1 LPF)
+- Format 18 colonnes validé par Test Compta Démat
+- Écritures comptables : ventes (VE) et encaissements (BQ)
+- Filtrage intelligent : seules les factures validées (pas les devis/brouillons)
+- Bouton d'export dans Paramètres > Divers
+- Nom fichier normalisé : `SirenFECAAAAMMJJ.txt`
+- Comptabilité BNC avec comptes 411 (clients), 706 (services), 445710 (TVA), 512 (banque)
 
 ### v2.2.3 (Décembre 2025)
 
