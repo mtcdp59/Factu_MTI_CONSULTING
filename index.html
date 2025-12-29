@@ -865,6 +865,17 @@ tr:hover {
                         </div>
                     </div>
 
+                    <!-- Relances automatiques -->
+                    <div class="form-group" style="border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: 16px;">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="invoiceNoAutoRelance" style="width: auto; margin: 0;">
+                            <span>🔕 Désactiver les relances automatiques pour cette facture</span>
+                        </label>
+                        <small style="color: var(--color-text-secondary); font-size: 12px; display: block; margin-top: 4px; margin-left: 24px;">
+                            Si coché, aucun email de relance ne sera envoyé automatiquement pour cette facture, même si le client autorise les relances.
+                        </small>
+                    </div>
+
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;">Annuler</button>
                         <button type="button" class="btn btn-secondary" id="previewInvoice">👁️ Aperçu</button>
@@ -1298,6 +1309,17 @@ tr:hover {
                     <div class="form-group">
                         <label class="form-label">Nom contact facturation</label>
                         <input type="text" class="form-control" id="clientFormContactName" placeholder="Prénom Nom">
+                    </div>
+                    
+                    <!-- Relances automatiques -->
+                    <div class="form-group" style="border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: 16px;">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="clientFormNoAutoRelance" style="width: auto; margin: 0;">
+                            <span>🔕 Désactiver les relances automatiques pour ce client</span>
+                        </label>
+                        <small style="color: var(--color-text-secondary); font-size: 12px; display: block; margin-top: 4px; margin-left: 24px;">
+                            Si coché, aucun email de relance ne sera envoyé automatiquement pour les factures impayées de ce client.
+                        </small>
                     </div>
                     
                     <!-- Informations SIRENE enrichies (auto-remplies) -->

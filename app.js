@@ -929,7 +929,9 @@ function setupClientFormHandlers() {
                 naf: document.getElementById('clientFormNAF')?.value || '',
                 categorie_juridique: document.getElementById('clientFormCategorieJuridique')?.value || '',
                 etat_administratif: document.getElementById('clientFormEtat')?.value || '',
-                type_siege: document.getElementById('clientFormTypeSiege')?.value || ''
+                type_siege: document.getElementById('clientFormTypeSiege')?.value || '',
+                // Relances automatiques
+                noAutoRelance: document.getElementById('clientFormNoAutoRelance')?.checked || false
             };
 
             if (index === -1) {
@@ -976,6 +978,10 @@ function editClient(index) {
     if (categorieJuridiqueEl) categorieJuridiqueEl.value = client.categorie_juridique || '';
     if (etatEl) etatEl.value = client.etat_administratif || '';
     if (typeSiegeEl) typeSiegeEl.value = client.type_siege || '';
+    
+    // Charger checkbox relances automatiques
+    const noAutoRelanceEl = document.getElementById('clientFormNoAutoRelance');
+    if (noAutoRelanceEl) noAutoRelanceEl.checked = client.noAutoRelance || false;
     
     const card = document.getElementById('clientFormCard');
     if (card) card.style.display = 'block';
@@ -1686,7 +1692,10 @@ function setupInvoiceSaveHandler() {
             quantity: currentInvoiceItems[0]?.quantity || 0,
             unitPrice: currentInvoiceItems[0]?.unitPrice || 0,
             total: totalHT,
-            sourceQuoteNumber: currentInvoiceSourceQuoteNumber || ''
+            sourceQuoteNumber: currentInvoiceSourceQuoteNumber || '',
+            // Relances automatiques
+            noAutoRelance: document.getElementById('invoiceNoAutoRelance')?.checked || false,
+            relances: [] // Historique des relances
         };
 
         if (isEditMode && editingInvoiceIndex >= 0) {
