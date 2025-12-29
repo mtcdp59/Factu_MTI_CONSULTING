@@ -5,6 +5,73 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.4.0] - 2025-12-29
+
+### Nouvelle fonctionnalité : Système de relances automatiques pour factures impayées
+
+**Système à 3 niveaux d'escalade**
+- **Niveau 1 (J+7)** : Rappel aimable - ton professionnel courtois
+- **Niveau 2 (J+15)** : Relance ferme - mention des pénalités de retard  
+- **Niveau 3 (J+30)** : Mise en demeure - référence légale (Code de commerce L.441-6)
+
+**Filtrage dual-level**
+- Désactivation par **CLIENT** : `noAutoRelance` checkbox dans formulaire client
+- Désactivation par **FACTURE** : `noAutoRelance` checkbox dans formulaire facture
+- Logique AND : relance envoyée uniquement si AUCUN des deux flags n'est activé
+
+**Fonctionnalités automatiques**
+- Trigger Apps Script : exécution quotidienne à 8h
+- Vérification automatique de toutes les factures impayées
+- Historique complet : dates, niveaux, état (envoyée/brouillon), type (auto/manuel)
+- Pièce jointe PDF automatique avec chaque relance
+
+**Relances manuelles**
+- Bouton **🔔 Relancer** dans la liste des factures
+- Sélection du niveau de relance (1, 2 ou 3)
+- Sélecteur de niveau via prompt utilisateur
+- Enregistrement immédiat dans l'historique
+
+**Email avec templates dynamiques**
+- 18 placeholders dynamiques : {invoiceNumber}, {clientName}, {dueDate}, {daysLate}, {amount}, etc.
+- Personnalisation complète : en-têtes, corps, signature
+- Pièce jointe PDF : nom normalisé, récupération automatique depuis Drive
+- Fallback Gmail compose si backend indisponible
+
+**Interface utilisateur**
+- Historique des relances dans le modal de visualisation facture
+- Code couleur par niveau : 🟢 niveau 1, 🟠 niveau 2, 🔴 niveau 3
+- Affichage pour chaque relance : date, niveau, jours de retard, statut (envoyée/brouillon), type (auto/manuel)
+- Toast notifications pour feedback utilisateur
+
+**Configuration et déploiement**
+- Guide complet : `docs/DEMARRAGE.md` - Section "Configuration des relances automatiques"
+- Instructions pas-à-pas pour créer le trigger Apps Script
+- Permissions Google requises : Gmail, Drive, Calendrier
+
+**Fonctionnalité marketing**
+- Améliore la trésorerie : relances automatiques = paiements plus rapides
+- Conforme légalement : mise en demeure avec références légales
+- Professionnalisme : automatis​ation évite les oublis
+
+**Technique**
+- Backend : `checkAndSendRelances()` pour vérification automatique
+- Backend : `sendRelanceManual()` pour relances manuelles  
+- Backend : `sendRelanceEmail()` avec gestion PDF et CORS
+- Backend : `getInvoicePdfFromDrive()` pour retrieval des factures
+- Backend : `RELANCE_TEMPLATES` avec 3 templates préconfigurés
+- Frontend : `sendRelanceFromList()` avec fallback Gmail compose
+- Frontend : Historique intégré dans `renderInvoicePreviewImpl()`
+- Données : `invoice.relances[]` array avec structure : {date, level, daysLate, sent, manual}
+- Données : `invoice.noAutoRelance` et `client.noAutoRelance` flags
+
+**Fichiers impactés**
+- `backend/AppScript.js` : +400 lignes (RELANCE_TEMPLATES, checkAndSendRelances, sendRelanceEmail, getInvoicePdfFromDrive, sendRelanceManual)
+- `app.js` : +150 lignes (sendRelanceFromList, historique relances dans modal)
+- `index.html` : checkboxes noAutoRelance pour clients et factures
+- `docs/DEMARRAGE.md` : guide configuration trigger automatique
+
+---
+
 ## [2.3.0] - 2025-12-29
 
 ### Nouvelle fonctionnalité : Export FEC (Fichier des Écritures Comptables)

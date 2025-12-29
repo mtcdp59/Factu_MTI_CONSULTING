@@ -39,9 +39,9 @@
 | **Rapprochement bancaire** | ❌ | 0% | 🟠 MOYENNE | Import CSV bancaire non disponible |
 | **Création et partage lien de paiement** | ❌ | 0% | 🟢 BASSE | Stripe/PayPal non intégré |
 | **Signature électronique de devis** | ❌ | 0% | 🟠 MOYENNE | DocuSign/eIDAS non disponible |
-| **Relances automatiques d'impayés** | ❌ | 0% | 🟠 MOYENNE | Système de relances programmées absent |
+| **Relances automatiques d'impayés** | ✅ | 100% | 🟠 MOYENNE | 3 niveaux (J+7, J+15, J+30), déployé v2.4.0 |
 
-### 📈 Score Facturation : **56% (8/14 fonctionnalités complètes ou partielles)**
+### 📈 Score Facturation : **57% (9/14 fonctionnalités complètes ou partielles)**
 
 ---
 
@@ -142,12 +142,24 @@
 
 ---
 
-#### 3. Export FEC (Fichier des Écritures Comptables)
+#### 3. Export FEC (Fichier des Écritures Comptables) ✅ **TERMINÉ v2.3.0**
 **Contexte réglementaire** :
 - Obligation pour contrôles fiscaux
 - Format normalisé (arrêté 29 juillet 2013)
 
 **Actions** :
+- [x] ✅ Génération fichier 18 colonnes pipe-separated
+- [x] ✅ Écritures de vente (Journal VE) : compte 411, 706, 445710
+- [x] ✅ Écritures d'encaissement (Journal BQ) : compte 512 avec lettrage
+- [x] ✅ Filtrage par exercice comptable (année)
+- [x] ✅ Validation dates format YYYYMMDD strict
+- [x] ✅ Exclusion devis/brouillons (seules factures validées)
+- [x] ✅ Validation conformité Test Compta Démat DGFIP
+
+**Statut** : ✅ **Implémenté et validé** (29/12/2025)  
+**Temps réel** : 1 jour/dev  
+**Conformité** : ✅ Article A.47 A-1 LPF validé par outil DGFIP  
+**ROI** : Prêt pour contrôles fiscaux, 0€ expert-comptable pour export
 - [ ] Génération fichier FEC au format TXT (18 colonnes)
 - [ ] Validation structure avec outil DGFIP
 - [ ] Export depuis interface Google Sheets
@@ -161,19 +173,22 @@
 
 ### 🟠 PRIORITÉ MOYENNE (Productivité / Confort)
 
-#### 4. Workflow de Relances Automatiques
+#### 4. Workflow de Relances Automatiques ✅ DÉPLOYÉ v2.4.0
 **Besoin métier** :
 - Relance J+7, J+15, J+30 après échéance
 - Templates emails personnalisables
 - Tracking des relances envoyées
 
 **Actions** :
-- [ ] Système de déclencheurs temporels (Google Apps Script Triggers)
-- [ ] Templates emails (3 niveaux : courtois, ferme, mise en demeure)
-- [ ] Historique des relances dans fiche facture
-- [ ] Option "Ne plus relancer" (client régularisé)
+- [x] Système de déclencheurs temporels (Google Apps Script Triggers)
+- [x] Templates emails (3 niveaux : courtois, ferme, mise en demeure)
+- [x] Historique des relances dans fiche facture
+- [x] Option "Ne plus relancer" (client ET facture, dual-level)
+- [x] Relances manuelles depuis liste factures
+- [x] Pièce jointe PDF automatique
+- [x] Historique avec timestamps et métadata
 
-**Estimation** : 5-8 jours/dev  
+**Déploiement** : v2.4.0 (29/12/2025)
 **ROI** : Réduction DSO (Days Sales Outstanding)
 
 ---
@@ -297,11 +312,11 @@
 
 ### Q1 2025 (Janvier - Mars)
 - ✅ Finaliser V9 RAM (positionnement fixe) ← **FAIT**
-- 🔲 Export FEC (12 jours)
-- 🔲 Workflow relances automatiques (8 jours)
+- ✅ Export FEC ← **FAIT (v2.3.0)**
+- ✅ Workflow relances automatiques ← **FAIT (v2.4.0)**
 - 🔲 Factures d'avoir (7 jours)
 
-**Total Q1** : 27 jours
+**Total Q1** : 7 jours restants
 
 ---
 
