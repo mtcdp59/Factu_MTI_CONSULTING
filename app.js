@@ -7485,7 +7485,7 @@ async function sendRelanceFromList(index) {
     }
 
     try {
-        // Call backend to send relance
+        // Call backend to send relance (same as sendInvoiceViaDrive pattern)
         const result = await callBackend('sendRelance', {
             invoiceNumber: invoice.number,
             level: parseInt(level)
@@ -7496,23 +7496,92 @@ async function sendRelanceFromList(index) {
         }
 
         // Record relance in invoice and persist
-        try {
-            if (!invoice.relances) invoice.relances = [];
-            invoice.relances.push({
-                date: new Date().toISOString(),
-                level: parseInt(level),
-                daysLate: Math.floor((new Date() - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24)),
-                sent: true,
-                manual: true
-            });
-            await saveToDrive();
-            renderInvoiceList();
-        } catch (e) { console.warn('Impossible de mettre à jour la facture après relance:', e); }
+        if (!invoice.relances) invoice.relances = [];
+        invoice.relances.push({
+            date: new Date().toISOString(),
+            level: parseInt(level),
+            daysLate: Math.floor((new Date() - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24)),
+            sent: true,
+            manual: true
+        });
+        await saveToDrive();
+        renderInvoiceList();
 
         showToast(`✅ Relance niveau ${level} envoyée à ${client.email_facturation}`, 'success');
     } catch (error) {
         console.error('❌ Erreur relance:', error);
-        alert('Erreur : ' + (error.message || error));
+        showToast('⚠️ Envoi via backend échoué, ouverture du compose Gmail en fallback', 'error');
+        
+        // Fallback to Gmail compose with relance email template
+        try {
+            const daysLate = Math.floor((new Date() - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24));
+            const subject = `Relance - Facture ${invoice.number} (${daysLate} jours de retard)`;
+            let body = '';
+            
+            // Generate body based on level
+            const levelInt = parseInt(level);
+            if (levelInt === 1) {
+                body = `Bonjour ${client.contact_name || client.name},
+
+Nous vous rappelons que la facture n°${invoice.number} d'un montant de ${formatNumber(invoice.total || 0)} € HT, arrivant à échéance le ${formatDateFR(invoice.dueDate)}, n'a pas encore été réglée.
+
+Nous vous demandons de bien vouloir effectuer le paiement dans les plus brefs délais.
+
+Cordialement,
+MTI CONSULTING`;
+            } else if (levelInt === 2) {
+                body = `Bonjour ${client.contact_name || client.name},
+
+Malgré notre rappel précédent, la facture n°${invoice.number} d'un montant de ${formatNumber(invoice.total || 0)} € HT reste impayée depuis ${daysLate} jours.
+
+Nous vous demandons instamment de régulariser cette situation. Veuillez effectuer le paiement immédiatement.
+
+À défaut de règlement sous 7 jours, nous serons contraints de prendre les mesures nécessaires.
+
+Cordialement,
+MTI CONSULTING`;
+            } else if (levelInt === 3) {
+                body = `Mise en Demeure de Paiement
+
+${client.contact_name || client.name}
+${client.address || ''}
+
+MISE EN DEMEURE
+
+Facture n°: ${invoice.number}
+Montant: ${formatNumber(invoice.total || 0)} € HT
+Échéance: ${formatDateFR(invoice.dueDate)}
+Jours de retard: ${daysLate}
+
+Conformément à l'article L.441-6 du Code de commerce, nous vous adressons cette mise en demeure de procéder au paiement de la somme sus-mentionnée.
+
+À défaut de paiement sous 8 jours à compter de la réception de la présente, nous engagerons une action en recouvrement.
+
+Cordialement,
+MTI CONSULTING`;
+            }
+            
+            // Open Gmail compose
+            const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(client.email_facturation) + '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+            window.open(gmailUrl, '_blank');
+            
+            // Record relance attempt in invoice
+            if (!invoice.relances) invoice.relances = [];
+            invoice.relances.push({
+                date: new Date().toISOString(),
+                level: levelInt,
+                daysLate: daysLate,
+                sent: false,
+                manual: true
+            });
+            await saveToDrive();
+            renderInvoiceList();
+            
+            showToast('📧 Gmail ouvert - relance à envoyer manuellement', 'info');
+        } catch (fallbackErr) {
+            console.error('❌ Fallback échoué:', fallbackErr);
+            alert('Erreur : ' + (error.message || error));
+        }
     }
 }
 
