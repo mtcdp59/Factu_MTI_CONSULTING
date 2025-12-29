@@ -370,44 +370,18 @@
             showLoading(true);
             
             try {
-                // Utiliser formulaire pour éviter CORS preflight
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = backendUrl;
-                form.target = 'cors-frame';
-                
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'data';
-                input.value = JSON.stringify({ action, ...data });
-                form.appendChild(input);
-                
-                document.body.appendChild(form);
-                
-                // Créer iframe pour recevoir la réponse
-                let iframe = document.getElementById('cors-frame');
-                if (!iframe) {
-                    iframe = document.createElement('iframe');
-                    iframe.name = 'cors-frame';
-                    iframe.id = 'cors-frame';
-                    iframe.style.display = 'none';
-                    document.body.appendChild(iframe);
-                }
-                
-                return new Promise((resolve, reject) => {
-                    iframe.onload = () => {
-                        try {
-                            const result = JSON.parse(iframe.contentDocument.body.textContent);
-                            resolve(result);
-                        } catch (e) {
-                            reject(new Error('Erreur de parsing de la réponse'));
-                        } finally {
-                            form.remove();
-                        }
-                    };
-                    form.submit();
-                    setTimeout(() => reject(new Error('Timeout')), 30000);
+                // Utiliser GET pour éviter CORS preflight (simple request)
+                const params = new URLSearchParams({
+                    action: action,
+                    data: JSON.stringify(data)
                 });
+                
+                const response = await fetch(backendUrl + '?' + params.toString(), {
+                    method: 'GET'
+                });
+                
+                const result = await response.json();
+                return result;
             } finally {
                 showLoading(false);
             }

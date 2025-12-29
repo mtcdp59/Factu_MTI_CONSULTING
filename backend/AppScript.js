@@ -207,47 +207,60 @@ function doOptions(e) {
 // Point d'entrée GET (test)
 function doGet(e) {
   try {
-    // If an action is provided as a query parameter, route it here.
-    // This supports simple GET/JSONP checks from the frontend to avoid CORS preflight blockers
-    // (useful for quick tests from file:// or static hosts). Only non-sensitive, small actions
-    // should be exposed via GET (we keep POST for heavier operations).
+    // Supporter les appels avec action et data pour éviter CORS preflight
     if (e && e.parameter && e.parameter.action) {
-      var action = e.parameter.action;
-      var callback = e.parameter.callback;
-      var resultText = '';
-
+      const action = e.parameter.action;
+      const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
+      let response;
+      
+      // Router les actions comme dans doPost
       switch (action) {
         case 'ensureStorage':
-          resultText = ensureStorage().getContent();
+          response = ensureStorage();
           break;
         case 'loadFromDrive':
-          resultText = loadFromDrive().getContent();
+          response = loadFromDrive();
+          break;
+        case 'checkRelances':
+          response = checkAndSendRelances();
+          response = createResponse(true, 'Relances traitées');
+          break;
+        case 'sendRelance':
+          response = sendRelanceManual(data);
           break;
         case 'importClients':
-          // allow optional sheetId via query param
-          var sheetId = e.parameter.sheetId || CONFIG.SHEETS_ID;
-          resultText = importClients(sheetId).getContent();
+          const sheetId = e.parameter.sheetId || CONFIG.SHEETS_ID;
+          response = importClients(sheetId);
           break;
         default:
-          resultText = createResponse(false, 'Action inconnue (GET): ' + action).getContent();
+          response = createResponse(false, 'Action inconnue (GET): ' + action);
       }
-
-      if (callback) {
-        // Return JSONP (application/javascript) so browsers don't enforce CORS on script tags
-        return ContentService.createTextOutput(callback + '(' + resultText + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
-      } else {
-        return ContentService.createTextOutput(resultText).setMimeType(ContentService.MimeType.JSON);
-      }
+      
+      // Retourner avec CORS headers
+      return ContentService
+        .createTextOutput(JSON.stringify(response))
+        .setMimeType(ContentService.MimeType.JSON)
+        .setHeader('Access-Control-Allow-Origin', '*')
+        .setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+        .setHeader('Access-Control-Allow-Headers', 'Content-Type');
     }
 
-    const defaultResponse = ContentService.createTextOutput(JSON.stringify({
+    // Réponse par défaut avec CORS
+    const defaultResponse = {
       success: true,
       message: 'MTI CONSULTING Backend OK',
       timestamp: new Date().toISOString()
-    })).setMimeType(ContentService.MimeType.JSON);
-    return defaultResponse;
+    };
+    return ContentService
+      .createTextOutput(JSON.stringify(defaultResponse))
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader('Access-Control-Allow-Origin', '*');
   } catch (err) {
-    return createResponse(false, 'Erreur doGet: ' + err.toString());
+    const errorResponse = createResponse(false, 'Erreur doGet: ' + err.toString());
+    return ContentService
+      .createTextOutput(JSON.stringify(errorResponse))
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader('Access-Control-Allow-Origin', '*');
   }
 }
 
