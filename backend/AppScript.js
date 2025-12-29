@@ -2298,13 +2298,17 @@ function checkAndSendRelances() {
 
 /**
  * Récupère le PDF d'une facture depuis Drive
- * @param {string} invoiceNumber - Numéro de facture
+ * @param {string} invoiceNumber - Numéro de facture (ex: FAC-202512-001)
  * @returns {Blob|null} Blob du PDF ou null si non trouvé
  */
 function getInvoicePdfFromDrive(invoiceNumber) {
   try {
     const folderName = 'Factures';
-    const pdfFilename = 'Facture_' + invoiceNumber + '.pdf';
+    
+    // Enlever le préfixe "FAC-" si présent pour correspondre au nom de fichier
+    // Ex: "FAC-202512-001" → "202512-001"
+    const invoiceRef = invoiceNumber.replace(/^FAC-/i, '');
+    const pdfFilename = 'Facture_' + invoiceRef + '.pdf';
     
     const folder = getOrCreateFolder(folderName);
     const files = folder.getFilesByName(pdfFilename);
@@ -2392,7 +2396,8 @@ function sendRelanceEmail(invoice, client, level) {
     
     // Ajouter la pièce jointe si le PDF existe
     if (pdfBlob) {
-      emailOptions.attachments = [pdfBlob.setName('Facture_' + invoice.number + '.pdf')];
+      // Garder le nom original du fichier (ex: Facture_202512-001.pdf)
+      emailOptions.attachments = [pdfBlob];
       Logger.log('📎 PDF joint à l\'email');
     } else {
       Logger.log('⚠️ Email envoyé sans PDF (fichier introuvable)');
