@@ -97,7 +97,67 @@ Une fois connecté à Google :
 
 ---
 
+## � Configuration des relances automatiques
+
+L'application dispose d'un système de relances automatiques pour les factures impayées. Celui-ci peut s'exécuter **automatiquement chaque jour à 8h**.
+
+### 🚀 Activer le trigger automatique (optionnel)
+
+Pour que les relances s'envoient **automatiquement**, vous devez configurer un trigger dans Google Apps Script :
+
+#### Étape 1 : Accéder à Apps Script
+
+1. Ouvrez https://script.google.com
+2. Sélectionnez votre projet **"Factu_MTI_CONSULTING"**
+
+#### Étape 2 : Ajouter le trigger
+
+1. Cliquez sur **Triggers** (icône horloge) dans la barre latérale
+2. Cliquez sur **"+ Add Trigger"** en bas à droite
+3. Configurez comme suit :
+
+| Paramètre | Valeur |
+|-----------|--------|
+| **Function** | `checkAndSendRelances` |
+| **Event source** | Time-driven |
+| **Type** | Day timer |
+| **Time of day** | 8am - 9am |
+
+4. Cliquez **"Save"**
+
+#### Étape 3 : Autorisations
+
+À la première exécution, Google demande les permissions :
+- ✅ Accès à Gmail pour envoyer les emails
+- ✅ Accès à Google Drive pour lire/écrire les fichiers
+- ✅ Accès au calendrier (optionnel)
+
+Acceptez les permissions pour continuer.
+
+#### ✅ C'est prêt !
+
+À partir de **demain à 8h**, le système vérifiera automatiquement :
+- 📅 Les factures en retard depuis 7 jours → Relance niveau 1 (rappel aimable)
+- 📅 Les factures en retard depuis 15 jours → Relance niveau 2 (relance ferme)
+- 📅 Les factures en retard depuis 30 jours → Relance niveau 3 (mise en demeure)
+
+**Les relances ne s'envoient que pour :**
+- ✅ Factures avec un client Email valide
+- ✅ Clients **sans** le drapeau "Désactiver relances automatiques"
+- ✅ Factures **sans** le drapeau "Désactiver relances automatiques"
+
+### 📧 Relances manuelles
+
+Vous pouvez **également envoyer une relance immédiatement** depuis la liste des factures :
+
+1. Cliquez sur le bouton **🔔 Relancer** dans la ligne de la facture
+2. Sélectionnez le niveau (1/2/3)
+3. L'email est envoyé immédiatement
+
+---
+
 ## 📞 Support
+````
 
 En cas de problème, vérifiez :
 1. ✅ Serveur HTTP démarré (`http://localhost:8000`)
