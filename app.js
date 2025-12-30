@@ -587,10 +587,11 @@ function renderClientsTable() {
         const totalBilled = clientInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
         const hasEmail = client.email_facturation && client.email_facturation.trim() !== '';
         const emailIcon = hasEmail ? ' ✉️' : '';
+        const noAutoRelanceIcon = client.noAutoRelance ? ' 🔕' : '';
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><strong>${client.name}${emailIcon}</strong></td>
+            <td><strong>${client.name}${emailIcon}${noAutoRelanceIcon}</strong></td>
             <td>${client.siret || '-'}</td>
             <td style="white-space: pre-line; max-width: 200px;">${client.address || '-'}</td>
             <td>${client.naf || '-'}</td>
@@ -3301,8 +3302,9 @@ function renderInvoiceList() {
         const sourceQuoteBadge = invoice.sourceQuoteNumber
             ? `<a href="#" onclick="openQuoteByNumber('${invoice.sourceQuoteNumber}')" title="Ouvrir le devis d'origine" style="text-decoration: none; display: inline-block; padding: 4px 8px; border-radius: 999px; background: rgba(37, 99, 235, 0.12); color: #1d4ed8; font-size: 12px; font-weight: 700;">${invoice.sourceQuoteNumber}</a>`
             : `<span style="color: var(--color-text-secondary); font-size: 12px;">—</span>`;
+        const noAutoRelanceIcon = invoice.noAutoRelance ? ' 🔕' : '';
         row.innerHTML = `
-            <td><strong>${invoice.number}</strong></td>
+            <td><strong>${invoice.number}${noAutoRelanceIcon}</strong></td>
             <td>${invoice.client}</td>
             <td>${sourceQuoteBadge}</td>
             <td>${formatDateFR(invoice.date)}</td>
@@ -3395,6 +3397,22 @@ function editInvoiceInForm(index) {
             unitPrice: invoice.unitPrice || 0,
             total: invoice.total || 0
         }]);
+    }
+
+    // Load noAutoRelance checkbox
+    const noAutoRelanceEl = document.getElementById('invoiceNoAutoRelance');
+    if (noAutoRelanceEl) noAutoRelanceEl.checked = invoice.noAutoRelance || false;
+    
+    // Check if client has noAutoRelance and show warning
+    const clientObj = clients.find(c => c.name === invoice.client);
+    const relanceWarningDiv = document.getElementById('invoiceRelanceInheritanceWarning');
+    if (relanceWarningDiv) {
+        if (clientObj && clientObj.noAutoRelance) {
+            relanceWarningDiv.style.display = 'block';
+            relanceWarningDiv.innerHTML = '⚠️ <strong>Les relances sont désactivées pour ce client.</strong> Cette facture ne sera pas relancée automatiquement, même si vous décochez la case ci-dessous.';
+        } else {
+            relanceWarningDiv.style.display = 'none';
+        }
     }
 
     // Reset client select to manual mode

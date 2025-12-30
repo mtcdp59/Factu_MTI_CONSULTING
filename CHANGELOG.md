@@ -5,6 +5,26 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [Unreleased]
+
+### Améliorée : Visibilité et UX du contrôle des relances automatiques
+
+**Interface utilisateur**
+- Indicateur visuel 🔕 dans les listes des clients et factures quand les relances sont désactivées
+- Checkbox "Désactiver les relances automatiques" repositionnée en haut des formulaires avec surbrillance orange
+- Message d'avertissement héréditaire : affichage automatique si un client a les relances désactivées lors de l'édition de ses factures
+- Explication claire de la hiérarchie : client prime sur facture
+
+**Synchronisation Google Sheets**
+- Export/Import des clients : nouvelle colonne "Désactiver Relances" (OUI/NON)
+- Export/Import des factures : nouvelle colonne "Désactiver Relances" (OUI/NON)
+- Permet de gérer les relances en masse via Google Sheets
+- Format lisible : "OUI" pour actif, "NON" pour inactif
+
+**Persistance des données**
+- Correction du bug de persistence du flag `noAutoRelance` sur les factures après actualisation
+- Le flag est maintenant chargé correctement lors de l'édition
+
 ## [2.4.0] - 2025-12-29
 
 ### Nouvelle fonctionnalité : Système de relances automatiques pour factures impayées

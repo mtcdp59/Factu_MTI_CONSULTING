@@ -355,7 +355,7 @@ function importClients(sheetId) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     
-    // Trouver les indices des colonnes (9 colonnes enrichies SIRENE)
+    // Trouver les indices des colonnes (10 colonnes enrichies SIRENE + noAutoRelance)
     const nameIdx = headers.indexOf('Nom');
     const siretIdx = headers.indexOf('SIRET');
     const addressIdx = headers.indexOf('Adresse');
@@ -365,6 +365,7 @@ function importClients(sheetId) {
     const categorieIdx = headers.indexOf('Catégorie Juridique');
     const etatIdx = headers.indexOf('État Administratif');
     const typeSiegeIdx = headers.indexOf('Type Siège');
+    const noAutoRelanceIdx = headers.indexOf('Désactiver Relances');
     
     if (nameIdx === -1) {
       return createResponse(false, 'Colonne "Nom" non trouvée');
@@ -385,7 +386,8 @@ function importClients(sheetId) {
         naf: row[nafIdx] || '',
         categorie_juridique: row[categorieIdx] || '',
         etat_administratif: row[etatIdx] || '',
-        type_siege: row[typeSiegeIdx] || ''
+        type_siege: row[typeSiegeIdx] || '',
+        noAutoRelance: noAutoRelanceIdx !== -1 && (row[noAutoRelanceIdx] === true || row[noAutoRelanceIdx] === 'TRUE' || row[noAutoRelanceIdx] === '1' || row[noAutoRelanceIdx] === 'OUI')
       });
     }
     
@@ -412,12 +414,12 @@ function exportClients(sheetId, clients) {
       sheet = spreadsheet.insertSheet(CONFIG.TIERS_SHEET);
     }
     
-    // Clear et headers (9 colonnes enrichies SIRENE)
+    // Clear et headers (10 colonnes enrichies SIRENE + noAutoRelance)
     sheet.clear();
-    sheet.appendRow(['Nom', 'SIRET', 'Adresse', 'Email Facturation', 'Contact', 'Code NAF', 'Catégorie Juridique', 'État Administratif', 'Type Siège']);
+    sheet.appendRow(['Nom', 'SIRET', 'Adresse', 'Email Facturation', 'Contact', 'Code NAF', 'Catégorie Juridique', 'État Administratif', 'Type Siège', 'Désactiver Relances']);
     
     // Formater headers
-    const headerRange = sheet.getRange(1, 1, 1, 9);
+    const headerRange = sheet.getRange(1, 1, 1, 10);
     headerRange.setFontWeight('bold');
     headerRange.setBackground('#4285f4');
     headerRange.setFontColor('#ffffff');
@@ -433,12 +435,13 @@ function exportClients(sheetId, clients) {
         client.naf || '',
         client.categorie_juridique || '',
         client.etat_administratif || '',
-        client.type_siege || ''
+        client.type_siege || '',
+        client.noAutoRelance ? 'OUI' : 'NON'
       ]);
     });
     
     // Auto-resize
-    sheet.autoResizeColumns(1, 9);
+    sheet.autoResizeColumns(1, 10);
     
     Logger.log('Clients exportés: ' + clients.length);
     return createResponse(true, { 
@@ -467,7 +470,7 @@ function exportInvoices(sheetId, invoices) {
     }
 
     sheet.clear();
-    sheet.appendRow(['Number', 'Client', 'Client SIRET', 'Client Address', 'Date', 'DueDate', 'Description', 'Quantity', 'UnitPrice', 'Total', 'Status', 'MontantRecu', 'DateReception']);
+    sheet.appendRow(['Number', 'Client', 'Client SIRET', 'Client Address', 'Date', 'DueDate', 'Description', 'Quantity', 'UnitPrice', 'Total', 'Status', 'MontantRecu', 'DateReception', 'Désactiver Relances']);
 
     invoices.forEach(inv => {
       sheet.appendRow([
@@ -483,11 +486,12 @@ function exportInvoices(sheetId, invoices) {
         inv.total || 0,
         inv.status || '',
         inv.montantRecu || 0,
-        inv.dateReception || ''
+        inv.dateReception || '',
+        inv.noAutoRelance ? 'OUI' : 'NON'
       ]);
     });
 
-    sheet.autoResizeColumns(1, 13);
+    sheet.autoResizeColumns(1, 14);
 
     return createResponse(true, { count: invoices.length, sheetUrl: spreadsheet.getUrl() });
   } catch (error) {
