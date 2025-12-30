@@ -3283,6 +3283,49 @@ function renderInvoiceTable(filteredInvoices) {
     });
 }
 
+// ========== DROPDOWN MENU FUNCTIONS ==========
+
+// Toggle dropdown menu visibility
+function toggleActionsMenu(button) {
+    event.stopPropagation();
+    const menu = button.nextElementSibling;
+    if (!menu || !menu.classList.contains('actions-menu')) return;
+    
+    // Close all other menus
+    document.querySelectorAll('.actions-menu.show').forEach(m => {
+        if (m !== menu) m.classList.remove('show');
+    });
+    
+    // Toggle current menu
+    menu.classList.toggle('show');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.actions-dropdown')) {
+        document.querySelectorAll('.actions-menu.show').forEach(m => m.classList.remove('show'));
+    }
+});
+
+// Change invoice/quote status by clicking badge
+function changeStatusFromBadge(statusBadge, dataType, index, currentStatus) {
+    if (event) event.stopPropagation();
+    const statuses = dataType === 'invoice' ? 
+        ['Brouillon', 'Envoyée', 'Payée', 'Annulée'] : 
+        ['Brouillon', 'Envoyé', 'Accepté', 'Refusé'];
+    
+    const currentIndex = statuses.indexOf(currentStatus);
+    const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+    
+    if (dataType === 'invoice') {
+        setInvoiceStatus(index, nextStatus);
+    } else if (dataType === 'quote') {
+        setQuoteStatus(index, nextStatus);
+    }
+}
+
+// ========== END DROPDOWN FUNCTIONS ==========
+
 // Render invoice list in FACTURES tab
 function renderInvoiceList() {
     const tbody = document.getElementById('invoiceListBody');
@@ -3309,20 +3352,30 @@ function renderInvoiceList() {
             <td>${sourceQuoteBadge}</td>
             <td>${formatDateFR(invoice.date)}</td>
             <td><strong>${formatNumber(invoice.total || 0)} €</strong></td>
-            <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}">${invoice.status || ''}</span></td>
+            <td><span class="status-badge status-${(invoice.status || '').toLowerCase().replace('ée', 'ee').replace('é', 'e')}" style="cursor: pointer;" title="Cliquez pour changer le statut" onclick="changeStatusFromBadge(this, 'invoice', ${index}, '${invoice.status || ''}')">${invoice.status || ''}</span></td>
             <td>
-                <button class="btn btn-sm btn-secondary" onclick="editInvoiceInForm(${index})" title="Modifier">✏️ Modifier</button>
-                <button class="btn btn-sm btn-secondary" onclick="downloadInvoiceFromList(${index})" title="Télécharger PDF" style="margin-left: var(--space-4);">📥 Télécharger</button>
-                <button class="btn btn-sm btn-secondary" onclick="deleteInvoiceFromList(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
-                <button class="btn btn-sm btn-primary" onclick="generateRAMForInvoice(${index})" title="Générer Rapport d'Activité Mensuelle" style="margin-left: var(--space-4);">📊 RAM</button>
-                <button class="btn btn-sm btn-primary" onclick="sendInvoiceEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
-                ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button class="btn btn-sm btn-success" onclick="sendInvoiceWithRAM(${index})" title="Envoyer Facture + RAM ensemble" style="margin-left: var(--space-4);">📧+📊 Facture+RAM</button>` : ''}
-                <button class="btn btn-sm btn-warning" onclick="sendRelanceFromList(${index})" title="Envoyer une relance" style="margin-left: var(--space-4);">🔔 Relancer</button>
-                <div style="margin-top: 6px; display: inline-flex; gap: 6px;">
-                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Brouillon')" title="Marquer Brouillon">📝 Brouillon</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Envoyée')" title="Marquer Envoyée">📤 Envoyée</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Payée')" title="Marquer Payée">✅ Payée</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setInvoiceStatus(${index}, 'Annulée')" title="Marquer Annulée">❌ Annulée</button>
+                <div class="actions-dropdown" style="position: relative; display: inline-block;">
+                    <button class="btn btn-sm btn-secondary" onclick="toggleActionsMenu(this)" title="Menu actions">⋮ Actions</button>
+                    <div class="actions-menu" style="display: none; position: absolute; right: 0; z-index: 1000; background: white; border: 1px solid var(--color-border); border-radius: 4px; min-width: 200px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                        <div style="padding: 8px; border-bottom: 1px solid var(--color-border); font-size: 11px; font-weight: bold; color: var(--color-text-secondary); background: var(--color-bg-secondary);">ÉDITION</div>
+                        <button onclick="editInvoiceInForm(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">✏️ Modifier</button>
+                        <button onclick="downloadInvoiceFromList(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">📥 Télécharger PDF</button>
+                        <button onclick="sendInvoiceEmail(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">📧 Envoyer</button>
+                        
+                        <div style="padding: 8px; border-bottom: 1px solid var(--color-border); border-top: 1px solid var(--color-border); font-size: 11px; font-weight: bold; color: var(--color-text-secondary); background: var(--color-bg-secondary); margin-top: 4px;">GESTION</div>
+                        <button onclick="generateRAMForInvoice(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">📊 Générer RAM</button>
+                        <button onclick="sendRelanceFromList(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">🔔 Relancer</button>
+                        ${rams.some(r => r.invoiceNumber === invoice.number) ? `<button onclick="sendInvoiceWithRAM(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">📧+📊 Facture+RAM</button>` : ''}
+                        <button onclick="deleteInvoiceFromList(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px; color: #d32f2f;">🗑️ Supprimer</button>
+                        
+                        <div style="padding: 8px; border-top: 1px solid var(--color-border); font-size: 11px; font-weight: bold; color: var(--color-text-secondary); background: var(--color-bg-secondary); margin-top: 4px;">STATUT RAPIDE</div>
+                        <div style="display: flex; flex-direction: column; gap: 4px; padding: 4px 8px;">
+                            <button onclick="setInvoiceStatus(${index}, 'Brouillon')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">📝 Brouillon</button>
+                            <button onclick="setInvoiceStatus(${index}, 'Envoyée')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">📤 Envoyée</button>
+                            <button onclick="setInvoiceStatus(${index}, 'Payée')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">✅ Payée</button>
+                            <button onclick="setInvoiceStatus(${index}, 'Annulée')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">❌ Annulée</button>
+                        </div>
+                    </div>
                 </div>
             </td>
         `;
@@ -10039,19 +10092,29 @@ function renderQuoteList() {
             <td>${formatDateFR(quote.validityDate)}</td>
             <td><strong>${formatNumber((quote.total || 0))} €</strong></td>
             <td>${linkedInvoiceBadge}</td>
-            <td><span class="status-badge status-${statusClass}">${quote.status || 'Brouillon'}</span></td>
+            <td><span class="status-badge status-${statusClass}" style="cursor: pointer;" title="Cliquez pour changer le statut" onclick="changeStatusFromBadge(this, 'quote', ${index}, '${quote.status || 'Brouillon'}')">${quote.status || 'Brouillon'}</span></td>
             <td>
-                <button class="btn btn-sm btn-secondary" onclick="editQuoteInForm(${index})" title="Modifier">✏️ Modifier</button>
-                <button class="btn btn-sm btn-secondary" onclick="downloadQuotePDF(${index})" title="Télécharger PDF" style="margin-left: var(--space-4);">📥 Télécharger</button>
-                <button class="btn btn-sm btn-primary" onclick="sendQuoteEmail(${index})" title="Envoyer par email" style="margin-left: var(--space-4);">📧 Envoyer</button>
-                <button class="btn btn-sm btn-success" onclick="convertQuoteToInvoice(${index})" title="Convertir en facture" style="margin-left: var(--space-4);">🔄 Convertir</button>
-                <div style="margin-top: 6px; display: inline-flex; gap: 6px;">
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Brouillon')" title="Marquer Brouillon">📝 Brouillon</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Envoyé')" title="Marquer Envoyé">📤 Envoyé</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Accepté')" title="Marquer Accepté">✅ Accepté</button>
-                    <button class="btn btn-sm btn-secondary" onclick="setQuoteStatus(${index}, 'Refusé')" title="Marquer Refusé">❌ Refusé</button>
+                <div class="actions-dropdown" style="position: relative; display: inline-block;">
+                    <button class="btn btn-sm btn-secondary" onclick="toggleActionsMenu(this)" title="Menu actions">⋮ Actions</button>
+                    <div class="actions-menu" style="display: none; position: absolute; right: 0; z-index: 1000; background: white; border: 1px solid var(--color-border); border-radius: 4px; min-width: 200px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                        <div style="padding: 8px; border-bottom: 1px solid var(--color-border); font-size: 11px; font-weight: bold; color: var(--color-text-secondary); background: var(--color-bg-secondary);">ÉDITION</div>
+                        <button onclick="editQuoteInForm(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">✏️ Modifier</button>
+                        <button onclick="downloadQuotePDF(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">📥 Télécharger PDF</button>
+                        <button onclick="sendQuoteEmail(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">📧 Envoyer</button>
+                        
+                        <div style="padding: 8px; border-bottom: 1px solid var(--color-border); border-top: 1px solid var(--color-border); font-size: 11px; font-weight: bold; color: var(--color-text-secondary); background: var(--color-bg-secondary); margin-top: 4px;">GESTION</div>
+                        <button onclick="convertQuoteToInvoice(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px;">🔄 Convertir en facture</button>
+                        <button onclick="deleteQuote(${index})" style="display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; cursor: pointer; font-size: 13px; color: #d32f2f;">🗑️ Supprimer</button>
+                        
+                        <div style="padding: 8px; border-top: 1px solid var(--color-border); font-size: 11px; font-weight: bold; color: var(--color-text-secondary); background: var(--color-bg-secondary); margin-top: 4px;">STATUT RAPIDE</div>
+                        <div style="display: flex; flex-direction: column; gap: 4px; padding: 4px 8px;">
+                            <button onclick="setQuoteStatus(${index}, 'Brouillon')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">📝 Brouillon</button>
+                            <button onclick="setQuoteStatus(${index}, 'Envoyé')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">📤 Envoyé</button>
+                            <button onclick="setQuoteStatus(${index}, 'Accepté')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">✅ Accepté</button>
+                            <button onclick="setQuoteStatus(${index}, 'Refusé')" style="padding: 4px 8px; text-align: left; border: 1px solid var(--color-border); background: white; border-radius: 3px; cursor: pointer; font-size: 12px;">❌ Refusé</button>
+                        </div>
+                    </div>
                 </div>
-                <button class="btn btn-sm btn-danger" onclick="deleteQuote(${index})" title="Supprimer" style="margin-left: var(--space-4);">🗑️ Supprimer</button>
             </td>
         `;
         tbody.appendChild(row);
