@@ -7,6 +7,32 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Améliorée : Menus déroulants compacts pour actions (Factures & Devis)
+
+**Redesign tables d'actions**
+- Remplacement des listes de boutons inline par menus déroulants à 3 sections
+  - **ÉDITION** : Modifier, Télécharger PDF, Envoyer (email ou Drive)
+  - **GESTION** : Générer RAM/Convertir, Relancer, Supprimer
+  - **STATUT RAPIDE** : Buttons 4 statuts avec changement au clic sur badge
+- Bouton compact "⋮ Actions" réduit l'espace des colonnes Action
+- Corrige le problème d'encapsulation du texte des colonnes N° et Montant sur 2-3 lignes
+
+**Interaction statuts**
+- Badge de statut maintenant cliquable : double clic pour passer au statut suivant
+- Cycle automatique des statuts par catégorie (Facture: Brouillon→Envoyée→Payée→Annulée)
+- Feedback visuel : cursor pointer sur badge, tooltip explicatif
+
+**Application globale**
+- Pattern appliqué à FACTURES et DEVIS (2 tables principales)
+- Clients (2 buttons) et RAMs (4 buttons) : inchangés (déjà compacts)
+- Menus déroulants ferment au clic en dehors (event delegation)
+- Seul un menu ouvert à la fois (fermeture des autres)
+
+**CSS intégré**
+- Styles intégrés dans `<style>` (`.actions-dropdown`, `.actions-menu`, `.actions-menu.show`)
+- Animations hover subtiles (background-color 0.15s)
+- Ombre douce, arrondi 4px, min-width 200px pour lisibilité
+
 ### Améliorée : Visibilité et UX du contrôle des relances automatiques
 
 **Interface utilisateur**
