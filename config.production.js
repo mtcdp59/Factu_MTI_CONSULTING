@@ -6,8 +6,8 @@
 if (typeof window.CONFIG === 'undefined') {
     window.CONFIG = {
         GOOGLE_CLIENT_ID: '419421611576-v36rss6abjs0ahrv3vt9u6tcl4hhtos9.apps.googleusercontent.com',
-        GOOGLE_CLIENT_SECRET: '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',
-        BACKEND_URL: 'https://factu-mti-consulting.vercel.app/api',
+        GOOGLE_CLIENT_SECRET: '',
+        BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwE4GfTi5MQaYdvcwgFg3UUW6l-VEyzbPFYXjhkFGW1ZowsAlrLANMnhp8K-zIQ622D/exec',
         SHEETS_ID: '17YPRArzfDaxQ5m1LKQLSzKOqeuCxfgLisKeQMthESi4',
         CALENDAR_ID: '',  // Optionnel, sinon calendrier par défaut
         DRIVE_FOLDER: 'MTI_CONSULTING_DATA',

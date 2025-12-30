@@ -10,7 +10,7 @@ const CONFIG = window.CONFIG || {
     SHEETS_ID: '17YPRArzfDaxQ5m1LKQLSzKOqeuCxfgLisKeQMthESi4',
     CALENDAR_ID: 'contact@mticonsulting.fr',
     GOOGLE_CLIENT_ID: '419421611576-v36rss6abjs0ahrv3vt9u6tcl4hhtos9.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: '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',
+    GOOGLE_CLIENT_SECRET: '',
     GOOGLE_API_KEY: '',
     GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events',
     DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
