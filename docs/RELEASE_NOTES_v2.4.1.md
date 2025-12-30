@@ -55,3 +55,11 @@ Voir [app.js](app.js).
 ## Références
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Guide déploiement: [DEPLOY_BACKEND.md](DEPLOY_BACKEND.md)
+
+## Problèmes connus
+- `html2canvas` peut afficher des avertissements (ex: `willReadFrequently`); ils sont non bloquants.
+- JSONP (GET) a des limites: pas de en-têtes personnalisables, pas de corps, longueur d’URL; il sert uniquement de fallback pour des actions simples (`sendRelance`, `sendEmailWithDriveFile` avec `fileId`).
+- Si l’envoi Gmail échoue:
+  - vérifier que le Web App est déployé avec accès “Tout le monde (Anyone with the link)”.
+  - vérifier que les permissions Gmail/Drive ont été accordées après déploiement.
+  - vérifier que le PDF existe dans Drive (`Factures/Facture_<num>.pdf`).
