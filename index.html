@@ -720,50 +720,17 @@ tr:hover {
     }
 }
 
-/* Dropdown Menu Styles */
-.actions-dropdown {
-    position: relative;
-    display: inline-block;
-}
-
-.actions-menu {
+/* Secondary Actions Container Styles */
+.invoice-secondary-actions,
+.quote-secondary-actions {
     display: none;
-    position: absolute;
-    right: 0;
-    top: 100%;
-    z-index: 1000;
-    background: white;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    min-width: 200px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    margin-top: 4px;
-    overflow: hidden;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-.actions-menu.show {
-    display: block !important;
-}
-
-.actions-menu > button {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 8px 12px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 13px;
-    color: var(--color-text);
-    transition: background-color 0.15s;
-}
-
-.actions-menu > button:hover {
-    background-color: var(--color-bg-1);
-}
-
-.actions-menu > button:active {
-    background-color: var(--color-bg-2);
+.invoice-secondary-actions.show,
+.quote-secondary-actions.show {
+    display: flex !important;
 }
 
 </style>

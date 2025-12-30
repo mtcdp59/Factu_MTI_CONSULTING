@@ -7,6 +7,32 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Améliorée : Disposition 2 lignes pour actions (Factures & Devis)
+
+**Refonte UX des colonnes actions**
+- Remplacement des menus déroulants par disposition 2-lignes optimisée
+  - **Ligne 1** (toujours visible) : Actions principales avec icônes compactes + bouton toggle (⋯)
+    - Factures : ✏️ Modifier, 📥 Télécharger, 📧 Envoyer, 🔔 Relancer, ⋯
+    - Devis : ✏️ Modifier, 📥 Télécharger, 📧 Envoyer, 🔄 Convertir, ⋯
+  - **Ligne 2** (masquée par défaut) : Actions secondaires et statuts
+    - Factures : 📊 RAM, 📧+📊 Facture+RAM, 🗑️ Supprimer, + 4 statuts
+    - Devis : 🗑️ Supprimer, + 4 statuts
+- Clic sur ⋯ bascule la visibilité de Ligne 2
+- Élimine le besoin de scroller la table pour accéder aux actions
+- Gain d'espace et meilleure lisibilité des données principales
+
+**JavaScript & CSS**
+- Nouvelles fonctions : `toggleInvoiceSecondaryActions()`, `toggleQuoteSecondaryActions()`
+- Nouvelles classes CSS : `.invoice-secondary-actions`, `.quote-secondary-actions`
+- Flexbox layout avec gap et flex-wrap pour adaptabilité responsive
+- Suppression des styles de dropdown déroulant (absolus, shadows complexes)
+
+**Utiliser/UX**
+- Tableau plus compact et lisible par défaut
+- Actions secondaires accessibles au clic sans refonte majeure
+- Pattern cohérent entre factures et devis
+- Émojis intuitifs pour identification rapide des actions
+
 ### Améliorée : Menus déroulants compacts pour actions (Factures & Devis)
 
 **Redesign tables d'actions**
