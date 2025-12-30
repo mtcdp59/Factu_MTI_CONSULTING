@@ -3287,23 +3287,39 @@ function renderInvoiceTable(filteredInvoices) {
 
 // Toggle dropdown menu visibility
 function toggleActionsMenu(button) {
-    event.stopPropagation();
+    if (event) event.stopPropagation();
     const menu = button.nextElementSibling;
-    if (!menu || !menu.classList.contains('actions-menu')) return;
+    if (!menu || !menu.classList.contains('actions-menu')) {
+        console.error('Menu not found after button', button);
+        return;
+    }
     
     // Close all other menus
     document.querySelectorAll('.actions-menu.show').forEach(m => {
-        if (m !== menu) m.classList.remove('show');
+        if (m !== menu) {
+            m.classList.remove('show');
+            m.style.display = 'none';
+        }
     });
     
     // Toggle current menu
-    menu.classList.toggle('show');
+    const isHidden = menu.style.display === 'none' || !menu.classList.contains('show');
+    if (isHidden) {
+        menu.classList.add('show');
+        menu.style.display = 'block';
+    } else {
+        menu.classList.remove('show');
+        menu.style.display = 'none';
+    }
 }
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.actions-dropdown')) {
-        document.querySelectorAll('.actions-menu.show').forEach(m => m.classList.remove('show'));
+        document.querySelectorAll('.actions-menu.show').forEach(m => {
+            m.classList.remove('show');
+            m.style.display = 'none';
+        });
     }
 });
 
