@@ -911,6 +911,7 @@ tr:hover {
                 <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
                     <button class="btn btn-secondary" id="importInvoicesBtnList">📥 Importer depuis Sheets</button>
                     <button class="btn btn-secondary" id="exportInvoicesBtnList">📤 Exporter vers Sheets</button>
+                    <button class="btn btn-danger" onclick="clearInvoicesInSheets()" title="Vider l'onglet Factures dans Sheets">🗑️ Nettoyer Sheets</button>
                 </div>
                 <div style="padding: 8px; background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); margin-bottom: 16px;">
                     <strong>ℹ️ Synchronisation :</strong> Les factures sont automatiquement sauvegardées sur Google Drive. Utilisez ces boutons pour synchroniser avec Google Sheets (onglet "Factures").
@@ -1092,6 +1093,7 @@ tr:hover {
                 <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
                     <button class="btn btn-secondary" onclick="importQuotesFromSheets()">📥 Importer depuis Sheets</button>
                     <button class="btn btn-secondary" onclick="exportQuotesToSheets()">📤 Exporter vers Sheets</button>
+                    <button class="btn btn-danger" onclick="clearQuotesInSheets()" title="Vider l'onglet Devis dans Sheets">🗑️ Nettoyer Sheets</button>
                 </div>
                 <div style="padding: 8px; background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); margin-bottom: 16px;">
                     <strong>ℹ️ Synchronisation :</strong> Les devis sont automatiquement sauvegardés sur Google Drive. Utilisez ces boutons pour synchroniser avec Google Sheets (onglet "Devis").
@@ -1277,6 +1279,7 @@ tr:hover {
                 <button class="btn btn-primary" id="addClientBtn">➕ Nouveau client</button>
                 <button class="btn btn-secondary" id="importClientsBtn">📥 Importer depuis Sheets</button>
                 <button class="btn btn-secondary" id="exportClientsBtn">📤 Exporter vers Sheets</button>
+                <button class="btn btn-danger" onclick="clearClientsInSheets()" title="Vider l'onglet Tiers dans Sheets">🗑️ Nettoyer Sheets</button>
             </div>
                 
                 <div class="table-wrapper">

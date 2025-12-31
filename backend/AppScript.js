@@ -111,6 +111,9 @@ function doPost(e) {
       case 'exportClients':
         response = exportClients(data.sheetId, data.clients);
         break;
+      case 'clearClientSheet':
+        response = clearClientSheet();
+        break;
       case 'addCalendarEvent':
         response = addCalendarEvent(data.event);
         break;
@@ -143,6 +146,12 @@ function doPost(e) {
         break;
       case 'import_quotes':
         response = importQuotes(data.sheetId);
+        break;
+      case 'clearInvoiceSheet':
+        response = clearInvoiceSheet();
+        break;
+      case 'clearQuoteSheet':
+        response = clearQuoteSheet();
         break;
       case 'sendRelance':
         response = sendRelanceManual(data);
@@ -403,9 +412,9 @@ function exportClients(sheetId, clients) {
   if (!sheetId) {
     return createResponse(false, 'Paramètre sheetId manquant');
   }
-  if (!clients || !Array.isArray(clients) || clients.length === 0) {
-    return createResponse(false, 'Paramètre clients manquant ou invalide');
-  }
+
+  // Tolérer les exports vides pour permettre de vider la feuille Tiers
+  const safeClients = Array.isArray(clients) ? clients : [];
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId);
     let sheet = spreadsheet.getSheetByName(CONFIG.TIERS_SHEET);
@@ -425,7 +434,7 @@ function exportClients(sheetId, clients) {
     headerRange.setFontColor('#ffffff');
     
     // Ajouter les données
-    clients.forEach(client => {
+    safeClients.forEach(client => {
       sheet.appendRow([
         client.name,
         client.siret || '',
@@ -443,9 +452,9 @@ function exportClients(sheetId, clients) {
     // Auto-resize
     sheet.autoResizeColumns(1, 10);
     
-    Logger.log('Clients exportés: ' + clients.length);
+    Logger.log('Clients exportés: ' + safeClients.length);
     return createResponse(true, { 
-      count: clients.length,
+      count: safeClients.length,
       sheetUrl: spreadsheet.getUrl()
     });
   } catch (error) {
@@ -458,9 +467,10 @@ function exportInvoices(sheetId, invoices) {
   if (!sheetId) {
     return createResponse(false, 'Paramètre sheetId manquant');
   }
-  if (!invoices || !Array.isArray(invoices) || invoices.length === 0) {
-    return createResponse(false, 'Paramètre invoices manquant ou invalide');
-  }
+
+  // Tolérer les exports vides pour permettre de vider la feuille depuis l'appli
+  const safeInvoices = Array.isArray(invoices) ? invoices : [];
+
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId);
     let sheet = spreadsheet.getSheetByName('Factures');
@@ -472,7 +482,7 @@ function exportInvoices(sheetId, invoices) {
     sheet.clear();
     sheet.appendRow(['Number', 'Client', 'Client SIRET', 'Client Address', 'Date', 'DueDate', 'Description', 'Quantity', 'UnitPrice', 'Total', 'Status', 'MontantRecu', 'DateReception', 'Désactiver Relances']);
 
-    invoices.forEach(inv => {
+    safeInvoices.forEach(inv => {
       sheet.appendRow([
         inv.number || '',
         inv.client || '',
@@ -493,7 +503,7 @@ function exportInvoices(sheetId, invoices) {
 
     sheet.autoResizeColumns(1, 14);
 
-    return createResponse(true, { count: invoices.length, sheetUrl: spreadsheet.getUrl() });
+    return createResponse(true, { count: safeInvoices.length, sheetUrl: spreadsheet.getUrl() });
   } catch (error) {
     return createResponse(false, 'Erreur export invoices: ' + error.toString());
   }
@@ -1149,9 +1159,8 @@ function syncRAMs(sheetId, rams) {
   if (!sheetId) {
     return createResponse(false, 'Paramètre sheetId manquant');
   }
-  if (!rams || !Array.isArray(rams) || rams.length === 0) {
-    return createResponse(false, 'Paramètre rams manquant ou invalide');
-  }
+  // Tolérer les exports vides pour permettre de vider la feuille RAM
+  const safeRams = Array.isArray(rams) ? rams : [];
   try {
     const spreadsheet = SpreadsheetApp.openById(sheetId || CONFIG.SHEETS_ID);
     let sheet = spreadsheet.getSheetByName('RAM');
@@ -1246,52 +1255,52 @@ function importRAMs(sheetId) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     
-    // Trouver les indices des colonnes
-    const clientIdx = headers.indexOf('Client');
-    const moisIdx = headers.indexOf('Mois');
-    const anneeIdx = headers.indexOf('Année');
-    const jourIdx = headers.indexOf('Jour');
-    const dateIdx = headers.indexOf('Date');
-    const heuresIdx = headers.indexOf('Heures');
-    const commentairesIdx = headers.indexOf('Commentaires');
-    const remarquesIdx = headers.indexOf('Remarques');
-    
-    if (clientIdx === -1 || moisIdx === -1) {
-      return createResponse(false, 'Colonnes requises manquantes');
-    }
-    
-    // Regrouper par client/mois/année
-    const ramsMap = {};
-    
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      if (!row[clientIdx]) continue;
-      
-      const client = row[clientIdx];
-      const mois = row[moisIdx];
-      const annee = row[anneeIdx];
-      const key = `${client}_${mois}_${annee}`;
-      
-      if (!ramsMap[key]) {
-        ramsMap[key] = {
-          client: client,
-          monthName: mois,
-          year: annee,
-          remarks: row[remarquesIdx] || '',
-          activities: []
-        };
+    // Ajouter toutes les données
+    const exportDate = new Date().toISOString();
+    const rows = [];
+    safeRams.forEach(ram => {
+      const monthName = getMonthName(parseInt(ram.month || 0, 10));
+      const ramDate = ram.date || '';
+      if (ram.entries && Array.isArray(ram.entries) && ram.entries.length > 0) {
+        ram.entries.forEach(entry => {
+          rows.push([
+            exportDate,
+            ram.client || '',
+            monthName,
+            ram.year || '',
+            entry.day || '',
+            entry.date || '',
+            entry.hours || 0,
+            entry.comments || '',
+            entry.remarks || ''
+          ]);
+        });
+      } else {
+        rows.push([
+          exportDate,
+          ram.client || '',
+          monthName,
+          ram.year || '',
+          '',
+          '',
+          0,
+          '',
+          ''
+        ]);
       }
-      
-      ramsMap[key].activities.push({
-        day: row[jourIdx] || '',
-        dayNum: row[dateIdx] || '',
-        hours: parseFloat(row[heuresIdx]) || 0,
-        comment: row[commentairesIdx] || ''
-      });
+    });
+
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+      sheet.getRange(2, 1, rows.length, headers.length).setBorder(
+        true, true, true, true, true, true
+      );
+      sheet.getRange(2, 1, rows.length, headers.length).setHorizontalAlignment('center');
+      sheet.getRange(2, 7, rows.length, 1).setHorizontalAlignment('right');
     }
-    
-    const rams = Object.values(ramsMap);
-    
+
+    Logger.log('RAMs exportés: ' + rows.length);
+    return createResponse(true, { count: rows.length, sheetUrl: spreadsheet.getUrl() });
     Logger.log('RAMs importés: ' + rams.length);
     return createResponse(true, { rams: rams });
   } catch (error) {
@@ -1518,6 +1527,72 @@ function clearRAMSheet() {
     });
   } catch (error) {
     return createResponse(false, 'Erreur clear RAM: ' + error.toString());
+  }
+}
+
+// Nettoie la feuille Factures (garde uniquement l'en-tête)
+function clearInvoiceSheet() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    const sheet = spreadsheet.getSheetByName('Factures');
+
+    if (!sheet) {
+      return createResponse(false, 'Feuille Factures introuvable');
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return createResponse(true, { message: 'Feuille Factures déjà vide', rowsDeleted: 0 });
+    }
+
+    sheet.deleteRows(2, lastRow - 1);
+    return createResponse(true, { message: `${lastRow - 1} ligne(s) supprimée(s)`, rowsDeleted: lastRow - 1 });
+  } catch (error) {
+    return createResponse(false, 'Erreur clearInvoiceSheet: ' + error.toString());
+  }
+}
+
+// Nettoie la feuille Devis (garde uniquement l'en-tête)
+function clearQuoteSheet() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    const sheet = spreadsheet.getSheetByName('Devis');
+
+    if (!sheet) {
+      return createResponse(false, 'Feuille Devis introuvable');
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return createResponse(true, { message: 'Feuille Devis déjà vide', rowsDeleted: 0 });
+    }
+
+    sheet.deleteRows(2, lastRow - 1);
+    return createResponse(true, { message: `${lastRow - 1} ligne(s) supprimée(s)`, rowsDeleted: lastRow - 1 });
+  } catch (error) {
+    return createResponse(false, 'Erreur clearQuoteSheet: ' + error.toString());
+  }
+}
+
+// Nettoie la feuille Tiers (garde uniquement l'en-tête)
+function clearClientSheet() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SHEETS_ID);
+    const sheet = spreadsheet.getSheetByName(CONFIG.TIERS_SHEET);
+
+    if (!sheet) {
+      return createResponse(false, 'Feuille Tiers introuvable');
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return createResponse(true, { message: 'Feuille Tiers déjà vide', rowsDeleted: 0 });
+    }
+
+    sheet.deleteRows(2, lastRow - 1);
+    return createResponse(true, { message: `${lastRow - 1} ligne(s) supprimée(s)`, rowsDeleted: lastRow - 1 });
+  } catch (error) {
+    return createResponse(false, 'Erreur clearClientSheet: ' + error.toString());
   }
 }
 

@@ -7,6 +7,21 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.4.2] - 2025-12-31
+
+### Automatisation sync Sheets + nettoyage
+
+- Frontend : synchronisation automatique (délaisée 2s) des factures, devis, RAM et tiers vers Google Sheets après chaque sauvegarde Drive ; file d’attente pour éviter les overlaps et rejoue si une sync était en cours.
+- Imports Sheets (factures, devis, RAM, tiers) neutralisent l’auto-sync (`suppressSheetsSync`, `skipSheetsSync`) pour éviter les boucles et ne relancent la sync qu’après l’opération.
+- Backend : exports tolèrent les tableaux vides (factures, devis, RAM, tiers) pour permettre de vider les onglets ; nouvelles actions `clearInvoiceSheet`, `clearQuoteSheet`, `clearClientSheet` et nettoyage RAM plus verbeux.
+- UI : boutons « 🗑️ Nettoyer Sheets » ajoutés sur Factures, Devis et Tiers ; toasts affichent le nombre de lignes supprimées.
+- Sauvegarde locale renforcée après `saveToDrive` (backup invoices/quotes/rams dans localStorage) pour cohérence en cas de purge côté Sheets.
+
+**Fichiers impactés**
+- app.js : auto-sync, sauvegarde locale post-Drive, suppression des boucles lors des imports.
+- backend/AppScript.js : exports tolérant le vide, nouveaux endpoints de nettoyage Sheets.
+- index.html : boutons Nettoyer Sheets (Factures, Devis, Tiers).
+
 ### Améliorée : Disposition 2 lignes pour actions (Factures & Devis)
 
 **Refonte UX des colonnes actions**

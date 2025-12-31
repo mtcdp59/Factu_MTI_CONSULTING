@@ -1,6 +1,14 @@
 
 ## [22/12/2025] Migration complète MTI CONSULTING : email, backend, sécurité, configuration
 
+### [31/12/2025] Sync automatique Sheets + nettoyage
+
+- Auto-sync debouncé (2s) des factures, devis, RAM et tiers vers Sheets après chaque sauvegarde Drive, avec file d'attente pour éviter les chevauchements.
+- Imports Sheets désactivent temporairement l'auto-sync (`suppressSheetsSync`, `skipSheetsSync`) pour éviter les boucles et réactivent à la fin.
+- Boutons « 🗑️ Nettoyer Sheets » sur Factures, Devis et Tiers + toast avec nombre de lignes supprimées ; nettoyage RAM affiche aussi les lignes supprimées.
+- Backend tolère les exports vides et expose `clearInvoiceSheet`, `clearQuoteSheet`, `clearClientSheet` (RAM déjà pris en charge) pour purger les onglets sans altérer les données locales.
+- Sauvegarde locale renforcée après `saveToDrive` (invoices/quotes/rams) pour rester cohérent après une purge Sheets.
+
 ### Modifications apportées dans le commit :
 
 - **Email expéditeur** :
@@ -58,11 +66,17 @@
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue)
+![Version](https://img.shields.io/badge/version-2.4.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
 
 ## Historique des versions
+
+### v2.4.2 (Décembre 2025)
+
+- Auto-sync Sheets (factures/devis/RAM/tiers) après sauvegarde Drive avec debounce 2s et reprise si une sync est déjà en cours.
+- Imports Sheets neutralisent l'auto-sync (`suppressSheetsSync` + `skipSheetsSync`), puis sauvegardent localement (backup) avant relance.
+- Nouveaux endpoints de nettoyage Sheets (Factures/Devis/Tiers) et boutons « 🗑️ Nettoyer Sheets » en UI ; exports tolèrent les tableaux vides.
 
 ### v2.3.0 (Décembre 2025)
 
@@ -203,7 +217,8 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 ### 🔄 Stockage et Synchronisation
 - **Google Drive API** : Sauvegarde automatique dans `mti_data.json`
 - **Google Apps Script Backend** : REST API pour opérations (clients, factures, RAMs)
-- **Google Sheets Export** : Export automatique RAMs vers onglet dédié
+- **Google Sheets Export** : Export automatique RAMs vers onglet dédié + auto-sync debouncé (factures, devis, RAM, tiers) après sauvegarde Drive
+- **Nettoyage Sheets** : Boutons dédiés par onglet (Factures, Devis, Tiers, RAM) + endpoints `clearInvoiceSheet`, `clearQuoteSheet`, `clearClientSheet`
 - Persistance locale (localStorage) + sync cloud
 - Fallback JSONP pour compatibilité CORS
 - Triple-layer : localStorage → Drive → Sheets

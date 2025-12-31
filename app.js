@@ -276,12 +276,26 @@ let editingInvoiceIndex = -1;
 // ==========================================
 
 // Sauvegarder toutes les données dans Google Drive
-async function saveToDrive() {
+async function saveToDrive(options = {}) {
+    const { skipSheetsSync = false } = options;
     try {
         const data = { clients, invoices, quotes, tasks, rams, recurringInvoices, companyInfo, taxSettings };
         const result = await callBackend('saveToDrive', { data });
         if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
         console.log('✅ Sauvegarde Drive OK');
+
+        // Sauvegarde locale pour assurer la cohérence après suppression
+        try {
+            localStorage.setItem('mti_invoices', JSON.stringify(invoices || []));
+            localStorage.setItem('mti_quotes', JSON.stringify(quotes || []));
+            localStorage.setItem('mti_rams', JSON.stringify(rams || []));
+        } catch (e) {
+            console.warn('Backup localStorage après saveToDrive échoué:', e);
+        }
+
+        if (!skipSheetsSync && autoSheetsSyncEnabled && !suppressSheetsSync) {
+            queueSheetsSync('saveToDrive');
+        }
         return true;
     } catch (error) {
         console.error('❌ Erreur sauvegarde:', error);
@@ -293,6 +307,39 @@ async function saveToDrive() {
 // Alias pour compatibilité
 async function syncToDrive() {
     return await saveToDrive();
+}
+
+// Debounced synchronisation automatique vers Sheets (factures, devis, RAM, tiers)
+function queueSheetsSync(reason = '') {
+    if (!autoSheetsSyncEnabled || suppressSheetsSync) return;
+    clearTimeout(sheetsSyncTimer);
+    sheetsSyncTimer = setTimeout(() => syncSheetsNow(reason), SHEETS_SYNC_DEBOUNCE);
+}
+
+async function syncSheetsNow(reason = 'auto') {
+    if (sheetsSyncInProgress) {
+        pendingSheetsSync = true;
+        return;
+    }
+
+    sheetsSyncInProgress = true;
+    pendingSheetsSync = false;
+    try {
+        await callBackend('exportInvoicesToSheets', { sheetId: CONFIG.SHEETS_ID, invoices });
+        await callBackend('sync_quotes', { sheetId: CONFIG.SHEETS_ID, quotes });
+        await callBackend('sync_rams', { sheetId: CONFIG.SHEETS_ID, rams });
+        await callBackend('exportClients', { sheetId: CONFIG.SHEETS_ID, clients });
+        console.log('✅ Sync Sheets auto OK', reason ? `(${reason})` : '');
+    } catch (err) {
+        console.error('syncSheetsNow error:', err);
+        showToast('❌ Sync Sheets auto : ' + (err.message || err), 'error');
+    } finally {
+        sheetsSyncInProgress = false;
+        if (pendingSheetsSync) {
+            pendingSheetsSync = false;
+            queueSheetsSync('replay');
+        }
+    }
 }
 
 // Charger toutes les données depuis Google Drive (POST puis fallback JSONP si CORS)
@@ -362,6 +409,14 @@ async function loadFromDrive() {
 const SYNC_TIMEOUT = 15000;
 let isSyncing = false;
 let lastSyncTime = null;
+
+// Feuilles Sheets : sync auto (debounce)
+const autoSheetsSyncEnabled = true;
+const SHEETS_SYNC_DEBOUNCE = 2000;
+let sheetsSyncTimer = null;
+let sheetsSyncInProgress = false;
+let suppressSheetsSync = false;
+let pendingSheetsSync = false;
 
 // Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
 let clients = [];
@@ -629,6 +684,7 @@ function setupLegacyBindings() {
         if (exportInvoicesBtnList) exportInvoicesBtnList.addEventListener('click', () => { exportInvoicesToSheets(); });
 // Import invoices from Google Sheets
 async function importInvoicesFromSheets() {
+    suppressSheetsSync = true;
     try {
         const result = await callBackend('importInvoicesFromSheets', { sheetId: CONFIG.SHEETS_ID });
         if (!result || !result.success) {
@@ -640,13 +696,15 @@ async function importInvoicesFromSheets() {
             localStorage.setItem('mti_invoices', JSON.stringify(invoices));
             renderInvoiceList();
             showToast(`✅ ${invoices.length} facture(s) importée(s)`,'success');
-            saveToDrive();
+            await saveToDrive({ skipSheetsSync: true });
         } else {
             showToast('Aucune facture importée', 'info');
         }
     } catch (err) {
         console.error('importInvoicesFromSheets error:', err);
         alert('Erreur import factures: ' + (err.message || err));
+    } finally {
+        suppressSheetsSync = false;
     }
 }
 
@@ -659,6 +717,20 @@ async function exportInvoicesToSheets() {
     } catch (err) {
         console.error('exportInvoicesToSheets error:', err);
         alert('Erreur export factures: ' + (err.message || err));
+    }
+}
+
+// Nettoyer l'onglet Sheets Factures
+async function clearInvoicesInSheets() {
+    if (!confirm('⚠️ Cela va vider l\'onglet "Factures" dans Sheets (les données locales restent). Continuer ?')) return;
+    try {
+        const result = await callBackend('clearInvoiceSheet');
+        if (!result || !result.success) throw new Error(result?.data || 'Erreur nettoyage Factures');
+        const deleted = result?.data?.rowsDeleted ?? 0;
+        showToast(`✅ Feuille Factures nettoyée (${deleted} ligne(s) supprimée(s))`,'success');
+    } catch (err) {
+        console.error('clearInvoicesInSheets error:', err);
+        alert('Erreur nettoyage Factures: ' + (err.message || err));
     }
 }
 
@@ -8641,8 +8713,8 @@ async function clearRAMsInSheets() {
         if (!result.success) {
             throw new Error(result.data || 'Erreur lors du nettoyage');
         }
-        
-        showToast('✅ Feuille RAM nettoyée avec succès', 'success');
+        const deleted = result?.data?.rowsDeleted ?? 0;
+        showToast(`✅ Feuille RAM nettoyée (${deleted} ligne(s) supprimée(s))`, 'success');
     } catch (error) {
         console.error('Erreur clearRAMsInSheets:', error);
         showToast('❌ Erreur lors du nettoyage : ' + error.message, 'error');
@@ -9554,12 +9626,13 @@ async function importClientsFromSheets() {
         btn.textContent = '⏳ Import...';
     }
 
+    suppressSheetsSync = true;
     try {
         const result = await callBackend('importClients', { sheetId: CONFIG.SHEETS_ID });
         if (!result || result.success === false) throw new Error((result && result.data) ? result.data : 'Erreur serveur lors de l\'import');
         const payload = result.data || {};
         clients = payload.clients || [];
-        await saveToDrive();
+        await saveToDrive({ skipSheetsSync: true });
         renderClientsTable();
         populateClientSelects();
         alert(`✅ ${clients.length} clients importés`);
@@ -9574,6 +9647,7 @@ async function importClientsFromSheets() {
             btn.disabled = false;
             btn.textContent = '📥 Importer depuis Sheets';
         }
+        suppressSheetsSync = false;
     }
 }
 
@@ -9590,7 +9664,8 @@ async function exportClientsToSheets() {
         // name, siret, address, email_facturation, contact_name, naf, categorie_juridique, etat_administratif, type_siege
         const result = await callBackend('exportClients', { sheetId: CONFIG.SHEETS_ID, clients });
         if (!result || result.success === false) throw new Error((result && result.data) ? result.data : 'Erreur serveur lors de l\'export');
-        alert(`✅ ${clients.length} clients exportés`);
+        const count = Array.isArray(clients) ? clients.length : 0;
+        showToast(`✅ ${count} client(s) exporté(s)`, 'success');
         window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SHEETS_ID}`, '_blank');
     } catch (error) {
         console.error('exportClientsToSheets error:', error);
@@ -9605,6 +9680,22 @@ async function exportClientsToSheets() {
         }
     }
 }
+
+// Nettoyer l'onglet Sheets Tiers
+async function clearClientsInSheets() {
+    if (!confirm('⚠️ Cela va vider l\'onglet "Tiers" dans Sheets (les données locales restent). Continuer ?')) return;
+    try {
+        const result = await callBackend('clearClientSheet');
+        if (!result || !result.success) throw new Error(result?.data || 'Erreur nettoyage Tiers');
+        const deleted = result?.data?.rowsDeleted ?? 0;
+        showToast(`✅ Feuille Tiers nettoyée (${deleted} ligne(s) supprimée(s))`, 'success');
+    } catch (err) {
+        console.error('clearClientsInSheets error:', err);
+        alert('Erreur nettoyage Tiers: ' + (err.message || err));
+    }
+}
+
+window.clearClientsInSheets = clearClientsInSheets;
 
 // ==========================================
 // RAM SYNC AVEC GOOGLE SHEETS
@@ -9653,6 +9744,7 @@ async function importRAMsFromSheets() {
     if (!confirm) return;
     
     isSyncing = true;
+    suppressSheetsSync = true;
     try {
         const result = await callBackend('import_rams', { sheetId: CONFIG.SHEETS_ID });
         if (!result || result.success === false) {
@@ -9661,7 +9753,7 @@ async function importRAMsFromSheets() {
         
         rams = result.data.rams || [];
         localStorage.setItem('mti_rams', JSON.stringify(rams));
-        saveToDrive();
+        await saveToDrive({ skipSheetsSync: true });
         renderRAMList();
         
         alert(`✅ ${rams.length} RAM(s) importé(s) depuis Sheets`);
@@ -9670,6 +9762,7 @@ async function importRAMsFromSheets() {
         alert(`❌ Erreur import RAMs : ${error.message || error}`);
     } finally {
         isSyncing = false;
+        suppressSheetsSync = false;
     }
 }
 
@@ -9680,15 +9773,10 @@ window.importRAMsFromSheets = importRAMsFromSheets;
 // QUOTES SYNC AVEC GOOGLE SHEETS
 // ==========================================
 
-// Exporter tous les devis vers Sheets
+// Exporter tous les devis vers Sheets (tolère un export vide pour effacer la feuille)
 async function exportQuotesToSheets() {
     if (isSyncing) {
         alert('⏳ Une synchronisation est déjà en cours...');
-        return;
-    }
-    
-    if (quotes.length === 0) {
-        alert('ℹ️ Aucun devis à exporter');
         return;
     }
     
@@ -9712,6 +9800,20 @@ async function exportQuotesToSheets() {
     }
 }
 
+// Nettoyer l'onglet Sheets Devis
+async function clearQuotesInSheets() {
+    if (!confirm('⚠️ Cela va vider l\'onglet "Devis" dans Sheets (les données locales restent). Continuer ?')) return;
+    try {
+        const result = await callBackend('clearQuoteSheet');
+        if (!result || !result.success) throw new Error(result?.data || 'Erreur nettoyage Devis');
+        const deleted = result?.data?.rowsDeleted ?? 0;
+        showToast(`✅ Feuille Devis nettoyée (${deleted} ligne(s) supprimée(s))`,'success');
+    } catch (err) {
+        console.error('clearQuotesInSheets error:', err);
+        alert('Erreur nettoyage Devis: ' + (err.message || err));
+    }
+}
+
 // Importer les devis depuis Sheets
 async function importQuotesFromSheets() {
     if (isSyncing) {
@@ -9723,6 +9825,7 @@ async function importQuotesFromSheets() {
     if (!confirm) return;
     
     isSyncing = true;
+    suppressSheetsSync = true;
     try {
         const result = await callBackend('import_quotes', { sheetId: CONFIG.SHEETS_ID });
         if (!result || result.success === false) {
@@ -9730,7 +9833,7 @@ async function importQuotesFromSheets() {
         }
         
         quotes = result.data.quotes || [];
-        await saveToDrive();
+        await saveToDrive({ skipSheetsSync: true });
         // Sauvegarde backup localStorage
         try {
             localStorage.setItem('mti_quotes', JSON.stringify(quotes));
@@ -9745,6 +9848,7 @@ async function importQuotesFromSheets() {
         alert(`❌ Erreur import devis : ${error.message || error}`);
     } finally {
         isSyncing = false;
+        suppressSheetsSync = false;
     }
 }
 
