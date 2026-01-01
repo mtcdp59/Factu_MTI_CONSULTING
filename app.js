@@ -324,15 +324,33 @@ async function syncSheetsNow(reason = 'auto') {
 
     sheetsSyncInProgress = true;
     pendingSheetsSync = false;
+    updateSyncIndicator(true);
+    
     try {
+        const itemCount = invoices.length + quotes.length + rams.length + clients.length;
         await callBackend('exportInvoicesToSheets', { sheetId: CONFIG.SHEETS_ID, invoices });
         await callBackend('sync_quotes', { sheetId: CONFIG.SHEETS_ID, quotes });
         await callBackend('sync_rams', { sheetId: CONFIG.SHEETS_ID, rams });
         await callBackend('exportClients', { sheetId: CONFIG.SHEETS_ID, clients });
+        
+        // Update stats
+        syncStats.lastSyncTime = new Date();
+        syncStats.itemsSynced = itemCount;
+        syncStats.errorCount = 0;
+        syncStats.lastError = null;
+        
         console.log('✅ Sync Sheets auto OK', reason ? `(${reason})` : '');
+        updateSyncIndicator(false);
+        
+        // Toast with stats
+        const timeStr = syncStats.lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        showToast(`✅ Sync Sheets OK (${itemCount} items) à ${timeStr}`, 'success');
     } catch (err) {
         console.error('syncSheetsNow error:', err);
-        showToast('❌ Sync Sheets auto : ' + (err.message || err), 'error');
+        syncStats.errorCount++;
+        syncStats.lastError = err.message || String(err);
+        updateSyncIndicator(false, true);
+        showToast('❌ Sync Sheets auto : ' + (err.message || err) + ' [Nouvelle tentative en 2s]', 'error');
     } finally {
         sheetsSyncInProgress = false;
         if (pendingSheetsSync) {
@@ -411,12 +429,20 @@ let isSyncing = false;
 let lastSyncTime = null;
 
 // Feuilles Sheets : sync auto (debounce)
-const autoSheetsSyncEnabled = true;
+let autoSheetsSyncEnabled = true;  // Can be toggled by user
 const SHEETS_SYNC_DEBOUNCE = 2000;
 let sheetsSyncTimer = null;
 let sheetsSyncInProgress = false;
 let suppressSheetsSync = false;
 let pendingSheetsSync = false;
+
+// Sync statistics for UI
+let syncStats = {
+    lastSyncTime: null,
+    itemsSynced: 0,
+    errorCount: 0,
+    lastError: null
+};
 
 // Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
 let clients = [];
@@ -6288,6 +6314,66 @@ function renderStatusChart() {
     });
 }
 
+// Update sync indicator (visual UI feedback)
+function updateSyncIndicator(syncing = false, hasError = false) {
+    const indicator = document.getElementById('syncIndicator');
+    const toggleBtn = document.getElementById('toggleAutoSyncBtn');
+    const autoSyncIcon = document.getElementById('autoSyncIcon');
+    
+    if (!indicator) return;
+    
+    // Update indicator visual state
+    indicator.classList.toggle('syncing', syncing);
+    indicator.classList.toggle('error', hasError);
+    indicator.classList.toggle('ok', !syncing && !hasError);
+    
+    if (syncing) {
+        indicator.innerHTML = '🔄 Sync...';
+        indicator.title = 'Synchronisation en cours';
+    } else if (hasError) {
+        indicator.innerHTML = '⚠️ Sync error';
+        indicator.title = 'Erreur de synchronisation - nouvelle tentative en attente';
+    } else {
+        const lastSync = syncStats.lastSyncTime ? syncStats.lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'jamais';
+        indicator.innerHTML = `✅ Sync (${lastSync})`;
+        indicator.title = `Dernière sync: ${lastSync}\n${syncStats.itemsSynced} items\nAuto-sync: ${autoSheetsSyncEnabled ? 'Activé' : 'Désactivé'}`;
+    }
+    
+    // Update toggle button state
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('disabled', !autoSheetsSyncEnabled);
+        if (autoSyncIcon) {
+            autoSyncIcon.textContent = autoSheetsSyncEnabled ? '▶️' : '⏸️';
+        }
+        toggleBtn.title = autoSheetsSyncEnabled ? 
+            'Cliquez pour désactiver l\'auto-sync' : 
+            'Cliquez pour réactiver l\'auto-sync';
+    }
+}
+
+// Toggle auto-sync on/off
+function toggleAutoSync() {
+    autoSheetsSyncEnabled = !autoSheetsSyncEnabled;
+    localStorage.setItem('mti_autoSyncEnabled', String(autoSheetsSyncEnabled));
+    updateSyncIndicator(false);
+    const msg = autoSheetsSyncEnabled ? '✅ Auto-sync activé' : '⏸️ Auto-sync désactivé';
+    showToast(msg, 'info');
+    console.log('Auto-sync toggled:', autoSheetsSyncEnabled);
+}
+
+window.toggleAutoSync = toggleAutoSync;
+
+// Load auto-sync preference from localStorage
+function loadAutoSyncPreference() {
+    const saved = localStorage.getItem('mti_autoSyncEnabled');
+    if (saved !== null) {
+        autoSheetsSyncEnabled = saved === 'true';
+        console.log('Auto-sync preference loaded:', autoSheetsSyncEnabled);
+    }
+    // Initialize indicator on load
+    updateSyncIndicator(false);
+}
+
 // Toast notification with types
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
@@ -7380,6 +7466,9 @@ window.downloadInvoiceFromList = downloadInvoiceFromList;
 
 // Initialize app
 function initApp() {
+    // Load auto-sync preference early
+    loadAutoSyncPreference();
+    
     // Load data from localStorage first (backup si Drive échoue)
     try {
         const storedQuotes = localStorage.getItem('mti_quotes');
