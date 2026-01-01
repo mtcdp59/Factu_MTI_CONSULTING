@@ -1965,7 +1965,16 @@ tr:hover {
                 <button type="button" class="btn btn-secondary btn-sm" id="resetIRPPBareme" style="margin-top: var(--space-12);">🔄 Réinitialiser barème par défaut</button>
 
                 <!-- SECTION 4: DIVERS -->
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">🔧 Divers</h3>
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📋 Journal de Synchronisation</h3>
+                <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap; margin-bottom: var(--space-16);">
+                    <button type="button" class="btn btn-secondary" id="viewSyncLogBtn" onclick="showSyncLogModal()">📖 Afficher historique</button>
+                    <button type="button" class="btn btn-secondary" id="clearSyncLogBtn" onclick="(function(){ if(confirm('Effacer le journal de sync?')) { clearSyncLog(); showToast('Journal effacé', 'info'); updateSyncLogDisplay(); } })()">🗑️ Effacer</button>
+                </div>
+                <div id="syncLogPreview" style="padding: var(--space-12); background: var(--color-bg-1); border-radius: var(--radius-base); font-family: monospace; font-size: var(--font-size-xs); max-height: 300px; overflow-y: auto; border: 1px solid var(--color-border);">
+                    <div style="color: var(--color-text-secondary); text-align: center;">Aucune entrée</div>
+                </div>
+
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">Test</h3>
                 <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
                     <button type="button" class="btn btn-secondary" id="testBackendBtn">🧪 Tester BACKEND</button>
                     <button type="button" class="btn btn-secondary" id="exportFECBtn">📊 Exporter FEC</button>

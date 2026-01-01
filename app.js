@@ -319,12 +319,14 @@ function queueSheetsSync(reason = '') {
 async function syncSheetsNow(reason = 'auto') {
     if (sheetsSyncInProgress) {
         pendingSheetsSync = true;
+        addSyncLogEntry('pending', 'Sync déjà en cours, mise en file d\'attente');
         return;
     }
 
     sheetsSyncInProgress = true;
     pendingSheetsSync = false;
     updateSyncIndicator(true);
+    addSyncLogEntry('pending', `Début sync Sheets (${reason})`);
     
     try {
         const itemCount = invoices.length + quotes.length + rams.length + clients.length;
@@ -341,6 +343,10 @@ async function syncSheetsNow(reason = 'auto') {
         
         console.log('✅ Sync Sheets auto OK', reason ? `(${reason})` : '');
         updateSyncIndicator(false);
+        addSyncLogEntry('success', `Sync Sheets réussie (${itemCount} items)`, {
+            itemsSynced: itemCount,
+            reason: reason
+        });
         
         // Toast with stats
         const timeStr = syncStats.lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -350,11 +356,15 @@ async function syncSheetsNow(reason = 'auto') {
         syncStats.errorCount++;
         syncStats.lastError = err.message || String(err);
         updateSyncIndicator(false, true);
+        addSyncLogEntry('error', `Erreur sync Sheets: ${err.message || err}`, {
+            errorMessage: err.message || String(err)
+        });
         showToast('❌ Sync Sheets auto : ' + (err.message || err) + ' [Nouvelle tentative en 2s]', 'error');
     } finally {
         sheetsSyncInProgress = false;
         if (pendingSheetsSync) {
             pendingSheetsSync = false;
+            addSyncLogEntry('retry', 'Relance sync après attente');
             queueSheetsSync('replay');
         }
     }
@@ -443,6 +453,75 @@ let syncStats = {
     errorCount: 0,
     lastError: null
 };
+
+// Sync history/journal for troubleshooting
+// Stored in localStorage with max 50 entries (to avoid bloating)
+let syncLog = [];
+const SYNC_LOG_MAX_ENTRIES = 50;
+const SYNC_LOG_STORAGE_KEY = 'mti_syncLog';
+
+// Load sync log from localStorage on startup
+function loadSyncLog() {
+    try {
+        const saved = localStorage.getItem(SYNC_LOG_STORAGE_KEY);
+        if (saved) {
+            syncLog = JSON.parse(saved);
+            if (!Array.isArray(syncLog)) {
+                syncLog = [];
+            }
+        }
+    } catch (e) {
+        console.warn('Could not load sync log:', e);
+        syncLog = [];
+    }
+}
+
+// Add entry to sync log
+function addSyncLogEntry(status, message, details = {}) {
+    const entry = {
+        timestamp: new Date().toISOString(),
+        status: status, // 'pending', 'success', 'error', 'retry'
+        message: message,
+        details: details,
+        itemsSynced: details.itemsSynced || 0,
+        errorMessage: details.errorMessage || null
+    };
+    
+    syncLog.unshift(entry); // Add at beginning (newest first)
+    
+    // Keep only last SYNC_LOG_MAX_ENTRIES
+    if (syncLog.length > SYNC_LOG_MAX_ENTRIES) {
+        syncLog = syncLog.slice(0, SYNC_LOG_MAX_ENTRIES);
+    }
+    
+    // Save to localStorage
+    try {
+        localStorage.setItem(SYNC_LOG_STORAGE_KEY, JSON.stringify(syncLog));
+    } catch (e) {
+        console.warn('Could not save sync log:', e);
+    }
+    
+    console.log('[SyncLog]', status, ':', message, details);
+}
+
+// Get sync log (for display in UI)
+function getSyncLog(limit = 20) {
+    return syncLog.slice(0, limit);
+}
+
+// Clear sync log
+function clearSyncLog() {
+    syncLog = [];
+    try {
+        localStorage.removeItem(SYNC_LOG_STORAGE_KEY);
+    } catch (e) {
+        console.warn('Could not clear sync log:', e);
+    }
+}
+
+// Export window functions for UI
+window.getSyncLog = getSyncLog;
+window.clearSyncLog = clearSyncLog;
 
 // Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
 let clients = [];
@@ -6336,18 +6415,21 @@ function updateSyncIndicator(syncing = false, hasError = false) {
     } else {
         const lastSync = syncStats.lastSyncTime ? syncStats.lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'jamais';
         indicator.innerHTML = `✅ Sync (${lastSync})`;
-        indicator.title = `Dernière sync: ${lastSync}\n${syncStats.itemsSynced} items\nAuto-sync: ${autoSheetsSyncEnabled ? 'Activé' : 'Désactivé'}`;
+        const itemsInfo = syncStats.itemsSynced > 0 ? `${syncStats.itemsSynced} items` : 'aucun item';
+        indicator.title = `Dernière sync: ${lastSync}\n${itemsInfo}\nAuto-sync: ${autoSheetsSyncEnabled ? 'Activé' : 'Désactivé'}`;
     }
     
-    // Update toggle button state
+    // Update toggle button state with better info
     if (toggleBtn) {
         toggleBtn.classList.toggle('disabled', !autoSheetsSyncEnabled);
         if (autoSyncIcon) {
-            autoSyncIcon.textContent = autoSheetsSyncEnabled ? '▶️' : '⏸️';
+            autoSyncIcon.textContent = autoSheetsSyncEnabled ? '▶️ Auto-Sync' : '⏸️ Auto-Sync';
         }
-        toggleBtn.title = autoSheetsSyncEnabled ? 
-            'Cliquez pour désactiver l\'auto-sync' : 
-            'Cliquez pour réactiver l\'auto-sync';
+        const queuedItems = invoices.length + quotes.length + rams.length + clients.length;
+        const syncInfoText = autoSheetsSyncEnabled ? 
+            `Auto-sync ENABLED - ${queuedItems} items to sync (debounce 2s)` : 
+            `Auto-sync DISABLED - Manual sync only`;
+        toggleBtn.title = syncInfoText;
     }
 }
 
@@ -6362,6 +6444,98 @@ function toggleAutoSync() {
 }
 
 window.toggleAutoSync = toggleAutoSync;
+
+// Display sync log in UI preview
+function updateSyncLogDisplay() {
+    const preview = document.getElementById('syncLogPreview');
+    if (!preview) return;
+    
+    const entries = getSyncLog(10);
+    if (entries.length === 0) {
+        preview.innerHTML = '<div style="color: var(--color-text-secondary); text-align: center;">Aucune entrée</div>';
+        return;
+    }
+    
+    let html = '';
+    entries.forEach(entry => {
+        const time = new Date(entry.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const statusEmoji = entry.status === 'success' ? '✅' : 
+                           entry.status === 'error' ? '❌' :
+                           entry.status === 'retry' ? '🔄' : '⏳';
+        html += `<div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(0,0,0,0.1);">
+            <div style="color: var(--color-primary); font-weight: bold;">${time} ${statusEmoji} ${entry.status}</div>
+            <div style="color: var(--color-text); font-size: 11px; margin-top: 2px;">${entry.message}</div>
+            ${entry.itemsSynced > 0 ? `<div style="color: var(--color-success); font-size: 11px;">↳ ${entry.itemsSynced} items</div>` : ''}
+        </div>`;
+    });
+    
+    preview.innerHTML = html;
+}
+
+// Show sync log modal
+function showSyncLogModal() {
+    const entries = getSyncLog(50);
+    let html = '<h3 style="margin: 0 0 var(--space-16) 0; font-size: var(--font-size-lg);">Historique Sync (50 derniers)</h3>';
+    
+    if (entries.length === 0) {
+        html += '<p style="color: var(--color-text-secondary); text-align: center;">Aucune entrée</p>';
+    } else {
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-sm);">';
+        html += '<thead><tr style="background: var(--color-bg-1); border-bottom: 2px solid var(--color-border);">';
+        html += '<th style="padding: 8px; text-align: left;">Heure</th>';
+        html += '<th style="padding: 8px; text-align: left;">Statut</th>';
+        html += '<th style="padding: 8px; text-align: left;">Message</th>';
+        html += '<th style="padding: 8px; text-align: right;">Items</th>';
+        html += '</tr></thead><tbody>';
+        
+        entries.forEach(entry => {
+            const time = new Date(entry.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const statusEmoji = entry.status === 'success' ? '✅' : 
+                               entry.status === 'error' ? '❌' :
+                               entry.status === 'retry' ? '🔄' : '⏳';
+            const statusColor = entry.status === 'success' ? 'var(--color-success)' :
+                               entry.status === 'error' ? 'var(--color-error)' : 'var(--color-info)';
+            
+            html += `<tr style="border-bottom: 1px solid var(--color-border);">
+                <td style="padding: 8px;">${time}</td>
+                <td style="padding: 8px; color: ${statusColor}; font-weight: bold;">${statusEmoji} ${entry.status}</td>
+                <td style="padding: 8px;">${entry.message}</td>
+                <td style="padding: 8px; text-align: right;">${entry.itemsSynced || '-'}</td>
+            </tr>`;
+        });
+        
+        html += '</tbody></table>';
+    }
+    
+    // Create simple modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+        z-index: 9999;
+    `;
+    
+    const content = document.createElement('div');
+    content.style.cssText = `
+        background: white; border-radius: 8px; padding: 24px; max-width: 800px;
+        max-height: 80vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    `;
+    content.innerHTML = html + `<div style="margin-top: 24px; text-align: right;">
+        <button class="btn btn-secondary" onclick="document.body.removeChild(document.body.lastChild)" style="margin-right: 8px;">Close</button>
+        <button class="btn btn-secondary" onclick="(function(){ clearSyncLog(); showToast('Log cleared', 'info'); location.reload(); })()">Clear &amp; Reload</button>
+    </div>`;
+    
+    content.innerHTML = html + `<div style="margin-top: 24px; text-align: right;">
+        <button class="btn btn-secondary" onclick="document.body.removeChild(document.body.lastChild)" style="margin-right: 8px;">Fermer</button>
+        <button class="btn btn-secondary" onclick="(function(){ clearSyncLog(); showToast('Journal effacé', 'info'); location.reload(); })()">Effacer &amp; Recharger</button>
+    </div>`;
+    
+    modal.appendChild(content);
+    modal.onclick = (e) => { if(e.target === modal) document.body.removeChild(modal); };
+    document.body.appendChild(modal);
+}
+
+window.showSyncLogModal = showSyncLogModal;
 
 // Load auto-sync preference from localStorage
 function loadAutoSyncPreference() {
@@ -7466,7 +7640,8 @@ window.downloadInvoiceFromList = downloadInvoiceFromList;
 
 // Initialize app
 function initApp() {
-    // Load auto-sync preference early
+    // Load sync log and auto-sync preference early
+    loadSyncLog();
     loadAutoSyncPreference();
     
     // Load data from localStorage first (backup si Drive échoue)
@@ -7718,6 +7893,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Toujours initialiser l'app (même en mode dégradé)
     try {
         initApp();
+        // Update sync log display after init
+        setTimeout(() => {
+            updateSyncLogDisplay();
+        }, 500);
         console.log('✅ Application prête' + (isConfigured ? '' : ' (mode hors ligne)'));
     } catch (e) {
         console.error('Erreur initialisation app:', e);
