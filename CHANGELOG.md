@@ -7,6 +7,32 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.4.3] - 2025-12-31
+
+### Améliorations UX : Indicateur de sync et contrôle auto-sync
+
+**Visibilité et contrôle de la synchronisation automatique**
+- Indicateur visuel de sync dans le header : affiche l'état de synchronisation (🔄 Sync..., ⚠️ Sync error, ✅ Sync HH:MM)
+- Bouton toggle pour activer/désactiver l'auto-sync avec état persistant (localStorage)
+- Icône du bouton change selon l'état (▶️ enabled, ⏸️ disabled)
+- Tooltip dynamique affichant la dernière synchronisation et statistiques
+- Animations CSS : rotation continue lors de la sync, pulse sur erreur
+- Toast amélioré : affiche le nombre d'items synchronisés et le timestamp
+
+**Tracking des statistiques de sync**
+- Nouvel objet `syncStats` : lastSyncTime, itemsSynced, errorCount, lastError
+- Mise à jour automatique lors de chaque synchronisation
+- Affichage des stats dans le tooltip de l'indicateur
+
+**Stockage persistant**
+- Préférence utilisateur (auto-sync enabled/disabled) sauvegardée en localStorage
+- Restauration automatique au chargement de la page avec fallback `true`
+
+**Fichiers impactés**
+- app.js : nouv. fonctions `updateSyncIndicator()`, `toggleAutoSync()`, `loadAutoSyncPreference()`; amélioration `syncSheetsNow()` avec stats et toasts enrichis
+- index.html : ajout du span `#syncIndicator` et button `#toggleAutoSyncBtn` dans le header; styles CSS pour animations et états
+- CSS : nouvelles animations (`spin`, `pulse-error`) et classes (`.sync-indicator`, `.btn-auto-sync`)
+
 ## [2.4.2] - 2025-12-31
 
 ### Automatisation sync Sheets + nettoyage

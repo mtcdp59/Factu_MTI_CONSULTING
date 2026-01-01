@@ -66,11 +66,22 @@
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.4.2-blue)
+![Version](https://img.shields.io/badge/version-2.4.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
 
 ## Historique des versions
+
+### v2.4.3 (Décembre 2025)
+
+**Améliorations UX : Indicateur de sync et contrôle auto-sync**
+- Indicateur visuel dans le header affichant l'état de synchronisation (🔄 Sync..., ⚠️ Sync error, ✅ Sync HH:MM)
+- Bouton toggle pour activer/désactiver l'auto-sync avec état persistant (localStorage)
+- Icône du bouton change selon l'état (▶️ enabled, ⏸️ disabled)
+- Tooltip dynamique affichant la dernière synchronisation et statistiques
+- Animations CSS : rotation continue lors de la sync, pulse sur erreur
+- Toast amélioré : affiche le nombre d'items synchronisés et le timestamp
+- Nouvel objet `syncStats` : lastSyncTime, itemsSynced, errorCount, lastError
 
 ### v2.4.2 (Décembre 2025)
 
