@@ -3,6 +3,223 @@
 
 console.log('✅ app.js chargé - début du script');
 
+// ==========================================
+// STORAGE MANAGER - IndexedDB with localStorage fallback
+// ==========================================
+
+const storageManager = {
+    // Initialize localforage with config
+    init() {
+        if (typeof localforage !== 'undefined') {
+            localforage.config({
+                name: 'MTI_CONSULTING',
+                storeName: 'mti_data',
+                description: 'Stockage principal MTI Consulting (IndexedDB)'
+            });
+            console.log('✅ IndexedDB initialized via localforage');
+        } else {
+            console.warn('⚠️ localforage not loaded, falling back to localStorage');
+        }
+    },
+
+    // Get item (async)
+    async getItem(key) {
+        try {
+            if (typeof localforage !== 'undefined') {
+                return await localforage.getItem(key);
+            } else {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : null;
+            }
+        } catch (e) {
+            console.error(`Error reading ${key}:`, e);
+            return null;
+        }
+    },
+
+    // Set item (async)
+    async setItem(key, value) {
+        try {
+            if (typeof localforage !== 'undefined') {
+                await localforage.setItem(key, value);
+            } else {
+                localStorage.setItem(key, JSON.stringify(value));
+            }
+        } catch (e) {
+            console.error(`Error saving ${key}:`, e);
+        }
+    },
+
+    // Remove item (async)
+    async removeItem(key) {
+        try {
+            if (typeof localforage !== 'undefined') {
+                await localforage.removeItem(key);
+            } else {
+                localStorage.removeItem(key);
+            }
+        } catch (e) {
+            console.error(`Error removing ${key}:`, e);
+        }
+    },
+
+    // Clear all (async)
+    async clear() {
+        try {
+            if (typeof localforage !== 'undefined') {
+                await localforage.clear();
+            } else {
+                localStorage.clear();
+            }
+        } catch (e) {
+            console.error('Error clearing storage:', e);
+        }
+    },
+
+    // Get all keys (async)
+    async keys() {
+        try {
+            if (typeof localforage !== 'undefined') {
+                return await localforage.keys();
+            } else {
+                return Object.keys(localStorage);
+            }
+        } catch (e) {
+            console.error('Error getting keys:', e);
+            return [];
+        }
+    },
+
+    // Migrate from localStorage to IndexedDB
+    async migrateFromLocalStorage() {
+        if (typeof localforage === 'undefined') return;
+
+        // Check if already migrated
+        const migrationDone = localStorage.getItem('mti_indexeddb_migrated');
+        if (migrationDone === 'true') {
+            console.log('✅ Migration already completed');
+            return;
+        }
+
+        const keysToMigrate = [
+            'mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients',
+            'mti_syncLog', 'mti_autoSyncEnabled', 'mti_app_config'
+        ];
+
+        let migrated = 0;
+        for (const key of keysToMigrate) {
+            const lsData = localStorage.getItem(key);
+            if (lsData) {
+                try {
+                    const parsed = JSON.parse(lsData);
+                    await localforage.setItem(key, parsed);
+                    migrated++;
+                    console.log(`📦 Migrated: ${key}`);
+                } catch (e) {
+                    console.warn(`⚠️ Migration failed for ${key}:`, e);
+                }
+            }
+        }
+
+        if (migrated > 0) {
+            console.log(`✅ Migrated ${migrated} items from localStorage to IndexedDB`);
+            localStorage.setItem('mti_indexeddb_migrated', 'true');
+            
+            // Keep localStorage as backup for now (progressive migration)
+            console.log('💾 localStorage kept as backup');
+        } else {
+            console.log('ℹ️ No data to migrate');
+            localStorage.setItem('mti_indexeddb_migrated', 'true');
+        }
+    },
+
+    // Helper: Save with dual-write (IndexedDB + localStorage backup)
+    async saveDual(key, value) {
+        // Primary: IndexedDB
+        await this.setItem(key, value);
+        
+        // Backup: localStorage (for compatibility)
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) {
+            console.warn(`localStorage backup failed for ${key}:`, e);
+        }
+    },
+
+    // Helper: Load with fallback (IndexedDB → localStorage)
+    async loadDual(key) {
+        // Try IndexedDB first
+        let data = await this.getItem(key);
+        
+        // Fallback to localStorage if IndexedDB empty
+        if (!data) {
+            const lsData = localStorage.getItem(key);
+            if (lsData) {
+                try {
+                    data = JSON.parse(lsData);
+                    console.log(`📦 Loaded ${key} from localStorage fallback`);
+                } catch (e) {
+                    console.error(`Error parsing localStorage ${key}:`, e);
+                }
+            }
+        }
+        
+        return data;
+    }
+};
+
+// Initialize storage on load
+storageManager.init();
+
+// ==========================================
+// STORAGE HELPERS - Compatibility wrappers
+// ==========================================
+
+// Save invoices (dual-write: IndexedDB + localStorage)
+async function saveInvoicesToStorage(invoicesData) {
+    await storageManager.saveDual('mti_invoices', invoicesData);
+}
+
+// Load invoices (with fallback)
+async function loadInvoicesFromStorage() {
+    return await storageManager.loadDual('mti_invoices');
+}
+
+// Save quotes
+async function saveQuotesToStorage(quotesData) {
+    await storageManager.saveDual('mti_quotes', quotesData);
+}
+
+// Load quotes
+async function loadQuotesFromStorage() {
+    return await storageManager.loadDual('mti_quotes');
+}
+
+// Save RAMs
+async function saveRAMsToStorage(ramsData) {
+    await storageManager.saveDual('mti_rams', ramsData);
+}
+
+// Load RAMs
+async function loadRAMsFromStorage() {
+    return await storageManager.loadDual('mti_rams');
+}
+
+// Save clients
+async function saveClientsToStorage(clientsData) {
+    await storageManager.saveDual('mti_clients', clientsData);
+}
+
+// Load clients
+async function loadClientsFromStorage() {
+    return await storageManager.loadDual('mti_clients');
+}
+
+// Export for console debugging
+window.storageManager = storageManager;
+window.saveInvoicesToStorage = saveInvoicesToStorage;
+window.loadInvoicesFromStorage = loadInvoicesFromStorage;
+
 // Configuration : priorité à window.CONFIG (config.js), sinon valeurs par défaut
 const CONFIG = window.CONFIG || {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwE4GfTi5MQaYdvcwgFg3UUW6l-VEyzbPFYXjhkFGW1ZowsAlrLANMnhp8K-zIQ622D/exec',
@@ -7846,6 +8063,13 @@ window.downloadInvoiceFromList = downloadInvoiceFromList;
 
 // Initialize app
 function initApp() {
+    // Migrate to IndexedDB if not already done (v2.5.0)
+    storageManager.migrateFromLocalStorage().then(() => {
+        console.log('✅ Storage migration check complete');
+    }).catch(err => {
+        console.error('⚠️ Migration error:', err);
+    });
+    
     // Load sync log and auto-sync preference early
     loadSyncLog();
     loadAutoSyncPreference();
