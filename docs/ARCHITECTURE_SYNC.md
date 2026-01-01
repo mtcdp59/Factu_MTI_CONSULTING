@@ -239,6 +239,138 @@ loadAutoSyncPreference(); // Appelé dans initApp()
 
 ## Réconciliation Intelligente (v2.4.4+)
 
+### Vue d'ensemble
+
+La réconciliation intelligente **compare automatiquement** localStorage et Drive au démarrage (après 2s) et fusionne les données si des divergences sont détectées.
+
+**Priorité** : Drive > localStorage (Drive = source de vérité)
+
+### Détection des divergences
+
+```javascript
+// Vérifie les différences de longueur (nombre d'items)
+detectDataDivergences()
+→ Compare: invoices.length, quotes.length, rams.length, clients.length
+→ Local vs Drive
+```
+
+**Divergence détectée si** :
+- Nombre d'items différent (ex: 3 local vs 5 Drive)
+- OU modification détectée (même longueur mais contenu différent)
+
+### Stratégie de fusion
+
+Pour chaque type de données (factures, devis, RAM, clients):
+
+```javascript
+reconcileData(localData, driveData, dataType)
+```
+
+**Étapes** :
+1. **Mapper par clé unique** :
+   - Factures: `number` (ex: "202601-001")
+   - Devis: `number`
+   - RAMs: `id`
+   - Clients: `siret`
+
+2. **Fusionner** :
+   - Item uniquement dans Drive → garder Drive
+   - Item uniquement local → garder local
+   - Item dans les deux → **comparer timestamps** (`date` ou `createdAt`)
+     - Plus récent gagne
+     - En cas d'égalité → **Drive gagne** (source de vérité)
+
+3. **Appliquer** :
+   - Mettre à jour les variables globales (invoices, quotes, rams, clients)
+   - Sauvegarder en localStorage
+   - Syncer vers Drive
+   - Rafraîchir l'UI
+
+### Déclenchement
+
+**Automatique** :
+- Au démarrage de l'app (2 secondes après chargement Drive)
+- Condition: backend configuré
+
+**Manuel** :
+- ⚙️ Paramètres → 🔄 Réconciliation Intelligente
+- Bouton "🔄 Réconcilier maintenant"
+- Bouton "🔍 Vérifier divergences" (diagnostic sans modification)
+
+### Journal de réconciliation
+
+Toutes les réconciliations sont loggées:
+
+```javascript
+// Aucune divergence
+addSyncLogEntry('success', 'Réconciliation: aucune divergence détectée')
+
+// Divergences détectées
+addSyncLogEntry('pending', 'Divergences détectées, réconciliation en cours...', {
+    local: { invoices: 3, quotes: 1, rams: 2, clients: 5 },
+    drive: { invoices: 5, quotes: 1, rams: 2, clients: 5 }
+})
+
+// Réconciliation terminée
+addSyncLogEntry('success', 'Réconciliation terminée: 15 items synchronisés')
+```
+
+### Cas d'usage
+
+**Scenario 1 : Modification locale non synchronisée**
+```
+1. User crée facture en local (localStorage)
+2. Ferme navigateur avant sync Drive
+3. Réouvre → Drive n'a pas la facture
+4. Réconciliation détecte: 1 local vs 0 Drive
+5. Fusion → Facture locale conservée et syncée vers Drive
+```
+
+**Scenario 2 : Modification Drive (autre device)**
+```
+1. User édite facture sur device A
+2. Sync vers Drive OK
+3. Ouvre device B (localStorage obsolète)
+4. Réconciliation détecte: ancienne version local vs nouvelle version Drive
+5. Fusion → Version Drive (plus récente) écrase locale
+```
+
+**Scenario 3 : Conflit (édition simultanée)**
+```
+1. Device A et B éditent même facture offline
+2. Device A sync vers Drive en premier
+3. Device B se connecte → réconciliation
+4. Comparaison timestamps:
+   - Si A plus récent → version A gagne
+   - Si B plus récent → version B gagne
+   - Si égalité → Drive gagne (version A car syncée en premier)
+```
+
+### Limitations
+
+⚠️ **Sheets non incluses dans la réconciliation**
+- La réconciliation compare **localStorage ↔ Drive (JSON)** uniquement
+- Sheets = visualisation (pas source de données)
+- Modifications manuelles dans Sheets seront **écrasées** lors de la prochaine sync
+
+⚠️ **Pas de résolution de conflit granulaire**
+- Compare l'objet entier (pas champ par champ)
+- Pas de merge au niveau des propriétés
+
+⚠️ **Backend requis**
+- Réconciliation ignorée si backend non configuré
+- Fonctionne uniquement avec Drive accessible
+
+### Performance
+
+- **Coût** : 1 appel `loadFromDrive` (fetch Drive data)
+- **Durée** : 500-2000ms selon taille des données
+- **Fréquence** : 1x au démarrage + manuellement si demandé
+
+---
+
+## Réconciliation Intelligente (v2.4.4 - Deprecated Section)
+
 En cas de divergence détectée:
 
 ```

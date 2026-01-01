@@ -1974,7 +1974,17 @@ tr:hover {
                     <div style="color: var(--color-text-secondary); text-align: center;">Aucune entrée</div>
                 </div>
 
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">Test</h3>
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">🔄 Réconciliation Intelligente</h3>
+                <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap; margin-bottom: var(--space-16);">
+                    <button type="button" class="btn btn-primary" id="manualReconcileBtn" onclick="autoReconcile()">🔄 Réconcilier maintenant</button>
+                    <button type="button" class="btn btn-secondary" id="checkDivergencesBtn" onclick="(async function(){ const r = await detectDataDivergences(); if(!r) return showToast('Erreur de vérification', 'error'); const d = r.divergences.details; showToast(`Local: ${d.local.invoices} factures | Drive: ${d.drive.invoices} factures`, 'info'); })()">🔍 Vérifier divergences</button>
+                </div>
+                <div style="padding: var(--space-12); background: var(--color-bg-1); border-radius: var(--radius-base); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                    <strong>📋 Réconciliation automatique</strong><br>
+                    Compare Drive (source de vérité) avec localStorage. Fusionne intelligemment par ID/SIRET. Lance automatiquement au démarrage (2s après chargement).
+                </div>
+
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">🧪 Test</h3>
                 <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
                     <button type="button" class="btn btn-secondary" id="testBackendBtn">🧪 Tester BACKEND</button>
                     <button type="button" class="btn btn-secondary" id="exportFECBtn">📊 Exporter FEC</button>

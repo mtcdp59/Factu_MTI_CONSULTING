@@ -523,6 +523,212 @@ function clearSyncLog() {
 window.getSyncLog = getSyncLog;
 window.clearSyncLog = clearSyncLog;
 
+// ==========================================
+// INTELLIGENT RECONCILIATION SYSTEM (v2.4.4)
+// ==========================================
+
+// Fetch Drive data without applying (for comparison)
+async function fetchDriveDataOnly() {
+    try {
+        const result = await callBackend('loadFromDrive');
+        if (!result.success) {
+            return null;
+        }
+        return result.data || null;
+    } catch (error) {
+        console.warn('fetchDriveDataOnly failed:', error);
+        try {
+            const result = await callBackendJSONP('loadFromDrive');
+            if (result && result.success) {
+                return result.data || null;
+            }
+        } catch (jsonpErr) {
+            console.warn('fetchDriveDataOnly JSONP failed:', jsonpErr);
+        }
+        return null;
+    }
+}
+
+// Detect divergences between Drive, Sheets, and localStorage
+async function detectDataDivergences() {
+    const divergences = {
+        invoices: false,
+        quotes: false,
+        rams: false,
+        clients: false,
+        details: {}
+    };
+    
+    try {
+        // Get localStorage data (current state)
+        const localInvoices = invoices || [];
+        const localQuotes = quotes || [];
+        const localRAMs = rams || [];
+        const localClients = clients || [];
+        
+        // Get Drive data (source of truth)
+        const driveData = await fetchDriveDataOnly();
+        if (!driveData) {
+            console.warn('Could not load Drive data for reconciliation');
+            return null;
+        }
+        
+        // Compare counts and checksums
+        divergences.invoices = localInvoices.length !== (driveData.invoices?.length || 0);
+        divergences.quotes = localQuotes.length !== (driveData.quotes?.length || 0);
+        divergences.rams = localRAMs.length !== (driveData.rams?.length || 0);
+        divergences.clients = localClients.length !== (driveData.clients?.length || 0);
+        
+        // Store details for resolution
+        divergences.details = {
+            local: { invoices: localInvoices.length, quotes: localQuotes.length, rams: localRAMs.length, clients: localClients.length },
+            drive: { invoices: driveData.invoices?.length || 0, quotes: driveData.quotes?.length || 0, rams: driveData.rams?.length || 0, clients: driveData.clients?.length || 0 }
+        };
+        
+        // Return both divergences and data for reconciliation
+        return { divergences, driveData };
+    } catch (err) {
+        console.error('Error detecting divergences:', err);
+        return null;
+    }
+}
+
+// Reconcile data using timestamps and unique keys
+function reconcileData(localData, driveData, dataType) {
+    if (!localData || !driveData) return localData || driveData || [];
+    
+    const result = [];
+    const keyField = {
+        'invoices': 'number',
+        'quotes': 'number', 
+        'rams': 'id',
+        'clients': 'siret'
+    }[dataType] || 'id';
+    
+    // Create maps for fast lookup
+    const localMap = new Map(localData.map(item => [item[keyField], item]));
+    const driveMap = new Map(driveData.map(item => [item[keyField], item]));
+    
+    // Get all unique keys
+    const allKeys = new Set([...localMap.keys(), ...driveMap.keys()]);
+    
+    allKeys.forEach(key => {
+        const localItem = localMap.get(key);
+        const driveItem = driveMap.get(key);
+        
+        if (!localItem) {
+            // Only in Drive - use Drive version
+            result.push(driveItem);
+        } else if (!driveItem) {
+            // Only in local - use local version
+            result.push(localItem);
+        } else {
+            // In both - compare timestamps
+            const localDate = new Date(localItem.date || localItem.createdAt || 0);
+            const driveDate = new Date(driveItem.date || driveItem.createdAt || 0);
+            
+            // Drive wins in case of tie (source of truth)
+            result.push(driveDate >= localDate ? driveItem : localItem);
+        }
+    });
+    
+    return result;
+}
+
+// Auto-reconciliation at startup
+async function autoReconcile() {
+    console.log('🔄 Auto-reconciliation: checking for divergences...');
+    
+    // Check if backend is configured
+    const isConfigured = CONFIG.BACKEND_URL && !CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID');
+    if (!isConfigured) {
+        console.log('⚠️ Auto-reconciliation skipped (backend not configured)');
+        addSyncLogEntry('info', 'Réconciliation ignorée: backend non configuré');
+        return;
+    }
+    
+    const result = await detectDataDivergences();
+    if (!result) {
+        console.log('⚠️ Auto-reconciliation skipped (no Drive data)');
+        addSyncLogEntry('info', 'Réconciliation ignorée: pas de données Drive');
+        return;
+    }
+    
+    const { divergences, driveData } = result;
+    const hasDivergence = divergences.invoices || divergences.quotes || divergences.rams || divergences.clients;
+    
+    if (!hasDivergence) {
+        console.log('✅ No divergences detected');
+        addSyncLogEntry('success', 'Réconciliation: aucune divergence détectée');
+        return;
+    }
+    
+    console.warn('⚠️ Divergences detected:', divergences.details);
+    addSyncLogEntry('pending', 'Divergences détectées, réconciliation en cours...', divergences.details);
+    
+    // Reconcile each data type (always apply if divergence detected)
+    let hasChanges = false;
+    
+    if (divergences.invoices) {
+        const reconciled = reconcileData(invoices, driveData.invoices, 'invoices');
+        invoices = reconciled;
+        hasChanges = true;
+        console.log(`📋 Invoices reconciled: ${reconciled.length} items`);
+    }
+    
+    if (divergences.quotes) {
+        const reconciled = reconcileData(quotes, driveData.quotes, 'quotes');
+        quotes = reconciled;
+        hasChanges = true;
+        console.log(`📄 Quotes reconciled: ${reconciled.length} items`);
+    }
+    
+    if (divergences.rams) {
+        const reconciled = reconcileData(rams, driveData.rams, 'rams');
+        rams = reconciled;
+        hasChanges = true;
+        console.log(`📊 RAMs reconciled: ${reconciled.length} items`);
+    }
+    
+    if (divergences.clients) {
+        const reconciled = reconcileData(clients, driveData.clients, 'clients');
+        clients = reconciled;
+        hasChanges = true;
+        console.log(`👥 Clients reconciled: ${reconciled.length} items`);
+    }
+    
+    if (hasChanges) {
+        // Save reconciled data to localStorage
+        try {
+            localStorage.setItem('mti_invoices', JSON.stringify(invoices));
+            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+            localStorage.setItem('mti_rams', JSON.stringify(rams));
+            localStorage.setItem('mti_clients', JSON.stringify(clients));
+        } catch (e) {
+            console.error('Error saving reconciled data to localStorage:', e);
+        }
+        
+        // Sync to Drive (source of truth)
+        await saveToDrive({ skipToast: true });
+        
+        // Refresh UI
+        if (typeof renderClientsTable === 'function') renderClientsTable();
+        if (typeof renderInvoiceList === 'function') renderInvoiceList();
+        if (typeof renderQuoteList === 'function') renderQuoteList();
+        if (typeof renderRAMList === 'function') renderRAMList();
+        
+        addSyncLogEntry('success', `Réconciliation terminée: ${Object.keys(divergences.details.local).reduce((sum, key) => sum + divergences.details.local[key], 0)} items synchronisés`);
+        showToast('✅ Réconciliation automatique terminée', 'success');
+    } else {
+        addSyncLogEntry('success', 'Réconciliation: données déjà synchronisées');
+    }
+}
+
+// Export for testing
+window.detectDataDivergences = detectDataDivergences;
+window.reconcileData = reconcileData;
+window.autoReconcile = autoReconcile;
+
 // Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
 let clients = [];
 let invoices = [];
@@ -7729,6 +7935,11 @@ function initApp() {
     loadCompanySettings();
     renderIRPPBareme(); // Initialiser l'UI du barème IRPP
     loadSimulationParams(); // Charger les paramètres de simulation sauvegardés
+
+    // Auto-reconciliation check (v2.4.4)
+    setTimeout(() => {
+        autoReconcile();
+    }, 2000); // Wait 2s for Drive data to load
 
     // Show jsPDF warning if missing
     const pdfWarnEl = document.getElementById('pdfWarning');
