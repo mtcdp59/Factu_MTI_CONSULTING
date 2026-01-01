@@ -1,7 +1,8 @@
 # 📋 Plan d'Action - Évolutions Fonctionnalités MTI CONSULTING
 
 **Date d'analyse** : 16 décembre 2024  
-**Version actuelle** : 2.2.2  
+**Dernière mise à jour** : 1er janvier 2026  
+**Version actuelle** : 2.5.0  
 **Base de référence** : Fonctionnalités standards des logiciels de facturation/comptabilité
 
 ---
@@ -310,13 +311,40 @@
 
 ## 🚀 ROADMAP SUGGÉRÉE (2025-2026)
 
-### Q1 2025 (Janvier - Mars)
-- ✅ Finaliser V9 RAM (positionnement fixe) ← **FAIT**
-- ✅ Export FEC ← **FAIT (v2.3.0)**
-- ✅ Workflow relances automatiques ← **FAIT (v2.4.0)**
-- 🔲 Factures d'avoir (7 jours)
+### ✅ Q1 2025 (Janvier - Mars) - RÉALISÉ
+- ✅ Finaliser V9 RAM (positionnement fixe) - **FAIT**
+- ✅ Export FEC - **FAIT (v2.3.0)**
+- ✅ Workflow relances automatiques - **FAIT (v2.4.0)**
 
-**Total Q1** : 7 jours restants
+---
+
+### ✅ Fin 2025 (Décembre) - RÉALISÉ
+- ✅ Sync journal & réconciliation intelligente - **FAIT (v2.4.3 & v2.4.4)**
+- ✅ Migration IndexedDB progressive - **FAIT (v2.5.0)**
+
+---
+
+### 🔄 Q1 2026 (Janvier - Mars) - EN COURS
+
+#### ✅ Janvier 2026 (Semaine 1)
+- ✅ Infrastructure IndexedDB + dual-write - **FAIT (v2.5.0)**
+
+#### 📋 Janvier 2026 (Semaine 2-4)
+- 🔲 **Migration progressive du code localStorage → storageManager** (8-12 jours)
+  - Remplacer `localStorage.setItem/getItem` par `storageManager` dans tout le codebase
+  - Priorités:
+    1. Fonctions de sauvegarde/chargement principales (invoices, quotes, rams, clients)
+    2. Sync log et préférences
+    3. Configuration app
+    4. Autres utilisations ponctuelles (~20+ occurrences)
+  - Tests complets après chaque batch de migration
+  - Validation: aucune régression fonctionnelle
+
+#### 🔲 Février 2026
+- 🔲 Factures d'avoir (7 jours)
+- 🔲 Optimisations IndexedDB (compression LZ-string, batch operations) (5 jours)
+
+**Total Q1 2026** : 20 jours
 
 ---
 
