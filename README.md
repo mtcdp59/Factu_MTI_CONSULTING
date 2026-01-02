@@ -79,6 +79,8 @@ Application web de gestion complète pour micro-entreprise (BNC) avec intégrati
 - Batch save/load (4 clés) ≈2.7x plus rapide qu'en séquentiel
 - Statistiques de stockage (navigator.storage.estimate) + nettoyage localStorage optionnel
 - Helpers globaux console: `batchSaveAllData`, `batchLoadAllData`, `getStorageStatus`
+- Index applicatifs (factures/devis/tiers) + helpers console: `ensureIndexes`, `findInvoiceByNumber`, `findQuoteByNumber`, `findClientByName`
+- Nettoyage localStorage planifié (toutes les 72h, premier passage à T+5s) + helper console `cleanupLocalStorage`
 
 ### v2.5.1 (Janvier 2026)
 

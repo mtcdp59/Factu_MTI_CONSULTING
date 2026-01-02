@@ -163,8 +163,10 @@ console.warn('⚠️ localforage not loaded, falling back to localStorage');
 ### Optimisations
 
 - ✅ Dual-write asynchrone (ne bloque pas l'UI)
-- ✅ Batch operations possibles (futures optimisations)
-- ✅ Index natifs pour recherches (non utilisé pour l'instant)
+- ✅ Batch save/load (4 clés) et stats de stockage
+- ✅ Index applicatifs (factures/devis/tiers) + helpers console (`ensureIndexes`, `findInvoiceByNumber`, `findQuoteByNumber`, `findClientByName`)
+- ✅ Compression automatique LZ-string (>100 clés)
+- ✅ Nettoyage localStorage planifié (intervalle 72h, premier passage à T+5s) + helper console `cleanupLocalStorage`
 
 ---
 
@@ -215,17 +217,17 @@ location.reload();
 
 ## Prochaines étapes
 
-### v2.5.1 (futur)
+### v2.5.1 (livré)
 
-- [ ] Remplacer tous les `localStorage.setItem/getItem` par `storageManager`
-- [ ] Supprimer dual-write (IndexedDB uniquement)
-- [ ] Garder localStorage comme cold backup
+- [x] Remplacer tous les `localStorage.setItem/getItem` par `storageManager`
+- [x] Supprimer le code synchrone bloquant
+- [x] Garder localStorage comme cold backup
 
-### v2.5.2 (futur)
+### v2.5.2 (livré)
 
-- [ ] Ajouter index pour recherches rapides
-- [ ] Batch operations (save multiple items)
-- [ ] Compression automatique (LZ-string)
+- [x] Ajouter index pour recherches rapides (factures/devis/tiers)
+- [x] Batch operations (save/load groupées) + compression automatique
+- [x] Nettoyage localStorage planifié et helper console
 
 ### v2.6.0 (futur - optionnel)
 
@@ -242,6 +244,6 @@ location.reload();
 
 ---
 
-**Version**: 2.5.0  
-**Date**: 2026-01-01  
-**Statut**: ✅ Migration progressive active
+**Version**: 2.5.2  
+**Date**: 2026-01-02  
+**Statut**: ✅ Migration progressive active + optimisations livrées
