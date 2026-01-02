@@ -297,11 +297,86 @@ const storageManager = {
         }
         
         return { cleaned, message: `Cleaned ${cleaned} localStorage keys` };
+    },
+
+    // ========== v2.5.3 PREP: Indexation utilitaire ==========
+    async ensureIndexes({ invoices = [], quotes = [], clients = [] } = {}) {
+        try {
+            const invoiceByNumber = {};
+            invoices.forEach((inv, idx) => {
+                if (inv && inv.number) invoiceByNumber[inv.number] = idx;
+            });
+
+            const quoteByNumber = {};
+            quotes.forEach((q, idx) => {
+                if (q && q.number) quoteByNumber[q.number] = idx;
+            });
+
+            const clientByName = {};
+            clients.forEach((c, idx) => {
+                if (c && c.name) clientByName[c.name] = idx;
+            });
+
+            await this.setItem('mti_idx_invoices_number', invoiceByNumber);
+            await this.setItem('mti_idx_quotes_number', quoteByNumber);
+            await this.setItem('mti_idx_clients_name', clientByName);
+
+            console.log('✅ Indexes mis à jour (numéro facture/devis, nom client)');
+            return true;
+        } catch (e) {
+            console.warn('Indexation non réalisée:', e);
+            return false;
+        }
+    },
+
+    async findInvoiceByNumber(number) {
+        if (!number) return null;
+        const indexMap = await this.getItem('mti_idx_invoices_number') || {};
+        const pos = indexMap[number];
+        if (typeof pos !== 'number') return null;
+        const list = await this.getItem('mti_invoices') || [];
+        return list[pos] || null;
+    },
+
+    async findQuoteByNumber(number) {
+        if (!number) return null;
+        const indexMap = await this.getItem('mti_idx_quotes_number') || {};
+        const pos = indexMap[number];
+        if (typeof pos !== 'number') return null;
+        const list = await this.getItem('mti_quotes') || [];
+        return list[pos] || null;
+    },
+
+    async findClientByName(name) {
+        if (!name) return null;
+        const indexMap = await this.getItem('mti_idx_clients_name') || {};
+        const pos = indexMap[name];
+        if (typeof pos !== 'number') return null;
+        const list = await this.getItem('mti_clients') || [];
+        return list[pos] || null;
     }
 };
 
 // Initialize storage on load
 storageManager.init();
+
+// Planifier un cleanup localStorage périodique (72h) si IndexedDB est OK
+const LOCALSTORAGE_CLEANUP_INTERVAL_MS = 72 * 60 * 60 * 1000;
+let cleanupTimer = null;
+
+function scheduleLocalStorageCleanup() {
+    if (cleanupTimer) return; // éviter doublons
+    cleanupTimer = setInterval(() => {
+        storageManager.cleanupLocalStorage().catch(() => {});
+    }, LOCALSTORAGE_CLEANUP_INTERVAL_MS);
+
+    // premier passage après le chargement (dans 5s pour ne pas bloquer l'init)
+    setTimeout(() => {
+        storageManager.cleanupLocalStorage().catch(() => {});
+    }, 5000);
+}
+
+scheduleLocalStorageCleanup();
 
 // ==========================================
 // STORAGE HELPERS - Compatibility wrappers
@@ -319,6 +394,8 @@ async function batchSaveAllData() {
     };
     
     const results = await storageManager.batchSave(items);
+    // Mettre à jour les index pour accélérer les recherches
+    await storageManager.ensureIndexes({ invoices, quotes, clients });
     const succeeded = results.filter(r => r.success).length;
     console.log(`✅ Batch saved ${succeeded}/${results.length} items`);
     return results;
@@ -393,6 +470,9 @@ window.loadInvoicesFromStorage = loadInvoicesFromStorage;
 window.batchSaveAllData = batchSaveAllData;
 window.batchLoadAllData = batchLoadAllData;
 window.getStorageStatus = getStorageStatus;
+window.findInvoiceByNumber = (num) => storageManager.findInvoiceByNumber(num);
+window.findQuoteByNumber = (num) => storageManager.findQuoteByNumber(num);
+window.findClientByName = (name) => storageManager.findClientByName(name);
 
 // Configuration : priorité à window.CONFIG (config.js), sinon valeurs par défaut
 const CONFIG = window.CONFIG || {
