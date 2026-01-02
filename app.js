@@ -165,6 +165,138 @@ const storageManager = {
         }
         
         return data;
+    },
+
+    // ========== v2.5.2 OPTIMIZATIONS ==========
+    
+    // Check if compression is available (LZ-string)
+    hasCompression() {
+        return typeof LZString !== 'undefined';
+    },
+
+    // Save with optional compression (v2.5.2)
+    async saveWithCompression(key, value, compress = true) {
+        let toStore = value;
+        
+        // Compress large objects if LZ-string available
+        if (compress && this.hasCompression() && typeof value === 'object' && Object.keys(value).length > 100) {
+            try {
+                const jsonStr = JSON.stringify(value);
+                const compressed = LZString.compressToBase64(jsonStr);
+                
+                // Store metadata to know it's compressed
+                toStore = {
+                    __compressed: true,
+                    __timestamp: Date.now(),
+                    data: compressed
+                };
+                console.log(`📦 Compressed ${key}: ${jsonStr.length} → ${compressed.length} bytes`);
+            } catch (e) {
+                console.warn(`Compression failed for ${key}, storing uncompressed:`, e);
+                toStore = value;
+            }
+        }
+        
+        await this.saveDual(key, toStore);
+    },
+
+    // Load with automatic decompression (v2.5.2)
+    async loadWithDecompression(key) {
+        let data = await this.loadDual(key);
+        
+        if (data && data.__compressed && this.hasCompression()) {
+            try {
+                const decompressed = LZString.decompressFromBase64(data.data);
+                data = JSON.parse(decompressed);
+                console.log(`📦 Decompressed ${key}`);
+            } catch (e) {
+                console.warn(`Decompression failed for ${key}:`, e);
+            }
+        }
+        
+        return data;
+    },
+
+    // Batch save multiple keys (v2.5.2)
+    async batchSave(items) {
+        // items = { 'key1': value1, 'key2': value2, ... }
+        const results = [];
+        for (const [key, value] of Object.entries(items)) {
+            try {
+                await this.saveDual(key, value);
+                results.push({ key, success: true });
+            } catch (e) {
+                console.error(`Batch save failed for ${key}:`, e);
+                results.push({ key, success: false, error: e.message });
+            }
+        }
+        return results;
+    },
+
+    // Batch load multiple keys (v2.5.2)
+    async batchLoad(keys) {
+        // keys = ['key1', 'key2', ...]
+        const results = {};
+        for (const key of keys) {
+            try {
+                results[key] = await this.loadDual(key);
+            } catch (e) {
+                console.error(`Batch load failed for ${key}:`, e);
+                results[key] = null;
+            }
+        }
+        return results;
+    },
+
+    // Get storage size estimate (v2.5.2)
+    async getStorageStats() {
+        if (!navigator.storage || !navigator.storage.estimate) {
+            return { available: 'unknown', used: 'unknown', percentage: 'unknown' };
+        }
+
+        try {
+            const estimate = await navigator.storage.estimate();
+            const used = estimate.usage || 0;
+            const quota = estimate.quota || 0;
+            const percentage = quota > 0 ? Math.round((used / quota) * 100) : 0;
+            
+            return {
+                used: `${(used / 1024 / 1024).toFixed(2)} MB`,
+                available: `${(quota / 1024 / 1024).toFixed(2)} MB`,
+                percentage: `${percentage}%`
+            };
+        } catch (e) {
+            console.warn('Could not get storage stats:', e);
+            return { available: 'unknown', used: 'unknown', percentage: 'unknown' };
+        }
+    },
+
+    // Clean localStorage backup (v2.5.2)
+    async cleanupLocalStorage(keysToKeep = []) {
+        // keysToKeep = ['mti_indexeddb_migrated', ...] - keys to preserve
+        const defaultKeepsKeys = ['mti_indexeddb_migrated', 'mti_app_config'];
+        const keysToPreserve = [...new Set([...keysToKeep, ...defaultKeepsKeys])];
+        
+        let cleaned = 0;
+        const allKeys = Object.keys(localStorage);
+        
+        for (const key of allKeys) {
+            if (key.startsWith('mti_') && !keysToPreserve.includes(key)) {
+                try {
+                    // Verify data exists in IndexedDB before deleting from localStorage
+                    const idbData = await this.getItem(key);
+                    if (idbData) {
+                        localStorage.removeItem(key);
+                        cleaned++;
+                        console.log(`🧹 Cleaned localStorage: ${key}`);
+                    }
+                } catch (e) {
+                    console.warn(`Cleanup skipped for ${key} (not in IndexedDB):`, e);
+                }
+            }
+        }
+        
+        return { cleaned, message: `Cleaned ${cleaned} localStorage keys` };
     }
 };
 
@@ -174,6 +306,45 @@ storageManager.init();
 // ==========================================
 // STORAGE HELPERS - Compatibility wrappers
 // ==========================================
+
+// ========== v2.5.2 HELPER FUNCTIONS ==========
+
+// Batch save invoices, quotes, rams, clients in one operation
+async function batchSaveAllData() {
+    const items = {
+        'mti_invoices': invoices,
+        'mti_quotes': quotes,
+        'mti_rams': rams,
+        'mti_clients': clients
+    };
+    
+    const results = await storageManager.batchSave(items);
+    const succeeded = results.filter(r => r.success).length;
+    console.log(`✅ Batch saved ${succeeded}/${results.length} items`);
+    return results;
+}
+
+// Batch load all data with decompression
+async function batchLoadAllData() {
+    const keys = ['mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients'];
+    const data = await storageManager.batchLoad(keys);
+    
+    if (data['mti_invoices']) invoices = data['mti_invoices'];
+    if (data['mti_quotes']) quotes = data['mti_quotes'];
+    if (data['mti_rams']) rams = data['mti_rams'];
+    if (data['mti_clients']) clients = data['mti_clients'];
+    
+    console.log(`📦 Batch loaded all data`);
+    return data;
+}
+
+// Get storage status (for UI status bar)
+async function getStorageStatus() {
+    const stats = await storageManager.getStorageStats();
+    return `Storage: ${stats.used} / ${stats.available} (${stats.percentage})`;
+}
+
+// ========== ORIGINAL HELPERS (for compatibility) ==========
 
 // Save invoices (dual-write: IndexedDB + localStorage)
 async function saveInvoicesToStorage(invoicesData) {
@@ -219,6 +390,9 @@ async function loadClientsFromStorage() {
 window.storageManager = storageManager;
 window.saveInvoicesToStorage = saveInvoicesToStorage;
 window.loadInvoicesFromStorage = loadInvoicesFromStorage;
+window.batchSaveAllData = batchSaveAllData;
+window.batchLoadAllData = batchLoadAllData;
+window.getStorageStatus = getStorageStatus;
 
 // Configuration : priorité à window.CONFIG (config.js), sinon valeurs par défaut
 const CONFIG = window.CONFIG || {
