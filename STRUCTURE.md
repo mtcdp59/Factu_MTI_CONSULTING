@@ -80,7 +80,7 @@ Documentation fonctionnelle, technique et d'analyse (unique source) :
 - **Stockage & sync** : MIGRATION_INDEXEDDB.md, ARCHITECTURE_SYNC.md, TROUBLESHOOTING_SYNC.md
 - **Guides fonctionnels** : DEMARRAGE.md, RAM_GUIDE.md, URSSAF_INTEGRATION.md, FACTURATION_ELECTRONIQUE_IMPLEMENTATION.md
 - **Références métiers** : BAREME_IRPP.md, CALCULATEUR_CHARGES.md, SYNTHESE_CONFORMITE_BNC.md, TAUX_OFFICIELS_2025.md
-- **Roadmap & suivi** : PLAN_EVOLUTION_FONCTIONNALITES.md, RELEASE_NOTES_v2.4.1.md
+- **Roadmap & suivi** : PLAN_EVOLUTION_FONCTIONNALITES.md
 - **URSSAF (détails)** : dossier api-urssaf/
 
 ### `backend/`
