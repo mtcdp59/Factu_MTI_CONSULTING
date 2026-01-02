@@ -17,7 +17,7 @@
          * (voir .github/copilot-instructions.md)
          */
         :root {
-  /* Primitive Color Tokens */
+    /* Jetons de couleur primaires */
   --color-white: rgba(255, 255, 255, 1);
   --color-black: rgba(0, 0, 0, 1);
   --color-cream-50: rgba(252, 252, 249, 1);
@@ -41,7 +41,7 @@
   --color-orange-400: rgba(230, 129, 97, 1);
   --color-orange-500: rgba(168, 75, 47, 1);
 
-  /* RGB versions for opacity control */
+    /* Versions RGB pour gérer l'opacité */
   --color-brown-600-rgb: 94, 82, 64;
   --color-teal-500-rgb: 33, 128, 141;
   --color-slate-900-rgb: 19, 52, 59;
@@ -51,7 +51,7 @@
   --color-orange-500-rgb: 168, 75, 47;
   --color-orange-400-rgb: 230, 129, 97;
 
-  /* Background color tokens (Light Mode) */
+    /* Couleurs de fond (mode clair) */
   --color-bg-1: rgba(59, 130, 246, 0.08);
   --color-bg-2: rgba(245, 158, 11, 0.08);
   --color-bg-3: rgba(34, 197, 94, 0.08);
@@ -61,7 +61,7 @@
   --color-bg-7: rgba(236, 72, 153, 0.08);
   --color-bg-8: rgba(6, 182, 212, 0.08);
 
-  /* Semantic Color Tokens (Light Mode) */
+    /* Couleurs sémantiques (mode clair) */
   --color-background: var(--color-cream-50);
   --color-surface: var(--color-cream-100);
   --color-text: var(--color-slate-900);
@@ -83,7 +83,7 @@
   --color-focus-ring: rgba(var(--color-teal-500-rgb), 0.4);
   --color-select-caret: rgba(var(--color-slate-900-rgb), 0.8);
 
-  /* Typography */
+    /* Typographie */
   --font-family-base: 'Arial', 'Helvetica', 'Trebuchet MS', sans-serif;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
@@ -98,7 +98,7 @@
   --font-weight-semibold: 550;
   --font-weight-bold: 600;
 
-  /* Spacing */
+    /* Espacements */
   --space-4: 4px;
   --space-6: 6px;
   --space-8: 8px;
@@ -108,14 +108,14 @@
   --space-24: 24px;
   --space-32: 32px;
 
-  /* Border Radius */
+    /* Rayons de bordure */
   --radius-sm: 6px;
   --radius-base: 8px;
   --radius-md: 10px;
   --radius-lg: 12px;
   --radius-full: 9999px;
 
-  /* Shadows */
+    /* Ombres */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
 }
@@ -139,7 +139,7 @@ body {
     padding: var(--space-24);
 }
 
-/* Header */
+/* En-tête */
 .header {
     background-color: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
@@ -168,7 +168,7 @@ body {
     color: var(--color-primary);
 }
 
-/* Navigation Tabs */
+/* Onglets de navigation */
 .nav-tabs {
     display: flex;
     gap: var(--space-8);
@@ -210,7 +210,7 @@ body {
     display: block;
 }
 
-/* Cards */
+/* Cartes */
 .card {
     background-color: var(--color-surface);
     border: 1px solid var(--color-card-border);
@@ -227,7 +227,7 @@ body {
     color: var(--color-text);
 }
 
-/* Form Elements */
+/* Éléments de formulaire */
 .form-group {
     margin-bottom: var(--space-16);
 }
@@ -267,7 +267,7 @@ textarea.form-control {
     gap: var(--space-16);
 }
 
-/* Buttons */
+/* Boutons */
 .btn {
     padding: var(--space-12) var(--space-24);
     border: none;
@@ -304,7 +304,7 @@ textarea.form-control {
     font-size: var(--font-size-sm);
 }
 
-/* Summary Cards */
+/* Cartes de synthèse */
 .summary-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -332,7 +332,7 @@ textarea.form-control {
     color: var(--color-text);
 }
 
-/* Table */
+/* Tableau */
 .table-wrapper {
     overflow-x: auto;
 }
@@ -365,7 +365,7 @@ tr:hover {
     background-color: var(--color-bg-1);
 }
 
-/* Status Badges */
+/* Badges de statut */
 .status-badge {
     display: inline-block;
     padding: var(--space-6) var(--space-12);
@@ -385,7 +385,7 @@ tr:hover {
     color: #1D4ED8;
 }
 
-/* Harmonize quote/invoice sent status (Envoyé/Envoyée) */
+/* Harmoniser le statut Envoyé/Envoyée (devis/facture) */
 .status-envoyee, .status-envoye {
     background-color: var(--color-bg-1);
     color: #1D4ED8;
@@ -396,7 +396,7 @@ tr:hover {
     color: var(--color-success);
 }
 
-/* Accepted (Devis) */
+/* Accepté (devis) */
 .status-accepte {
     background-color: rgba(var(--color-teal-500-rgb), 0.15);
     color: var(--color-success);
@@ -407,13 +407,13 @@ tr:hover {
     color: var(--color-error);
 }
 
-/* Refused (Devis) and Cancelled (Facture) */
+/* Refusé (devis) et Annulée (facture) */
 .status-refuse, .status-annulee {
     background-color: rgba(var(--color-red-500-rgb), 0.15);
     color: var(--color-error);
 }
 
-/* Planning Calendar */
+/* Calendrier planning */
 .calendar {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -470,7 +470,7 @@ tr:hover {
     font-size: var(--font-size-xs);
 }
 
-/* Modal */
+/* Modale */
 .modal {
     display: none;
     position: fixed;
@@ -511,7 +511,7 @@ tr:hover {
     color: var(--color-text-secondary);
 }
 
-/* Invoice Preview */
+/* Prévisualisation facture */
 .invoice-preview {
     font-size: var(--font-size-sm);
     max-width: 800px;
@@ -618,7 +618,7 @@ tr:hover {
     margin: 1px 0;
 }
 
-/* Calculator Results */
+/* Résultats du calculateur */
 .calc-results {
     margin-top: var(--space-24);
 }
@@ -648,7 +648,7 @@ tr:hover {
     color: var(--color-text);
 }
 
-/* Toggle Switch */
+/* Interrupteur toggle */
 .toggle {
     display: flex;
     align-items: center;
@@ -694,7 +694,7 @@ tr:hover {
     flex-wrap: wrap;
 }
 
-/* Sync Indicator Styles */
+/* Styles de l'indicateur de sync */
 .sync-indicator {
     display: inline-flex;
     align-items: center;
@@ -743,7 +743,7 @@ tr:hover {
     }
 }
 
-/* Toggle Auto-Sync Button */
+/* Bouton de bascule auto-sync */
 .btn-auto-sync {
     position: relative;
     padding: var(--space-8) var(--space-12);
@@ -783,7 +783,7 @@ tr:hover {
     }
 }
 
-/* Toast animation */
+/* Animation du toast */
 @keyframes slideIn {
     from {
         opacity: 0;
@@ -795,7 +795,7 @@ tr:hover {
     }
 }
 
-/* Secondary Actions Container Styles */
+/* Styles du conteneur d'actions secondaires */
 .invoice-secondary-actions,
 .quote-secondary-actions {
     display: none;
@@ -852,7 +852,7 @@ tr:hover {
             </button>
         </nav>
 
-        <!-- FACTURES TAB -->
+        <!-- ONGLET FACTURES -->
         <div id="factures" class="tab-content">
             <div class="card">
                 <h2 class="card-title">Générateur de Factures</h2>
@@ -904,7 +904,7 @@ tr:hover {
                         </div>
                     </div>
 
-                    <!-- MULTI-LINE ITEMS TABLE -->
+                    <!-- TABLEAU LIGNES MULTIPLES -->
                     <div class="form-group">
                         <label class="form-label">Lignes de facturation *</label>
                         <div id="invoiceItemsContainer" style="border: 1px solid var(--color-border); border-radius: var(--border-radius); overflow: hidden;">
@@ -919,7 +919,7 @@ tr:hover {
                                     </tr>
                                 </thead>
                                 <tbody id="invoiceItemsBody">
-                                    <!-- Invoice items will be added here dynamically -->
+                                    <!-- Lignes de facture ajoutées dynamiquement -->
                                 </tbody>
                             </table>
                         </div>
@@ -982,7 +982,7 @@ tr:hover {
                 </form>
             </div>
             
-            <!-- Invoice List -->
+            <!-- Liste des factures -->
             <div class="card">
                 <h2 class="card-title">Liste des factures</h2>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
@@ -994,7 +994,7 @@ tr:hover {
                     <strong>ℹ️ Synchronisation :</strong> Les factures sont automatiquement sauvegardées sur Google Drive. Utilisez ces boutons pour synchroniser avec Google Sheets (onglet "Factures").
                 </div>
                 <div class="table-wrapper">
-                    <!-- SEARCH BAR -->
+                    <!-- BARRE DE RECHERCHE -->
                     <div class="form-group" style="margin-bottom: var(--space-16);">
                         <input type="text" id="invoiceSearchInput" class="form-control" placeholder="🔍 Rechercher par numéro, client..." onkeyup="filterInvoiceList()">
                     </div>
@@ -1012,7 +1012,7 @@ tr:hover {
                             </tr>
                         </thead>
                         <tbody id="invoiceListBody">
-                            <!-- Invoices will be populated here -->
+                            <!-- Les factures seront insérées ici -->
                         </tbody>
                     </table>
                 </div>
@@ -1056,7 +1056,7 @@ tr:hover {
                     </table>
                 </div>
 
-                <!-- Info box -->
+                <!-- Encadré d'information -->
                 <div style="margin-top: var(--space-16); padding: var(--space-12); background: var(--color-info-bg); border-left: 4px solid var(--color-primary); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm);">
                     <strong>ℹ️ Comment ça marche ?</strong>
                     <ol style="margin: var(--space-8) 0 0 var(--space-20); padding: 0;">
@@ -1072,7 +1072,7 @@ tr:hover {
             </div>
         </div>
 
-        <!-- DEVIS TAB -->
+        <!-- ONGLET DEVIS -->
         <div id="devis" class="tab-content active">
             <div class="card">
                 <h2 class="card-title">Générateur de Devis</h2>
@@ -1124,7 +1124,7 @@ tr:hover {
                         </div>
                     </div>
 
-                    <!-- MULTI-LINE ITEMS TABLE -->
+                    <!-- TABLEAU LIGNES MULTIPLES -->
                     <div class="form-group">
                         <label class="form-label">Lignes du devis *</label>
                         <div id="quoteItemsContainer" style="border: 1px solid var(--color-border); border-radius: var(--border-radius); overflow: hidden;">
@@ -1139,7 +1139,7 @@ tr:hover {
                                     </tr>
                                 </thead>
                                 <tbody id="quoteItemsBody">
-                                    <!-- Quote items will be added here dynamically -->
+                                    <!-- Lignes de devis ajoutées dynamiquement -->
                                 </tbody>
                             </table>
                         </div>
@@ -1163,7 +1163,7 @@ tr:hover {
                 </form>
             </div>
             
-            <!-- Quote List -->
+            <!-- Liste des devis -->
             <div class="card">
                 <h2 class="card-title">Liste des devis</h2>
                 
@@ -1177,7 +1177,7 @@ tr:hover {
                 </div>
                 
                 <div class="table-wrapper">
-                    <!-- SEARCH BAR -->
+                    <!-- BARRE DE RECHERCHE -->
                     <div class="form-group" style="margin-bottom: var(--space-16);">
                         <input type="text" id="quoteSearchInput" class="form-control" placeholder="🔍 Rechercher par numéro, client..." onkeyup="filterQuoteList()">
                     </div>
@@ -1196,14 +1196,14 @@ tr:hover {
                             </tr>
                         </thead>
                         <tbody id="quoteListBody">
-                            <!-- Quotes will be populated here -->
+                            <!-- Les devis seront insérés ici -->
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- RAM TAB -->
+        <!-- ONGLET RAM -->
         <div id="ram" class="tab-content">
             <!-- Formulaire de création/édition RAM -->
             <div id="ramFormContainer" class="card" style="display: none;">
@@ -1324,7 +1324,7 @@ tr:hover {
                 </div>
                 
                 <div class="table-wrapper">
-                    <!-- SEARCH BAR -->
+                    <!-- BARRE DE RECHERCHE -->
                     <div class="form-group" style="margin-bottom: var(--space-16);">
                         <input type="text" id="ramSearchInput" class="form-control" placeholder="🔍 Rechercher par client, période..." onkeyup="filterRAMList()">
                     </div>
@@ -1348,7 +1348,7 @@ tr:hover {
             </div>
         </div>
 
-        <!-- TIERS TAB -->
+        <!-- ONGLET TIERS -->
         <div id="tiers" class="tab-content">
             <div class="card">
                 <h2 class="card-title">Gestion des Clients</h2>
@@ -1452,7 +1452,7 @@ tr:hover {
             </div>
         </div>
 
-        <!-- PLANNING TAB -->
+        <!-- ONGLET PLANNING -->
         <div id="planning" class="tab-content">
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-20);">
@@ -1532,7 +1532,7 @@ tr:hover {
             </div>
         </div>
 
-        <!-- SUIVI TAB -->
+        <!-- ONGLET SUIVI -->
         <div id="suivi" class="tab-content">
             <!-- Dashboard d'accueil -->
             <div class="card" style="margin-bottom: var(--space-16); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
@@ -1745,7 +1745,7 @@ tr:hover {
             </div>
         </div>
 
-        <!-- PARAMÈTRES TAB -->
+        <!-- ONGLET PARAMÈTRES -->
         <div id="parametres" class="tab-content">
             <div class="card">
                 <h2 class="card-title">⚙️ Paramètres</h2>
@@ -1965,7 +1965,27 @@ tr:hover {
                 <button type="button" class="btn btn-secondary btn-sm" id="resetIRPPBareme" style="margin-top: var(--space-12);">🔄 Réinitialiser barème par défaut</button>
 
                 <!-- SECTION 4: DIVERS -->
-                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">📋 Journal de Synchronisation</h3>
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">� Gestion du Stockage</h3>
+                <div style="padding: var(--space-12); background: var(--color-bg-1); border-radius: var(--radius-base); font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-16);">
+                    <strong>📦 Mode actuel :</strong> <span id="storageMode" style="font-weight: var(--font-weight-semibold); color: var(--color-primary);">-</span><br>
+                    <strong>💾 Backup localStorage :</strong> <span id="storageBackupStatus" style="font-weight: var(--font-weight-semibold);">-</span><br>
+                    <strong>📊 Espace utilisé :</strong> <span id="storageSpaceUsed">-</span>
+                </div>
+                <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap; margin-bottom: var(--space-16);">
+                    <button type="button" class="btn btn-secondary" id="refreshStorageStatsBtn">🔄 Actualiser</button>
+                    <button type="button" class="btn btn-secondary" id="exportLocalBackupBtn">📤 Exporter backup</button>
+                    <button type="button" class="btn btn-secondary" id="importLocalBackupBtn">📥 Importer backup</button>
+                    <button type="button" class="btn btn-secondary" id="toggleBackupBtn">💾 Toggle backup localStorage</button>
+                </div>
+                <div style="padding: var(--space-12); background: linear-gradient(135deg, rgba(33, 140, 141, 0.1) 0%, rgba(33, 140, 141, 0.05) 100%); border-left: 4px solid var(--color-primary); border-radius: var(--radius-base); margin-bottom: var(--space-20);">
+                    <p style="margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.6;">
+                        💡 <strong>Stockage hybride :</strong> L'application utilise IndexedDB (prioritaire) avec un backup localStorage optionnel. En cas d'échec IndexedDB (navigation privée, quota), bascule automatique vers localStorage.<br>
+                        📖 <a href="docs/STORAGE_GUIDE.md" target="_blank" style="color: var(--color-primary);">Guide complet du stockage</a> | 
+                        🧪 <a href="test-storage.html" target="_blank" style="color: var(--color-primary);">Page de test</a>
+                    </p>
+                </div>
+
+                <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-top: var(--space-24); margin-bottom: var(--space-16); padding-bottom: var(--space-8); border-bottom: 2px solid var(--color-primary); color: var(--color-primary);">�📋 Journal de Synchronisation</h3>
                 <div style="margin-top: 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap; margin-bottom: var(--space-16);">
                     <button type="button" class="btn btn-secondary" id="viewSyncLogBtn" onclick="showSyncLogModal()">📖 Afficher historique</button>
                     <button type="button" class="btn btn-secondary" id="clearSyncLogBtn" onclick="(function(){ if(confirm('Effacer le journal de sync?')) { clearSyncLog(); showToast('Journal effacé', 'info'); updateSyncLogDisplay(); } })()">🗑️ Effacer</button>
@@ -2606,6 +2626,83 @@ tr:hover {
     </div>
     <script src="app.js"></script>
         <script>
+        // Initialiser l'affichage du stockage dans les paramètres
+        async function updateStorageUI() {
+            try {
+                const mode = getStorageMode();
+                const stats = await storageManager.getStorageStats();
+                const backupEnabled = storageManager.backupEnabled;
+
+                document.getElementById('storageMode').textContent = mode === 'indexeddb' ? 'IndexedDB' : 'localStorage';
+                document.getElementById('storageBackupStatus').textContent = backupEnabled ? 'Activé ✅' : 'Désactivé ❌';
+                document.getElementById('storageBackupStatus').style.color = backupEnabled ? 'var(--color-success)' : 'var(--color-error)';
+                document.getElementById('storageSpaceUsed').textContent = `${stats.used} / ${stats.available} (${stats.percentage})`;
+            } catch (e) {
+                console.error('Erreur mise à jour UI stockage:', e);
+            }
+        }
+
+        // Handlers boutons stockage
+        document.getElementById('refreshStorageStatsBtn')?.addEventListener('click', async () => {
+            await updateStorageUI();
+            showToast('Statistiques actualisées', 'success');
+        });
+
+        document.getElementById('exportLocalBackupBtn')?.addEventListener('click', async () => {
+            try {
+                const backup = await exportLocalBackup(true);
+                const blob = new Blob([backup.serialized], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mti_backup_${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('Backup exporté avec succès', 'success');
+            } catch (e) {
+                showToast(`Erreur export: ${e.message}`, 'error');
+            }
+        });
+
+        document.getElementById('importLocalBackupBtn')?.addEventListener('click', async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                try {
+                    const text = await file.text();
+                    const result = await importLocalBackup(text, { compressed: true });
+                    showToast(`Import réussi: ${result.restored.length} clés restaurées`, 'success');
+                    await updateStorageUI();
+                    location.reload(); // Recharger pour appliquer
+                } catch (e) {
+                    showToast(`Erreur import: ${e.message}`, 'error');
+                }
+            };
+            input.click();
+        });
+
+        document.getElementById('toggleBackupBtn')?.addEventListener('click', () => {
+            const newState = !storageManager.backupEnabled;
+            setStorageBackupEnabled(newState);
+            updateStorageUI();
+            showToast(`Backup localStorage ${newState ? 'activé' : 'désactivé'}`, newState ? 'success' : 'info');
+        });
+
+        // Initialiser au chargement de l'onglet paramètres
+        const parametresTab = document.querySelector('[onclick*="parametres"]');
+        if (parametresTab) {
+            parametresTab.addEventListener('click', () => {
+                setTimeout(updateStorageUI, 100);
+            });
+        }
+
+        // Init au chargement de la page
+        setTimeout(updateStorageUI, 1000);
+
             (function(){
                 try {
                     var cfg = window.CONFIG || (function(){ try { return JSON.parse(localStorage.getItem('mti_app_config')||'{}'); } catch(e){ return {}; } })();

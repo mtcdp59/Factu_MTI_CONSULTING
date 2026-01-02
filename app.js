@@ -4,187 +4,226 @@
 console.log('✅ app.js chargé - début du script');
 
 // ==========================================
-// STORAGE MANAGER - IndexedDB with localStorage fallback
+// STORAGE MANAGER - IndexedDB prioritaire + secours localStorage
 // ==========================================
 
+const STORAGE_DATA_KEYS = [
+    'mti_invoices',
+    'mti_quotes',
+    'mti_rams',
+    'mti_clients',
+    'mti_syncLog',
+    'mti_autoSyncEnabled',
+    'mti_app_config'
+];
+
+const STORAGE_META_KEYS_TO_KEEP = ['mti_indexeddb_migrated', 'mti_app_config'];
+
 const storageManager = {
-    // Initialize localforage with config
+    mode: 'indexeddb',
+    backupEnabled: true, // Backup localStorage activé par sécurité
+
+    // Initialiser localforage et choisir le mode
     init() {
-        if (typeof localforage !== 'undefined') {
+        this.mode = 'indexeddb';
+        this.backupEnabled = true; // Backup localStorage activé par sécurité
+
+        if (typeof localforage === 'undefined') {
+            this.switchToLocalStorage('localforage absent');
+            return;
+        }
+
+        try {
             localforage.config({
                 name: 'MTI_CONSULTING',
                 storeName: 'mti_data',
                 description: 'Stockage principal MTI Consulting (IndexedDB)'
             });
-            console.log('✅ IndexedDB initialized via localforage');
-        } else {
-            console.warn('⚠️ localforage not loaded, falling back to localStorage');
+
+            localforage.ready()
+                .then(() => {
+                    console.log('✅ IndexedDB prêt via localforage');
+                })
+                .catch((err) => {
+                    this.switchToLocalStorage(`IndexedDB indisponible: ${err}`);
+                });
+        } catch (err) {
+            this.switchToLocalStorage(`Erreur init IndexedDB: ${err}`);
         }
     },
 
-    // Get item (async)
+    switchToLocalStorage(reason = 'fallback') {
+        if (this.mode === 'localStorage') return;
+        this.mode = 'localStorage';
+        console.warn(`⚠️ Bascule en mode localStorage (${reason})`);
+    },
+
+    isIndexedDB() {
+        return this.mode === 'indexeddb';
+    },
+
+    setBackupEnabled(enabled = false) {
+        this.backupEnabled = !!enabled;
+        return this.backupEnabled;
+    },
+
+    // Lire une clé (async)
     async getItem(key) {
         try {
-            if (typeof localforage !== 'undefined') {
+            if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 return await localforage.getItem(key);
-            } else {
-                const data = localStorage.getItem(key);
-                return data ? JSON.parse(data) : null;
             }
+            const data = localStorage.getItem(key);
+            return data ? JSON.parse(data) : null;
         } catch (e) {
+            if (this.isIndexedDB()) this.switchToLocalStorage(e.toString());
             console.error(`Error reading ${key}:`, e);
             return null;
         }
     },
 
-    // Set item (async)
+    // Écrire une clé (async)
     async setItem(key, value) {
         try {
-            if (typeof localforage !== 'undefined') {
+            if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 await localforage.setItem(key, value);
-            } else {
-                localStorage.setItem(key, JSON.stringify(value));
+                return;
             }
+            localStorage.setItem(key, JSON.stringify(value));
         } catch (e) {
+            if (this.isIndexedDB()) this.switchToLocalStorage(e.toString());
             console.error(`Error saving ${key}:`, e);
         }
     },
 
-    // Remove item (async)
+    // Supprimer une clé (async)
     async removeItem(key) {
         try {
-            if (typeof localforage !== 'undefined') {
+            if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 await localforage.removeItem(key);
-            } else {
-                localStorage.removeItem(key);
+                return;
             }
+            localStorage.removeItem(key);
         } catch (e) {
+            if (this.isIndexedDB()) this.switchToLocalStorage(e.toString());
             console.error(`Error removing ${key}:`, e);
         }
     },
 
-    // Clear all (async)
+    // Tout effacer (async)
     async clear() {
         try {
-            if (typeof localforage !== 'undefined') {
+            if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 await localforage.clear();
-            } else {
-                localStorage.clear();
             }
+            localStorage.clear();
         } catch (e) {
             console.error('Error clearing storage:', e);
         }
     },
 
-    // Get all keys (async)
+    // Lister toutes les clés (async)
     async keys() {
         try {
-            if (typeof localforage !== 'undefined') {
+            if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 return await localforage.keys();
-            } else {
-                return Object.keys(localStorage);
             }
+            return Object.keys(localStorage);
         } catch (e) {
+            if (this.isIndexedDB()) this.switchToLocalStorage(e.toString());
             console.error('Error getting keys:', e);
             return [];
         }
     },
 
-    // Migrate from localStorage to IndexedDB
+    // Migrer de localStorage vers IndexedDB
     async migrateFromLocalStorage() {
-        if (typeof localforage === 'undefined') return;
+        if (!this.isIndexedDB() || typeof localforage === 'undefined') return;
 
-        // Check if already migrated
         const migrationDone = localStorage.getItem('mti_indexeddb_migrated');
         if (migrationDone === 'true') {
             console.log('✅ Migration already completed');
             return;
         }
 
-        const keysToMigrate = [
-            'mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients',
-            'mti_syncLog', 'mti_autoSyncEnabled', 'mti_app_config'
-        ];
-
         let migrated = 0;
-        for (const key of keysToMigrate) {
+        for (const key of STORAGE_DATA_KEYS) {
             const lsData = localStorage.getItem(key);
-            if (lsData) {
-                try {
-                    const parsed = JSON.parse(lsData);
-                    await localforage.setItem(key, parsed);
-                    migrated++;
-                    console.log(`📦 Migrated: ${key}`);
-                } catch (e) {
-                    console.warn(`⚠️ Migration failed for ${key}:`, e);
-                }
+            if (!lsData) continue;
+
+            try {
+                const parsed = JSON.parse(lsData);
+                await localforage.setItem(key, parsed);
+                migrated++;
+                console.log(`📦 Migrated: ${key}`);
+            } catch (e) {
+                console.warn(`⚠️ Migration failed for ${key}:`, e);
             }
         }
 
+        localStorage.setItem('mti_indexeddb_migrated', 'true');
         if (migrated > 0) {
             console.log(`✅ Migrated ${migrated} items from localStorage to IndexedDB`);
-            localStorage.setItem('mti_indexeddb_migrated', 'true');
-            
-            // Keep localStorage as backup for now (progressive migration)
-            console.log('💾 localStorage kept as backup');
         } else {
             console.log('ℹ️ No data to migrate');
-            localStorage.setItem('mti_indexeddb_migrated', 'true');
         }
     },
 
-    // Helper: Save with dual-write (IndexedDB + localStorage backup)
-    async saveDual(key, value) {
-        // Primary: IndexedDB
-        await this.setItem(key, value);
-        
-        // Backup: localStorage (for compatibility)
+    readFromLocalStorage(key, { log = false } = {}) {
+        const lsData = localStorage.getItem(key);
+        if (!lsData) return null;
         try {
-            localStorage.setItem(key, JSON.stringify(value));
+            const parsed = JSON.parse(lsData);
+            if (log) console.log(`📦 Loaded ${key} from localStorage fallback`);
+            return parsed;
         } catch (e) {
-            console.warn(`localStorage backup failed for ${key}:`, e);
+            console.error(`Error parsing localStorage ${key}:`, e);
+            return null;
         }
     },
 
-    // Helper: Load with fallback (IndexedDB → localStorage)
-    async loadDual(key) {
-        // Try IndexedDB first
-        let data = await this.getItem(key);
-        
-        // Fallback to localStorage if IndexedDB empty
-        if (!data) {
-            const lsData = localStorage.getItem(key);
-            if (lsData) {
-                try {
-                    data = JSON.parse(lsData);
-                    console.log(`📦 Loaded ${key} from localStorage fallback`);
-                } catch (e) {
-                    console.error(`Error parsing localStorage ${key}:`, e);
-                }
+    // Helper : sauvegarde (IndexedDB prioritaire) + backup optionnel
+    async saveDual(key, value, { backup = false } = {}) {
+        await this.setItem(key, value);
+
+        const shouldBackup = backup || (this.backupEnabled && this.isIndexedDB());
+        if (shouldBackup) {
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+            } catch (e) {
+                console.warn(`localStorage backup failed for ${key}:`, e);
             }
         }
-        
-        return data;
     },
 
-    // ========== v2.5.2 OPTIMIZATIONS ==========
+    // Helper : lecture avec repli (IndexedDB → localStorage)
+    async loadDual(key) {
+        if (!this.isIndexedDB()) {
+            return this.readFromLocalStorage(key);
+        }
+
+        const data = await this.getItem(key);
+        if (data !== null && data !== undefined) return data;
+
+        return this.readFromLocalStorage(key, { log: true });
+    },
+
+    // ========== v2.5.2 OPTIMISATIONS ========== 
     
-    // Check if compression is available (LZ-string)
+    // Vérifier si la compression est disponible (LZ-string)
     hasCompression() {
         return typeof LZString !== 'undefined';
     },
 
-    // Save with optional compression (v2.5.2)
+    // Sauvegarder avec compression optionnelle (v2.5.2)
     async saveWithCompression(key, value, compress = true) {
         let toStore = value;
         
-        // Compress large objects if LZ-string available
         if (compress && this.hasCompression() && typeof value === 'object' && Object.keys(value).length > 100) {
             try {
                 const jsonStr = JSON.stringify(value);
                 const compressed = LZString.compressToBase64(jsonStr);
                 
-                // Store metadata to know it's compressed
                 toStore = {
                     __compressed: true,
                     __timestamp: Date.now(),
@@ -200,7 +239,7 @@ const storageManager = {
         await this.saveDual(key, toStore);
     },
 
-    // Load with automatic decompression (v2.5.2)
+    // Charger avec décompression automatique (v2.5.2)
     async loadWithDecompression(key) {
         let data = await this.loadDual(key);
         
@@ -217,9 +256,8 @@ const storageManager = {
         return data;
     },
 
-    // Batch save multiple keys (v2.5.2)
+    // Sauvegarde groupée de plusieurs clés (v2.5.2)
     async batchSave(items) {
-        // items = { 'key1': value1, 'key2': value2, ... }
         const results = [];
         for (const [key, value] of Object.entries(items)) {
             try {
@@ -233,9 +271,8 @@ const storageManager = {
         return results;
     },
 
-    // Batch load multiple keys (v2.5.2)
+    // Chargement groupé de plusieurs clés (v2.5.2)
     async batchLoad(keys) {
-        // keys = ['key1', 'key2', ...]
         const results = {};
         for (const key of keys) {
             try {
@@ -248,7 +285,7 @@ const storageManager = {
         return results;
     },
 
-    // Get storage size estimate (v2.5.2)
+    // Obtenir une estimation de l'espace de stockage (v2.5.2)
     async getStorageStats() {
         if (!navigator.storage || !navigator.storage.estimate) {
             return { available: 'unknown', used: 'unknown', percentage: 'unknown' };
@@ -266,16 +303,18 @@ const storageManager = {
                 percentage: `${percentage}%`
             };
         } catch (e) {
-            console.warn('Could not get storage stats:', e);
+            console.warn('Impossible de récupérer les statistiques de stockage :', e);
             return { available: 'unknown', used: 'unknown', percentage: 'unknown' };
         }
     },
 
-    // Clean localStorage backup (v2.5.2)
+    // Nettoyer la sauvegarde localStorage (v2.5.2)
     async cleanupLocalStorage(keysToKeep = []) {
-        // keysToKeep = ['mti_indexeddb_migrated', ...] - keys to preserve
-        const defaultKeepsKeys = ['mti_indexeddb_migrated', 'mti_app_config'];
-        const keysToPreserve = [...new Set([...keysToKeep, ...defaultKeepsKeys])];
+        if (!this.isIndexedDB()) {
+            return { cleaned: 0, message: 'Cleanup skipped (localStorage primaire)' };
+        }
+
+        const keysToPreserve = [...new Set([...keysToKeep, ...STORAGE_META_KEYS_TO_KEEP])];
         
         let cleaned = 0;
         const allKeys = Object.keys(localStorage);
@@ -283,7 +322,6 @@ const storageManager = {
         for (const key of allKeys) {
             if (key.startsWith('mti_') && !keysToPreserve.includes(key)) {
                 try {
-                    // Verify data exists in IndexedDB before deleting from localStorage
                     const idbData = await this.getItem(key);
                     if (idbData) {
                         localStorage.removeItem(key);
@@ -354,10 +392,132 @@ const storageManager = {
         if (typeof pos !== 'number') return null;
         const list = await this.getItem('mti_clients') || [];
         return list[pos] || null;
+    },
+
+    // Export/Import manuel pour backup JSON
+    async exportSnapshot(keys = STORAGE_DATA_KEYS, { compress = true } = {}) {
+        const logs = [];
+        const addLog = (msg) => {
+            logs.push(msg);
+            console.log(msg);
+        };
+
+        try {
+            addLog('▶️ exportSnapshot start');
+            addLog(`Keys to export: ${keys.join(', ')}`);
+            const data = {};
+            for (const key of keys) {
+                addLog(`Loading ${key}...`);
+                const value = await this.loadDual(key);
+                // Filtrer les valeurs null/undefined pour réduire la taille
+                if (value !== null && value !== undefined) {
+                    data[key] = value;
+                    addLog(`✓ ${key} loaded`);
+                } else {
+                    addLog(`⚠ ${key} is null/undefined`);
+                }
+            }
+
+            const payload = {
+                meta: {
+                    createdAt: Date.now(),
+                    mode: this.mode,
+                    keys: Object.keys(data)
+                },
+                data
+            };
+
+            // Stringify avec gestion des références circulaires (simple replacer)
+            const safeStringify = (obj) => {
+                const seen = new WeakSet();
+                return JSON.stringify(obj, (key, value) => {
+                    if (typeof value === 'object' && value !== null) {
+                        if (seen.has(value)) {
+                            return '[Circular]';
+                        }
+                        seen.add(value);
+                    }
+                    return value;
+                });
+            };
+
+            let serialized;
+            try {
+                addLog('▶️ exportSnapshot stringify...');
+                serialized = safeStringify(payload);
+            } catch (stringifyError) {
+                console.error('Erreur stringify:', stringifyError);
+                throw stringifyError;
+            }
+
+            let compressed = false;
+            const sizeKB = (serialized.length / 1024).toFixed(2);
+            addLog(`📦 Snapshot size: ${sizeKB} KB`);
+
+            // Compresser seulement si < 5MB pour éviter stack overflow
+            if (compress && this.hasCompression() && serialized.length < 5 * 1024 * 1024) {
+                try {
+                    addLog('▶️ exportSnapshot compress...');
+                    const compressedData = LZString.compressToBase64(serialized);
+                    const compressedSizeKB = (compressedData.length / 1024).toFixed(2);
+                    addLog(`📦 Compressed: ${compressedSizeKB} KB (${((compressedData.length / serialized.length) * 100).toFixed(1)}%)`);
+                    serialized = compressedData;
+                    compressed = true;
+                } catch (compressError) {
+                    console.warn('⚠️ Compression échouée, export non compressé:', compressError);
+                }
+            } else if (serialized.length >= 5 * 1024 * 1024) {
+                addLog('⚠️ Données trop volumineuses (>5MB), compression désactivée');
+            }
+
+            return { serialized, compressed, meta: payload.meta, logs };
+        } catch (error) {
+            addLog(`❌ Erreur exportSnapshot: ${error.message}`);
+            addLog(`Stack: ${error.stack?.substring(0, 500)}`);
+            console.error('❌ Erreur exportSnapshot:', error);
+            const err = new Error('Export échoué: ' + error.message);
+            err.logs = logs;
+            throw err;
+        }
+    },
+
+    async importSnapshot(snapshot, { compressed } = {}) {
+        if (!snapshot) throw new Error('Snapshot vide');
+
+        let serialized = snapshot.serialized || snapshot;
+        const isCompressed = typeof compressed === 'boolean' ? compressed : !!snapshot.compressed;
+
+        if (isCompressed) {
+            if (!this.hasCompression()) throw new Error('Compression indisponible pour importer');
+            serialized = LZString.decompressFromBase64(serialized);
+        }
+
+        const parsed = typeof serialized === 'string' ? JSON.parse(serialized) : serialized;
+        if (!parsed || !parsed.data) throw new Error('Format snapshot invalide');
+
+        const entries = Object.entries(parsed.data);
+        for (const [key, value] of entries) {
+            await this.setItem(key, value);
+            if (this.backupEnabled && this.isIndexedDB()) {
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                } catch (e) {
+                    console.warn(`Backup localStorage ignoré pour ${key}:`, e);
+                }
+            }
+        }
+
+        await this.ensureIndexes({
+            invoices: parsed.data.mti_invoices || [],
+            quotes: parsed.data.mti_quotes || [],
+            clients: parsed.data.mti_clients || []
+        });
+
+        return { restored: entries.map(([key]) => key) };
     }
 };
 
-// Initialize storage on load
+// Initialiser le stockage au chargement
 storageManager.init();
 
 // Planifier un cleanup localStorage périodique (72h) si IndexedDB est OK
@@ -365,26 +525,30 @@ const LOCALSTORAGE_CLEANUP_INTERVAL_MS = 72 * 60 * 60 * 1000;
 let cleanupTimer = null;
 
 function scheduleLocalStorageCleanup() {
-    if (cleanupTimer) return; // éviter doublons
+    if (cleanupTimer || !storageManager.isIndexedDB()) return; // éviter doublons ou mode fallback
     cleanupTimer = setInterval(() => {
-        storageManager.cleanupLocalStorage().catch(() => {});
+        if (storageManager.isIndexedDB()) {
+            storageManager.cleanupLocalStorage().catch(() => {});
+        }
     }, LOCALSTORAGE_CLEANUP_INTERVAL_MS);
 
     // premier passage après le chargement (dans 5s pour ne pas bloquer l'init)
     setTimeout(() => {
-        storageManager.cleanupLocalStorage().catch(() => {});
+        if (storageManager.isIndexedDB()) {
+            storageManager.cleanupLocalStorage().catch(() => {});
+        }
     }, 5000);
 }
 
 scheduleLocalStorageCleanup();
 
 // ==========================================
-// STORAGE HELPERS - Compatibility wrappers
+// STORAGE HELPERS - wrappers de compatibilité
 // ==========================================
 
-// ========== v2.5.2 HELPER FUNCTIONS ==========
+// ========== v2.5.2 FONCTIONS HELPER ========== 
 
-// Batch save invoices, quotes, rams, clients in one operation
+// Sauvegarder en batch factures, devis, RAM et clients en une seule opération
 async function batchSaveAllData() {
     const items = {
         'mti_invoices': invoices,
@@ -401,7 +565,7 @@ async function batchSaveAllData() {
     return results;
 }
 
-// Batch load all data with decompression
+// Charger en batch toutes les données avec décompression
 async function batchLoadAllData() {
     const keys = ['mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients'];
     const data = await storageManager.batchLoad(keys);
@@ -415,62 +579,76 @@ async function batchLoadAllData() {
     return data;
 }
 
-// Get storage status (for UI status bar)
+// Obtenir l'état du stockage (barre de statut UI)
 async function getStorageStatus() {
     const stats = await storageManager.getStorageStats();
-    return `Storage: ${stats.used} / ${stats.available} (${stats.percentage})`;
+    const mode = storageManager.isIndexedDB() ? 'IndexedDB' : 'localStorage';
+    return `Storage (${mode}): ${stats.used} / ${stats.available} (${stats.percentage})`;
 }
 
-// Expose helpers in console for fast diagnostics (v2.5.2)
+// Export/import manuel (backup JSON local)
+async function exportLocalBackup(compress = true) {
+    return storageManager.exportSnapshot(STORAGE_DATA_KEYS, { compress });
+}
+
+async function importLocalBackup(serialized, options = {}) {
+    return storageManager.importSnapshot(serialized, options);
+}
+
+// Exposer les helpers en console pour un diagnostic rapide (v2.5.2)
 window.ensureIndexes = (payload) => storageManager.ensureIndexes(payload || { invoices, quotes, clients });
 window.findInvoiceByNumber = (number) => storageManager.findInvoiceByNumber(number);
 window.findQuoteByNumber = (number) => storageManager.findQuoteByNumber(number);
 window.findClientByName = (name) => storageManager.findClientByName(name);
 window.cleanupLocalStorage = (keysToKeep) => storageManager.cleanupLocalStorage(keysToKeep);
+window.exportLocalBackup = exportLocalBackup;
+window.importLocalBackup = importLocalBackup;
+window.setStorageBackupEnabled = (enabled) => storageManager.setBackupEnabled(enabled);
+window.getStorageMode = () => storageManager.mode;
 
-// ========== ORIGINAL HELPERS (for compatibility) ==========
+// ========== HELPERS ORIGINELS (compatibilité) ========== 
 
-// Save invoices (dual-write: IndexedDB + localStorage)
+// Sauvegarder les factures (stockage principal, backup optionnel)
 async function saveInvoicesToStorage(invoicesData) {
     await storageManager.saveDual('mti_invoices', invoicesData);
 }
 
-// Load invoices (with fallback)
+// Charger les factures (avec repli)
 async function loadInvoicesFromStorage() {
     return await storageManager.loadDual('mti_invoices');
 }
 
-// Save quotes
+// Sauvegarder les devis (stockage principal, backup optionnel)
 async function saveQuotesToStorage(quotesData) {
     await storageManager.saveDual('mti_quotes', quotesData);
 }
 
-// Load quotes
+// Charger les devis
 async function loadQuotesFromStorage() {
     return await storageManager.loadDual('mti_quotes');
 }
 
-// Save RAMs
+// Sauvegarder les RAMs (stockage principal, backup optionnel)
 async function saveRAMsToStorage(ramsData) {
     await storageManager.saveDual('mti_rams', ramsData);
 }
 
-// Load RAMs
+// Charger les RAMs
 async function loadRAMsFromStorage() {
     return await storageManager.loadDual('mti_rams');
 }
 
-// Save clients
+// Sauvegarder les clients (stockage principal, backup optionnel)
 async function saveClientsToStorage(clientsData) {
     await storageManager.saveDual('mti_clients', clientsData);
 }
 
-// Load clients
+// Charger les clients
 async function loadClientsFromStorage() {
     return await storageManager.loadDual('mti_clients');
 }
 
-// Export for console debugging
+// Export pour debug console
 window.storageManager = storageManager;
 window.saveInvoicesToStorage = saveInvoicesToStorage;
 window.loadInvoicesFromStorage = loadInvoicesFromStorage;
@@ -511,7 +689,7 @@ async function loadConfigFromStorage() {
 async function saveConfigToStorage(config) {
     try {
         await storageManager.saveDual('mti_app_config', config);
-        console.log('✅ Configuration sauvegardée dans IndexedDB + localStorage');
+        console.log('✅ Configuration sauvegardée (IndexedDB prioritaire, backup localStorage si activé)');
     } catch (e) {
         console.error('Impossible de sauvegarder la configuration:', e);
     }
@@ -700,12 +878,23 @@ async function exportFEC() {
             siren: siren
         });
         
+        console.log('📦 Réponse FEC:', result);
+        
         if (!result.success) {
             showToast('❌ Erreur: ' + result.message, 'error');
             return;
         }
         
-        const { filename, content, lineCount, invoiceCount } = result.data;
+        const { filename, content, lineCount, invoiceCount, debug } = result.data;
+        
+        // Afficher les infos de débogage
+        if (debug) {
+            console.log('🔍 Debug FEC:', debug);
+            console.log(`  Total factures: ${debug.totalInvoices}`);
+            console.log(`  Factures retenues: ${debug.filteredInvoices}`);
+            console.log(`  Factures exclues: ${debug.excludedCount}`);
+            console.log(`  Échantillon:`, debug.sampleInvoices);
+        }
         
         // Télécharger le fichier FEC
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });

@@ -330,7 +330,7 @@ function sendEmail(data) {
     );
     
     // Envoyer l'email avec Gmail API
-    // Note: avoid forcing 'from' (alias) to prevent authorization issues; send from the account executing the script.
+    // Nota : ne pas forcer le champ "from" (alias) pour éviter les soucis d'autorisation ; envoyer depuis le compte qui exécute le script.
     GmailApp.sendEmail(to, subject, body, {
       attachments: [pdfBlob],
       name: 'MTI CONSULTING'
@@ -348,7 +348,7 @@ function sendEmail(data) {
 }
 
 // ==========================================
-// GOOGLE SHEETS - SYNC TIERS
+// GOOGLE SHEETS - SYNCHRO TIERS
 // ==========================================
 
 // Importer les clients depuis Sheets
@@ -462,7 +462,7 @@ function exportClients(sheetId, clients) {
   }
 }
 
-// Export invoices to the 'Factures' sheet (gid=0)
+// Exporter les factures vers l'onglet "Factures" (gid=0)
 function exportInvoices(sheetId, invoices) {
   if (!sheetId) {
     return createResponse(false, 'Paramètre sheetId manquant');
@@ -509,21 +509,21 @@ function exportInvoices(sheetId, invoices) {
   }
 }
 
-// Sync multiple tasks to Google Calendar
+// Synchroniser plusieurs tâches vers Google Calendar
 function syncCalendarAction(tasks) {
   try {
     if (!tasks || !Array.isArray(tasks)) {
       return createResponse(false, 'Payload tasks invalide');
     }
 
-    // Allow optional calendarId to target a specific calendar
+    // Autoriser un calendarId optionnel pour cibler un agenda précis
     var calendarId = arguments.length > 1 ? arguments[1] : null;
     var calendar = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
 
     const results = [];
     tasks.forEach(task => {
       try {
-        // If the client already provided an eventId, skip creation to avoid duplicates
+        // Si le client fournit déjà un eventId, ne pas recréer pour éviter les doublons
         if (task.eventId) {
           results.push({ task: task, skipped: true, reason: 'eventId présent, création ignorée' });
           return;
@@ -560,7 +560,7 @@ function syncCalendarAction(tasks) {
   }
 }
 
-// Handle send_invoice action: expect pdfBase64 OR instruct client
+// Gérer l'action send_invoice : attendre un pdfBase64 ou demander au client
 function sendInvoiceAction(data) {
   try {
     const invoice = data.invoice;
@@ -570,26 +570,26 @@ function sendInvoiceAction(data) {
       return createResponse(false, 'Adresse email destinataire manquante');
     }
 
-    // If client supplied a base64 PDF, forward to sendEmail
+    // Si le client fournit un PDF base64, le relayer vers sendEmail
     if (data.pdfBase64) {
       return sendEmail({ to: clientEmail, subject: data.subject || ('Facture ' + (invoice && invoice.number ? invoice.number : '')), body: data.body || '', pdfBase64: data.pdfBase64, pdfFilename: data.pdfFilename || 'facture.pdf' });
     }
 
-    // Otherwise, ask the client to provide the pdfBase64 (server-side PDF generation not implemented)
+    // Sinon, demander au client de fournir le pdfBase64 (pas de génération PDF côté serveur)
     return createResponse(false, 'Aucun PDF fourni. Le client doit envoyer le PDF encodé en base64 (pdfBase64) avec l\'appel send_invoice.');
   } catch (error) {
     return createResponse(false, 'Erreur send_invoice: ' + error.toString());
   }
 }
 
-// Save a PDF (base64 without data: prefix) into Drive under a folder (default 'Factures')
+// Sauvegarder un PDF (base64 sans préfixe data:) dans Drive sous un dossier (par défaut 'Factures')
 function savePdfToDrive(pdfBase64, pdfFilename, folderName) {
   try {
     if (!pdfBase64) return createResponse(false, 'pdfBase64 manquant');
     folderName = folderName || 'Factures';
     pdfFilename = pdfFilename || 'document.pdf';
 
-    // Ensure parent folder exists
+    // Vérifier que le dossier parent existe
     var parent = getOrCreateFolder(folderName);
 
     // Contrôle doublon : si fichier existe, le supprimer
@@ -666,7 +666,7 @@ function deleteFileFromFolder(folderName, fileName) {
   }
 }
 
-// Send email attaching a file that exists in Drive by fileId
+// Envoyer un email en joignant un fichier Drive via son fileId
 function sendEmailWithDriveFile(data) {
   try {
     var to = data.to;
@@ -689,14 +689,14 @@ function sendEmailWithDriveFile(data) {
   }
 }
 
-// Wrapper for sync_invoices
+// Wrapper pour sync_invoices
 function syncInvoices(sheetId, invoices) {
-  // Reuse exportInvoices function to write invoices to a sheet
+  // Réutiliser exportInvoices pour écrire les factures dans une feuille
   return exportInvoices(sheetId || CONFIG.SHEETS_ID, invoices || []);
 }
 
 // ==========================================
-// GOOGLE CALENDAR API
+// API GOOGLE CALENDAR
 // ==========================================
 
 // Ajouter un événement au Calendar
@@ -744,7 +744,7 @@ function deleteCalendarEvent(eventId, calendarId) {
     var cal = calendarId ? CalendarApp.getCalendarById(calendarId) : CalendarApp.getDefaultCalendar();
     if (!cal) return createResponse(false, 'Calendrier introuvable: ' + calendarId);
 
-    // getEventById expects the iCal UID; CalendarApp provides getEventById (uses internal id)
+    // getEventById attend un UID iCal ; CalendarApp fournit getEventById (utilise un id interne)
     try {
       var ev = CalendarApp.getEventById(eventId);
       if (ev) {
@@ -755,7 +755,7 @@ function deleteCalendarEvent(eventId, calendarId) {
         return createResponse(false, 'Événement introuvable: ' + eventId);
       }
     } catch (e) {
-      // Some calendars may not expose getEventById for returned id formats; try fallback search by scanning nearby events
+      // Certains calendriers n'exposent pas getEventById pour ces formats d'ID ; tenter une recherche de secours sur les événements proches
       Logger.log('deleteCalendarEvent getEventById failed, attempting fallback search: ' + e.toString());
       try {
         var now = new Date();
@@ -767,7 +767,7 @@ function deleteCalendarEvent(eventId, calendarId) {
           var cid = candidate.getId();
           var title = candidate.getTitle() || '';
           var desc = candidate.getDescription() || '';
-          // Try matching by id substring (some ids differ by suffix) or by presence in title/description
+          // Essayer de faire correspondre par sous-chaîne d'ID (suffixes possibles) ou via le titre/description
           if ((cid && cid.indexOf(eventId) !== -1) || (eventId && eventId.indexOf(cid) !== -1) || (title && title.indexOf(eventId) !== -1) || (desc && desc.indexOf(eventId) !== -1)) {
             try {
               candidate.deleteEvent();
@@ -813,7 +813,7 @@ function updateCalendarEvent(event) {
       Logger.log('Événement mis à jour: ' + event.eventId);
       return createResponse(true, { message: 'Événement mis à jour', eventId: event.eventId });
     } catch (e) {
-      // Fallback: attempt to find event and update
+      // Fallback : tenter de retrouver l'événement puis le mettre à jour
       Logger.log('updateCalendarEvent getEventById failed, attempting fallback: ' + e.toString());
       var now = new Date();
       var startWindow = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
@@ -888,7 +888,7 @@ function listCalendarEvents(startDate, endDate, maxResults, calendarId) {
   }
 }
 
-// List calendars available to the Apps Script user
+// Lister les agendas disponibles pour l'utilisateur Apps Script
 function listCalendars() {
   try {
     var cals = CalendarApp.getAllCalendars();
@@ -1597,7 +1597,7 @@ function clearClientSheet() {
 }
 
 // ==========================================
-// QUOTES (DEVIS) SHEETS SYNC
+// SYNCHRO SHEETS DES DEVIS
 // ==========================================
 
 /**
@@ -1830,41 +1830,95 @@ function generateFEC(params) {
     }
     
     const invoices = dataContent.data.invoices || [];
-    
-    // Filtrer les factures de l'exercice
-    const startDate = new Date(
+
+    // Parsing date robuste pour éviter les décalages de fuseau (UTC)
+    const parseDateUTC = function(dateStr) {
+      if (!dateStr) return null;
+      // Format dd/mm/yyyy
+      if (dateStr.indexOf('/') !== -1) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const d = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const y = parseInt(parts[2], 10);
+          return new Date(Date.UTC(y, m, d, 12, 0, 0)); // midi UTC pour éviter les sauts de jour
+        }
+      }
+      // Format ISO yyyy-mm-dd ou yyyy-mm-ddTHH:MM:SS
+      const iso = dateStr.split('T')[0];
+      const isoParts = iso.split('-');
+      if (isoParts.length === 3) {
+        const y = parseInt(isoParts[0], 10);
+        const m = parseInt(isoParts[1], 10) - 1;
+        const d = parseInt(isoParts[2], 10);
+        return new Date(Date.UTC(y, m, d, 12, 0, 0));
+      }
+      // Fallback
+      return new Date(dateStr);
+    };
+
+    // Filtrer les factures de l'exercice (bornes en UTC, fin de journée incluse)
+    const startDate = new Date(Date.UTC(
       parseInt(exerciceStart.substring(0, 4)),
       parseInt(exerciceStart.substring(4, 6)) - 1,
-      parseInt(exerciceStart.substring(6, 8))
-    );
+      parseInt(exerciceStart.substring(6, 8)),
+      0, 0, 0
+    ));
     
-    const endDate = new Date(
+    const endDate = new Date(Date.UTC(
       parseInt(exerciceEnd.substring(0, 4)),
       parseInt(exerciceEnd.substring(4, 6)) - 1,
-      parseInt(exerciceEnd.substring(6, 8))
-    );
+      parseInt(exerciceEnd.substring(6, 8)),
+      23, 59, 59
+    ));
     
+    Logger.log('📊 Filtrage FEC: ' + invoices.length + ' factures au total');
+    Logger.log('📅 Période: ' + exerciceStart + ' → ' + exerciceEnd);
+    
+    const validStatuses = ['en attente', 'payée', 'envoyée', 'en attente de paiement'];
+    const exclusions = [];
+
     const filteredInvoices = invoices.filter(function(inv) {
-      // EXCLURE les devis et factures non validées (brouillon, etc.)
-      // Seules les factures DÉFINITIVES doivent apparaître dans le FEC
-      if (!inv.date) return false;
-      
-      // Vérifier le statut/type de document
-      // On n'inclut QUE les factures (pas les devis)
-      if (inv.type && inv.type.toLowerCase() === 'devis') return false;
-      
-      // Exclure les factures en brouillon ou annulées
-      // Statuts acceptés pour le FEC : 'En attente', 'Payée', 'Envoyée'
-      const validStatuses = ['En attente', 'Payée', 'Envoyée', 'En attente de paiement'];
-      if (inv.status && !validStatuses.includes(inv.status)) {
-        Logger.log('⚠️ Facture exclue du FEC (statut invalide): ' + (inv.number || 'sans numéro') + ' - Statut: ' + inv.status);
+      const num = inv.number || 'sans numéro';
+      const rawStatus = (inv.status || '').trim();
+      const status = rawStatus.toLowerCase();
+      const type = (inv.type || 'facture').toLowerCase();
+
+      // EXCLURE devis
+      if (type === 'devis') {
+        exclusions.push({ number: num, reason: 'devis', status: rawStatus, type: inv.type });
+        Logger.log('⚠️ Devis exclu: ' + num);
         return false;
       }
-      
-      // Filtrer par période d'exercice
-      const invDate = new Date(inv.date);
-      return invDate >= startDate && invDate <= endDate;
+
+      // EXCLURE brouillon/annulée ou statut absent
+      if (!rawStatus) {
+        exclusions.push({ number: num, reason: 'statut manquant', type: inv.type });
+        Logger.log('⚠️ Facture exclue (statut manquant): ' + num);
+        return false;
+      }
+
+      if (!validStatuses.includes(status)) {
+        exclusions.push({ number: num, reason: 'statut invalide', status: rawStatus, type: inv.type });
+        Logger.log('⚠️ Facture exclue du FEC (statut invalide): ' + num + ' - Statut: ' + rawStatus);
+        return false;
+      }
+
+      // Filtrer par période d'exercice (UTC)
+      const invDate = parseDateUTC(inv.date);
+      const inPeriod = invDate && invDate.getTime() >= startDate.getTime() && invDate.getTime() <= endDate.getTime();
+
+      if (!inPeriod) {
+        exclusions.push({ number: num, reason: 'hors période', date: inv.date });
+        Logger.log('⚠️ Facture hors période: ' + num + ' - Date: ' + inv.date);
+        return false;
+      }
+
+      Logger.log('✅ Facture incluse: ' + num + ' - Date: ' + inv.date + ' - Statut: ' + rawStatus);
+      return true;
     });
+    
+    Logger.log('✅ Factures retenues pour FEC: ' + filteredInvoices.length + '/' + invoices.length);
     
     // Générer les lignes FEC
     const fecLines = [];
@@ -2046,6 +2100,36 @@ function generateFEC(params) {
     
     Logger.log('✅ FEC généré: ' + filteredInvoices.length + ' factures, ' + fecLines.length + ' lignes');
     
+    // Préparer les infos de débogage pour le frontend
+    const debugInfo = {
+      totalInvoices: invoices.length,
+      filteredInvoices: filteredInvoices.length,
+      excludedCount: invoices.length - filteredInvoices.length,
+      periodStart: exerciceStart,
+      periodEnd: exerciceEnd,
+      sampleInvoices: invoices.map(function(inv) {
+        const invDate = parseDateUTC(inv.date);
+        const invTs = invDate ? invDate.getTime() : null;
+        const inPeriod = invTs && invTs >= startDate.getTime() && invTs <= endDate.getTime();
+        const rawStatus = (inv.status || '').trim();
+        const status = rawStatus.toLowerCase();
+        const type = (inv.type || 'facture').toLowerCase();
+        return {
+          number: inv.number,
+          date: inv.date,
+          dateTs: invTs,
+          status: rawStatus || '(manquant)',
+          type: type,
+          client: inv.client,
+          inPeriod: inPeriod,
+          hasDate: !!inv.date,
+          isDevis: type === 'devis',
+          statusValid: !!rawStatus && validStatuses.includes(status)
+        };
+      }),
+      exclusions: exclusions.slice(0, 20)
+    };
+    
     return createResponse(true, {
       filename: filename,
       content: fecContent,
@@ -2053,7 +2137,8 @@ function generateFEC(params) {
       invoiceCount: filteredInvoices.length,
       exerciceStart: exerciceStart,
       exerciceEnd: exerciceEnd,
-      siren: siren
+      siren: siren,
+      debug: debugInfo
     });
     
   } catch (error) {

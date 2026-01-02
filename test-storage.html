@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Storage Manager - MTI Consulting</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        .info-box {
+            background: #e8f4f8;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .success-box {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .error-box {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        button.secondary {
+            background: #95a5a6;
+        }
+        button.secondary:hover {
+            background: #7f8c8d;
+        }
+        button.danger {
+            background: #e74c3c;
+        }
+        button.danger:hover {
+            background: #c0392b;
+        }
+        button.success {
+            background: #27ae60;
+        }
+        button.success:hover {
+            background: #229954;
+        }
+        .output {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+        }
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .toggle input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Storage Manager</h1>
+        <p class="subtitle">Validation du système de stockage hybride IndexedDB/localStorage</p>
+
+        <!-- État du système -->
+        <div class="section">
+            <h2>📊 État du Système</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Mode de stockage</div>
+                    <div class="stat-value" id="storage-mode">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Backup localStorage</div>
+                    <div class="stat-value" id="backup-status">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Espace utilisé</div>
+                    <div class="stat-value" id="space-used">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Espace disponible</div>
+                    <div class="stat-value" id="space-available">-</div>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button onclick="refreshStats()">🔄 Actualiser</button>
+                <button class="secondary" onclick="listKeys()">📋 Lister clés</button>
+            </div>
+            <div id="stats-output" class="output" style="display:none;"></div>
+        </div>
+
+        <!-- Tests de base -->
+        <div class="section">
+            <h2>✅ Tests de Base</h2>
+            <div class="btn-group">
+                <button onclick="testWrite()">💾 Test écriture</button>
+                <button onclick="testRead()">📖 Test lecture</button>
+                <button onclick="testBatch()">📦 Test batch</button>
+                <button onclick="testCompression()">🗜️ Test compression</button>
+                <button onclick="testIndex()">🔍 Test index</button>
+            </div>
+            <div id="test-output" class="output"></div>
+        </div>
+
+        <!-- Contrôle backup -->
+        <div class="section">
+            <h2>🔧 Contrôle du Backup</h2>
+            <div class="toggle">
+                <input type="checkbox" id="backup-toggle" onchange="toggleBackup(this.checked)">
+                <label for="backup-toggle">Activer le backup localStorage (double écriture)</label>
+            </div>
+            <div class="btn-group">
+                <button onclick="cleanupLocalStorage()">🧹 Nettoyer localStorage</button>
+                <button class="secondary" onclick="showLocalStorage()">👁️ Voir localStorage</button>
+            </div>
+            <div id="backup-output" class="output" style="display:none;"></div>
+        </div>
+
+        <!-- Export/Import -->
+        <div class="section">
+            <h2>💾 Export / Import Backup</h2>
+            <div class="btn-group">
+                <button class="success" onclick="exportBackup()">📤 Exporter snapshot</button>
+                <button class="secondary" onclick="downloadBackup()">💾 Télécharger fichier</button>
+                <button onclick="importBackup()">📥 Importer snapshot</button>
+            </div>
+            <textarea id="backup-data" placeholder="Données de backup (export/import)..."></textarea>
+            <div id="export-output" class="output" style="display:none;"></div>
+        </div>
+
+        <!-- Simulation fallback -->
+        <div class="section">
+            <h2>⚠️ Simulation Fallback</h2>
+            <p style="margin-bottom: 15px; color: #7f8c8d;">
+                Tester le basculement automatique vers localStorage
+            </p>
+            <div class="btn-group">
+                <button class="danger" onclick="simulateFallback()">🔴 Forcer fallback localStorage</button>
+                <button class="success" onclick="restoreIndexedDB()">🟢 Restaurer IndexedDB</button>
+            </div>
+            <div id="fallback-output" class="output" style="display:none;"></div>
+        </div>
+
+        <!-- Recherche rapide -->
+        <div class="section">
+            <h2>🔎 Recherche Rapide (Index)</h2>
+            <input type="text" id="search-invoice" placeholder="Numéro facture (ex: FA-2025-001)">
+            <div class="btn-group">
+                <button onclick="searchInvoice()">🔍 Rechercher facture</button>
+                <button class="secondary" onclick="rebuildIndexes()">🔨 Reconstruire index</button>
+            </div>
+            <div id="search-output" class="output" style="display:none;"></div>
+        </div>
+
+        <!-- Nettoyage -->
+        <div class="section">
+            <h2>🗑️ Nettoyage</h2>
+            <div class="warning-box">
+                ⚠️ Attention : ces actions sont irréversibles. Exportez un backup avant de procéder.
+            </div>
+            <div class="btn-group">
+                <button class="danger" onclick="clearAll()">🗑️ Vider tout le stockage</button>
+                <button class="danger" onclick="clearIndexedDB()">🗑️ Vider IndexedDB uniquement</button>
+                <button class="danger" onclick="clearLocalStorage()">🗑️ Vider localStorage uniquement</button>
+            </div>
+            <div id="clear-output" class="output" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- Dépendances -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <script src="app.js"></script>
+
+    <script>
+        // Variables globales pour les tests
+        let lastBackup = null;
+
+        // Initialisation
+        window.addEventListener('DOMContentLoaded', async () => {
+            log('test-output', '🚀 Initialisation des tests...');
+            await refreshStats();
+            updateBackupToggle();
+            log('test-output', '✅ Prêt pour les tests\n');
+        });
+
+        // Utilitaires
+        function log(outputId, message, type = 'info') {
+            const output = document.getElementById(outputId);
+            output.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+            output.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearLog(outputId) {
+            const output = document.getElementById(outputId);
+            output.textContent = '';
+        }
+
+        // Rafraîchir les stats
+        async function refreshStats() {
+            try {
+                const mode = getStorageMode();
+                const stats = await storageManager.getStorageStats();
+                const backupEnabled = storageManager.backupEnabled;
+
+                document.getElementById('storage-mode').textContent = mode === 'indexeddb' ? 'IndexedDB' : 'localStorage';
+                document.getElementById('backup-status').textContent = backupEnabled ? 'Activé ✅' : 'Désactivé ❌';
+                document.getElementById('space-used').textContent = stats.used;
+                document.getElementById('space-available').textContent = stats.available;
+
+                updateBackupToggle();
+            } catch (e) {
+                console.error('Erreur refresh stats:', e);
+            }
+        }
+
+        async function listKeys() {
+            clearLog('stats-output');
+            try {
+                const keys = await storageManager.keys();
+                log('stats-output', `Nombre de clés: ${keys.length}`, 'success');
+                keys.forEach(key => log('stats-output', `  - ${key}`));
+            } catch (e) {
+                log('stats-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        // Tests de base
+        async function testWrite() {
+            clearLog('test-output');
+            log('test-output', '📝 Test écriture...');
+            try {
+                const testData = { test: 'value', timestamp: Date.now() };
+                await storageManager.setItem('mti_test_write', testData);
+                log('test-output', 'Écriture réussie', 'success');
+                
+                const read = await storageManager.getItem('mti_test_write');
+                if (JSON.stringify(read) === JSON.stringify(testData)) {
+                    log('test-output', 'Vérification lecture: OK', 'success');
+                } else {
+                    log('test-output', 'Vérification lecture: FAIL', 'error');
+                }
+            } catch (e) {
+                log('test-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        async function testRead() {
+            clearLog('test-output');
+            log('test-output', '📖 Test lecture...');
+            try {
+                const data = await storageManager.loadDual('mti_test_write');
+                if (data) {
+                    log('test-output', `Données lues: ${JSON.stringify(data)}`, 'success');
+                } else {
+                    log('test-output', 'Aucune donnée trouvée (exécutez d\'abord le test écriture)', 'warning');
+                }
+            } catch (e) {
+                log('test-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        async function testBatch() {
+            clearLog('test-output');
+            log('test-output', '📦 Test batch save/load...');
+            try {
+                const items = {
+                    'mti_test_batch_1': { value: 'test1' },
+                    'mti_test_batch_2': { value: 'test2' },
+                    'mti_test_batch_3': { value: 'test3' }
+                };
+                
+                log('test-output', 'Sauvegarde batch...');
+                const saveResults = await storageManager.batchSave(items);
+                const success = saveResults.filter(r => r.success).length;
+                log('test-output', `Sauvegardé: ${success}/${saveResults.length}`, 'success');
+
+                log('test-output', 'Chargement batch...');
+                const loadResults = await storageManager.batchLoad(Object.keys(items));
+                log('test-output', `Chargé: ${Object.keys(loadResults).length} clés`, 'success');
+            } catch (e) {
+                log('test-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        async function testCompression() {
+            clearLog('test-output');
+            log('test-output', '🗜️ Test compression...');
+            try {
+                const largeData = Array.from({ length: 200 }, (_, i) => ({ id: i, value: `item_${i}` }));
+                log('test-output', `Taille originale: ${JSON.stringify(largeData).length} bytes`);
+                
+                await storageManager.saveWithCompression('mti_test_compress', largeData, true);
+                log('test-output', 'Sauvegarde compressée OK', 'success');
+
+                const loaded = await storageManager.loadWithDecompression('mti_test_compress');
+                if (loaded && loaded.length === 200) {
+                    log('test-output', 'Décompression OK', 'success');
+                } else {
+                    log('test-output', 'Décompression FAIL', 'error');
+                }
+            } catch (e) {
+                log('test-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        async function testIndex() {
+            clearLog('test-output');
+            log('test-output', '🔍 Test indexation...');
+            try {
+                const testInvoices = [
+                    { number: 'FA-TEST-001', client: 'Client A' },
+                    { number: 'FA-TEST-002', client: 'Client B' }
+                ];
+
+                await storageManager.setItem('mti_invoices', testInvoices);
+                await storageManager.ensureIndexes({ invoices: testInvoices, quotes: [], clients: [] });
+                log('test-output', 'Index créés', 'success');
+
+                const found = await storageManager.findInvoiceByNumber('FA-TEST-001');
+                if (found && found.client === 'Client A') {
+                    log('test-output', `Recherche OK: ${JSON.stringify(found)}`, 'success');
+                } else {
+                    log('test-output', 'Recherche FAIL', 'error');
+                }
+            } catch (e) {
+                log('test-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        // Backup
+        function updateBackupToggle() {
+            document.getElementById('backup-toggle').checked = storageManager.backupEnabled;
+        }
+
+        function toggleBackup(enabled) {
+            setStorageBackupEnabled(enabled);
+            log('backup-output', `Backup localStorage ${enabled ? 'activé' : 'désactivé'}`, enabled ? 'success' : 'warning');
+            refreshStats();
+        }
+
+        async function cleanupLocalStorage() {
+            clearLog('backup-output');
+            log('backup-output', '🧹 Nettoyage localStorage...');
+            try {
+                const result = await storageManager.cleanupLocalStorage();
+                log('backup-output', result.message, 'success');
+            } catch (e) {
+                log('backup-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        function showLocalStorage() {
+            clearLog('backup-output');
+            log('backup-output', '👁️ Contenu localStorage:');
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('mti_'));
+            if (keys.length === 0) {
+                log('backup-output', 'Aucune clé mti_* trouvée', 'warning');
+            } else {
+                keys.forEach(key => {
+                    const size = localStorage.getItem(key).length;
+                    log('backup-output', `  ${key}: ${size} bytes`);
+                });
+            }
+        }
+
+        // Export/Import
+        async function exportBackup() {
+            clearLog('export-output');
+            log('export-output', '📤 Export en cours...');
+            try {
+                const backup = await exportLocalBackup(true);
+                lastBackup = backup;
+                document.getElementById('backup-data').value = backup.serialized;
+                log('export-output', 'Export réussi', 'success');
+                log('export-output', `Créé: ${new Date(backup.meta.createdAt).toLocaleString()}`);
+                log('export-output', `Mode: ${backup.meta.mode}`);
+                log('export-output', `Clés: ${backup.meta.keys.join(', ')}`);
+                log('export-output', `Compressé: ${backup.compressed ? 'Oui' : 'Non'}`);
+                if (backup.logs && backup.logs.length) {
+                    log('export-output', '--- Logs exportSnapshot ---');
+                    backup.logs.forEach((l) => log('export-output', l));
+                }
+            } catch (e) {
+                log('export-output', `Erreur: ${e.message}`, 'error');
+                if (e.logs && e.logs.length) {
+                    log('export-output', '--- Logs avant erreur ---');
+                    e.logs.forEach((l) => log('export-output', l));
+                }
+            }
+        }
+
+        function downloadBackup() {
+            const data = document.getElementById('backup-data').value;
+            if (!data) {
+                alert('Aucun backup à télécharger. Cliquez sur "Exporter snapshot" d\'abord.');
+                return;
+            }
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mti_backup_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function importBackup() {
+            clearLog('export-output');
+            const data = document.getElementById('backup-data').value;
+            if (!data) {
+                log('export-output', 'Aucune donnée à importer', 'error');
+                return;
+            }
+
+            log('export-output', '📥 Import en cours...');
+            try {
+                const result = await importLocalBackup(data, { compressed: true });
+                log('export-output', 'Import réussi', 'success');
+                log('export-output', `Clés restaurées: ${result.restored.join(', ')}`);
+                await refreshStats();
+            } catch (e) {
+                log('export-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        // Fallback
+        function simulateFallback() {
+            clearLog('fallback-output');
+            log('fallback-output', '🔴 Simulation fallback...');
+            storageManager.switchToLocalStorage('Test manuel');
+            log('fallback-output', 'Mode basculé vers localStorage', 'warning');
+            refreshStats();
+        }
+
+        function restoreIndexedDB() {
+            clearLog('fallback-output');
+            log('fallback-output', '🟢 Restauration IndexedDB...');
+            storageManager.mode = 'indexeddb';
+            log('fallback-output', 'Mode restauré: IndexedDB', 'success');
+            refreshStats();
+        }
+
+        // Recherche
+        async function searchInvoice() {
+            clearLog('search-output');
+            const number = document.getElementById('search-invoice').value;
+            if (!number) {
+                log('search-output', 'Entrez un numéro de facture', 'warning');
+                return;
+            }
+
+            log('search-output', `🔍 Recherche: ${number}...`);
+            try {
+                const invoice = await findInvoiceByNumber(number);
+                if (invoice) {
+                    log('search-output', 'Facture trouvée:', 'success');
+                    log('search-output', JSON.stringify(invoice, null, 2));
+                } else {
+                    log('search-output', 'Facture introuvable', 'warning');
+                }
+            } catch (e) {
+                log('search-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        async function rebuildIndexes() {
+            clearLog('search-output');
+            log('search-output', '🔨 Reconstruction des index...');
+            try {
+                const invoices = await storageManager.getItem('mti_invoices') || [];
+                const quotes = await storageManager.getItem('mti_quotes') || [];
+                const clients = await storageManager.getItem('mti_clients') || [];
+                
+                await ensureIndexes({ invoices, quotes, clients });
+                log('search-output', 'Index reconstruits', 'success');
+            } catch (e) {
+                log('search-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        // Nettoyage
+        async function clearAll() {
+            if (!confirm('⚠️ Vider TOUT le stockage (IndexedDB + localStorage) ?\nCette action est irréversible !')) {
+                return;
+            }
+            clearLog('clear-output');
+            log('clear-output', '🗑️ Suppression totale...');
+            try {
+                await storageManager.clear();
+                log('clear-output', 'Stockage vidé', 'success');
+                await refreshStats();
+            } catch (e) {
+                log('clear-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        async function clearIndexedDB() {
+            if (!confirm('⚠️ Vider IndexedDB uniquement ?\nCette action est irréversible !')) {
+                return;
+            }
+            clearLog('clear-output');
+            log('clear-output', '🗑️ Suppression IndexedDB...');
+            try {
+                if (typeof localforage !== 'undefined') {
+                    await localforage.clear();
+                    log('clear-output', 'IndexedDB vidé', 'success');
+                } else {
+                    log('clear-output', 'localforage non disponible', 'error');
+                }
+                await refreshStats();
+            } catch (e) {
+                log('clear-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+
+        function clearLocalStorage() {
+            if (!confirm('⚠️ Vider localStorage uniquement ?\nCette action est irréversible !')) {
+                return;
+            }
+            clearLog('clear-output');
+            log('clear-output', '🗑️ Suppression localStorage...');
+            try {
+                const keys = Object.keys(localStorage).filter(k => k.startsWith('mti_'));
+                keys.forEach(k => localStorage.removeItem(k));
+                log('clear-output', `${keys.length} clés supprimées`, 'success');
+                refreshStats();
+            } catch (e) {
+                log('clear-output', `Erreur: ${e.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
