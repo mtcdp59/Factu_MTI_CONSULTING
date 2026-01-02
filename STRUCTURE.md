@@ -29,8 +29,6 @@ Factu_MTI_CONSULTING/
 │   ├── Comparaison/               # Analyse détaillée (NAVIGATION, VUE_ENSEMBLE, CODE_DETAILLE, GUIDE_DEPLOIEMENT)
 │   ├── ARCHITECTURE_SYNC.md       # Architecture de synchronisation
 │   ├── MIGRATION_INDEXEDDB.md     # Migration stockage + optimisations v2.5.x
-│   ├── TEST_INDEXEDDB.md          # Procédures de test IndexedDB
-│   ├── TEST_v2.5.1_LIVE.md        # Scénarios de test local
 │   ├── PLAN_EVOLUTION_FONCTIONNALITES.md # Roadmap
 │   ├── BAREME_IRPP.md             # Barème IRPP
 │   ├── CALCULATEUR_CHARGES.md     # Calculateur charges
@@ -79,7 +77,7 @@ Toutes les ressources statiques du projet.
 Documentation fonctionnelle, technique et d'analyse (unique source) :
 - **Entrée et synthèses** : 0_LISEZMOI.md, RESUME_RAPIDE.md, Comparaison/NAVIGATION.md
 - **Analyses détaillées** : Comparaison/VUE_ENSEMBLE.md, CODE_DETAILLE.md, GUIDE_DEPLOIEMENT.md
-- **Stockage & sync** : MIGRATION_INDEXEDDB.md, ARCHITECTURE_SYNC.md, TROUBLESHOOTING_SYNC.md, TEST_INDEXEDDB.md, TEST_v2.5.1_LIVE.md
+- **Stockage & sync** : MIGRATION_INDEXEDDB.md, ARCHITECTURE_SYNC.md, TROUBLESHOOTING_SYNC.md
 - **Guides fonctionnels** : DEMARRAGE.md, RAM_GUIDE.md, URSSAF_INTEGRATION.md, FACTURATION_ELECTRONIQUE_IMPLEMENTATION.md
 - **Références métiers** : BAREME_IRPP.md, CALCULATEUR_CHARGES.md, SYNTHESE_CONFORMITE_BNC.md, TAUX_OFFICIELS_2025.md
 - **Roadmap & suivi** : PLAN_EVOLUTION_FONCTIONNALITES.md, RELEASE_NOTES_v2.4.1.md
