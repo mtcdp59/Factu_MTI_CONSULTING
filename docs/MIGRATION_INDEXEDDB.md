@@ -23,30 +23,17 @@ Migration **progressive et sécurisée** de localStorage vers IndexedDB pour am�
 **Bénéfices**:
 - Pas de breaking changes
 - Rollback possible instantanément
-- Transition transparente pour l'utilisateur
-
-### Phase 2: IndexedDB prioritaire (v2.5.1+)
 
 - IndexedDB devient source primaire
 - localStorage = backup read-only
-
-### Phase 3: IndexedDB uniquement (v2.6.0+)
-
 - Suppression complète localStorage (optionnel)
 
 ---
 
-## Architecture technique
-
-### storageManager
 
 **API unifiée** pour gérer localStorage et IndexedDB:
 
-```javascript
-// Initialisation
-storageManager.init();
 
-// Opérations basiques (async)
 await storageManager.getItem('mti_invoices');
 await storageManager.setItem('mti_quotes', quotes);
 await storageManager.removeItem('mti_rams');
@@ -59,10 +46,6 @@ await storageManager.saveDual('mti_invoices', invoices);
 const invoices = await storageManager.loadDual('mti_invoices');
 // → Essaie IndexedDB d'abord
 // → Fallback localStorage si vide
-```
-
-### Migration automatique
-
 **Au démarrage** (`initApp()`):
 
 ```javascript
@@ -74,9 +57,6 @@ storageManager.migrateFromLocalStorage()
 ```
 
 **Données migrées**:
-- `mti_invoices` (factures)
-- `mti_quotes` (devis)
-- `mti_rams` (rapports d'activité)
 - `mti_clients` (tiers)
 - `mti_syncLog` (journal de sync)
 - `mti_autoSyncEnabled` (préférences)
@@ -103,8 +83,6 @@ const rams = await loadRAMsFromStorage();
 
 // Clients
 await saveClientsToStorage(clients);
-const clients = await loadClientsFromStorage();
-```
 
 **Note**: Ces fonctions utilisent automatiquement dual-write (IndexedDB + localStorage).
 
@@ -123,28 +101,16 @@ localStorage.getItem('mti_indexeddb_migrated')
 
 ### Forcer une nouvelle migration
 
-```javascript
 // Console (F12)
 localStorage.removeItem('mti_indexeddb_migrated');
 location.reload();
 // → Re-migrera au prochain chargement
 ```
-
-### Vérifier les données IndexedDB
-
-```javascript
-// Console (F12)
-await storageManager.keys()
 // → ['mti_invoices', 'mti_quotes', 'mti_rams', ...]
-
 await storageManager.getItem('mti_invoices')
 // → [...] (array d'objets factures)
 ```
-
-### Debug
-
 ```javascript
-// Accès global au storage manager
 window.storageManager
 
 // Tester save/load
