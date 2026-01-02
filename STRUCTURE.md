@@ -23,31 +23,25 @@ Factu_MTI_CONSULTING/
 │       ├── web-app-manifest-512x512.png
 │       └── site.webmanifest
 │
-├── 📁 Documentation/               # Documentation comparaison repository
-│   ├── 0_LISEZMOI.md              # Point d'entrée principal
+├── 📁 docs/                        # Documentation fonctionnelle et technique
+│   ├── 0_LISEZMOI.md              # Point d'entrée (anciennement Documentation/)
 │   ├── RESUME_RAPIDE.md           # TL;DR 2 minutes
-│   │
-│   └── 📁 Comparaison/            # Analyse détaillée
-│       ├── NAVIGATION.md          # FAQ + Glossaire
-│       ├── VUE_ENSEMBLE.md        # Vue d'ensemble des changements
-│       ├── CODE_DETAILLE.md       # Code ligne par ligne
-│       └── GUIDE_DEPLOIEMENT.md   # Guide déploiement
-│
-├── 📁 docs/                        # Documentation technique application
-│   ├── BAREME_IRPP.md             # Guide calculateur IRPP progressif
-│   ├── CALCULATEUR_CHARGES.md     # Documentation calculateur charges
-│   ├── FICHE_TECHNIQUE.md         # Fiche technique développeur
-│   ├── DEMARRAGE.md               # Guide de démarrage rapide
-│   ├── DEMARRAGE_GITHUB_PAGES.md  # Déploiement GitHub Pages
-│   ├── CORS_URGENCE.md            # Solutions CORS (historique)
-│   ├── DEBUG_CORS.md              # Debugging CORS (historique)
-│   ├── 429_ERROR_SOLUTION.md      # Solution erreurs 429 URSSAF API
-│   ├── QUICK_REFERENCE.md         # Référence rapide (localisation code)
-│   ├── README_ANALYSIS.md         # Index documentation analyse
-│   ├── VISUAL_SUMMARY.md          # Résumé visuel comparaison code
-│   ├── URSSAF_INTEGRATION.md      # Intégration API URSSAF
-│   ├── TAUX_OFFICIELS_2025.md     # Taux fiscaux officiels 2025
-│   └── AUTRES_ELEMENTS_A_SURVEILLER.md  # Seuils TVA et autres alertes
+│   ├── Comparaison/               # Analyse détaillée (NAVIGATION, VUE_ENSEMBLE, CODE_DETAILLE, GUIDE_DEPLOIEMENT)
+│   ├── ARCHITECTURE_SYNC.md       # Architecture de synchronisation
+│   ├── MIGRATION_INDEXEDDB.md     # Migration stockage + optimisations v2.5.x
+│   ├── TEST_INDEXEDDB.md          # Procédures de test IndexedDB
+│   ├── TEST_v2.5.1_LIVE.md        # Scénarios de test local
+│   ├── PLAN_EVOLUTION_FONCTIONNALITES.md # Roadmap
+│   ├── BAREME_IRPP.md             # Barème IRPP
+│   ├── CALCULATEUR_CHARGES.md     # Calculateur charges
+│   ├── FICHE_TECHNIQUE.md         # Fiche technique dev
+│   ├── DEMARRAGE.md               # Démarrage rapide
+│   ├── FACTURATION_ELECTRONIQUE_IMPLEMENTATION.md # FE 2024/2025
+│   ├── RAM_GUIDE.md               # Guide RAM
+│   ├── URSSAF_INTEGRATION.md      # Intégration URSSAF
+│   ├── TROUBLESHOOTING_SYNC.md    # Guide de dépannage sync
+│   ├── SYNTHESE_CONFORMITE_BNC.md # Synthèse conformité
+│   └── api-urssaf/                # Décisions et bugfixes URSSAF
 │
 ├── 📁 backend/                     # Code backend
 │   └── AppScript.js               # Google Apps Script (~1364 lignes, v42 style)
@@ -81,21 +75,15 @@ Toutes les ressources statiques du projet.
 - Favicons pour tous les navigateurs et appareils
 - Manifest PWA
 
-### `Documentation/`
-Documentation de comparaison du repository (analyse workspace vs GitHub) :
-- **0_LISEZMOI.md** : Point d'entrée navigation
-- **RESUME_RAPIDE.md** : TL;DR 2 minutes
-- **Comparaison/** : Analyse détaillée (FAQ, Vue d'ensemble, Code détaillé, Guide déploiement)
-
 ### `docs/`
-Documentation technique de l'application :
-- **Guides utilisateur** : DEMARRAGE.md, DEMARRAGE_GITHUB_PAGES.md
-- **Documentation développeur** : FICHE_TECHNIQUE.md, BAREME_IRPP.md, CALCULATEUR_CHARGES.md
-- **Références techniques** : QUICK_REFERENCE.md, TAUX_OFFICIELS_2025.md
-- **Analyses** : README_ANALYSIS.md, VISUAL_SUMMARY.md
-- **Intégrations** : URSSAF_INTEGRATION.md, 429_ERROR_SOLUTION.md
-- **Historique** : CORS_URGENCE.md, DEBUG_CORS.md
-- **Alertes** : AUTRES_ELEMENTS_A_SURVEILLER.md
+Documentation fonctionnelle, technique et d'analyse (unique source) :
+- **Entrée et synthèses** : 0_LISEZMOI.md, RESUME_RAPIDE.md, Comparaison/NAVIGATION.md
+- **Analyses détaillées** : Comparaison/VUE_ENSEMBLE.md, CODE_DETAILLE.md, GUIDE_DEPLOIEMENT.md
+- **Stockage & sync** : MIGRATION_INDEXEDDB.md, ARCHITECTURE_SYNC.md, TROUBLESHOOTING_SYNC.md, TEST_INDEXEDDB.md, TEST_v2.5.1_LIVE.md
+- **Guides fonctionnels** : DEMARRAGE.md, RAM_GUIDE.md, URSSAF_INTEGRATION.md, FACTURATION_ELECTRONIQUE_IMPLEMENTATION.md
+- **Références métiers** : BAREME_IRPP.md, CALCULATEUR_CHARGES.md, SYNTHESE_CONFORMITE_BNC.md, TAUX_OFFICIELS_2025.md
+- **Roadmap & suivi** : PLAN_EVOLUTION_FONCTIONNALITES.md, RELEASE_NOTES_v2.4.1.md
+- **URSSAF (détails)** : dossier api-urssaf/
 
 ### `backend/`
 Code backend Google Apps Script (v42 style) :
@@ -127,7 +115,7 @@ app.js
   └─> assets/images/MTI_CONSULTING.png (fallback logo)
 
 README.md
-  ├─> Documentation/* (comparaison repository)
+  ├─> docs/0_LISEZMOI.md
   ├─> docs/BAREME_IRPP.md
   ├─> docs/FICHE_TECHNIQUE.md
   └─> .github/instructions-copilot.md
@@ -142,9 +130,7 @@ scripts/start-server.*
 - **Lignes de code** : ~10,812 (8828 JS + 1984 HTML/CSS)
 - **Backend** : 1 fichier Google Apps Script (~1364 lignes, v42 style)
 - **Assets** : 8+ fichiers (1 logo + 7+ icons)
-- **Documentation** : 
-  - `Documentation/` : 7 fichiers (comparaison repository)
-  - `docs/` : 14 fichiers (technique application)
+- **Documentation** : dossier unique `docs/` (entrées, comparaisons, guides, tests, roadmap)
 - **Architecture** : Frontend-only (vanilla JS) + Google Apps Script backend
 - **Déploiement** : GitHub Pages (production), localhost (dev)
 
@@ -207,7 +193,7 @@ scripts/start-server.*
 
 1. **Utilisateur** : `index.html` (ouvrir dans navigateur)
 2. **Documentation** : `README.md` (point d'entrée principal)
-3. **Comparaison repo** : `Documentation/0_LISEZMOI.md`
+3. **Comparaison repo** : `docs/0_LISEZMOI.md`
 4. **Développeur** : `docs/FICHE_TECHNIQUE.md`
 5. **Quick start** : `docs/DEMARRAGE.md`
 6. **Backend** : `backend/AppScript.js` (déployer sur Google Apps Script)

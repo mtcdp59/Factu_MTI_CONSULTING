@@ -33,7 +33,7 @@
 | **index.html** | +387 lignes (interface recherche) | ✅ Prêt |
 | **AppScript.js** | 0 modification | ✅ Stable |
 
-**Documentation :** 4 fichiers dans `/Documentation/`
+**Documentation :** 4 fichiers dans `/docs/`
 
 ---
 
@@ -82,8 +82,8 @@
 **Statut :** ✅ **100% COMPLÉTÉ**
 
 Tous les fichiers sont prêts dans :
-- `/Documentation/` → Point d'entrée
-- `/Documentation/Comparaison/` → Détails techniques
+- `/docs/` → Point d'entrée
+- `/docs/Comparaison/` → Détails techniques
 
 **Prochaine action :** Merge + Déploiement ✅
 

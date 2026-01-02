@@ -1,7 +1,7 @@
 # 📁 Navigation - Index & FAQ
 
 **Date :** 11 Décembre 2025  
-**Dossier :** Documentation/Comparaison/
+**Dossier :** docs/Comparaison/
 
 ---
 

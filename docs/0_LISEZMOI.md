@@ -75,7 +75,7 @@ Toute la documentation de votre application Factu est ici. Voici où aller selon
 ## 📁 Structure Documentation
 
 ```
-Documentation/
+docs/
 │
 ├── 0_LISEZMOI.md (CE FICHIER)
 │   └─ Point d'entrée, navigation
