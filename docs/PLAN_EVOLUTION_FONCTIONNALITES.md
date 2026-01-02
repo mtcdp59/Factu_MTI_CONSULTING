@@ -455,6 +455,60 @@
 
 ---
 
-**Dernière mise à jour** : 16 décembre 2024  
+## 📝 BACKLOG - NON-BLOQUANT (À intégrer progressivement)
+
+### Phase 2 - Optimisations IndexedDB (v2.1.5+)
+
+**Contexte** : Les optimisations de base (memory cache + debounce) sont en place depuis v2.1.4. La phase 2 couvre des améliorations d'observabilité et de robustesse.
+
+| Élément | Statut | Impact | Complexité | Notes |
+|--------|--------|--------|-----------|-------|
+| **Compression LZ-string** | ✅ Existe | Léger | Faible | Déjà implémenté : compression >100 clés, peut être optimisé |
+| **Cleanup localStorage** | ✅ Existe | Faible | Très faible | Planifié 72h, vérifier la durée optimale |
+| **Indexes de recherche** | ✅ Existe | Moyen | Très faible | `findInvoiceByNumber()` etc. - vérifier s'ils sont vraiment utilisés |
+| **Quota monitoring + alertes** | ❌ Manquant | Moyen | Moyen | **À faire** : Alerter si quota >80%, proposer archivage |
+
+**Détails par élément** :
+
+1. **Compression LZ-string** ✅ NON-BLOQUANT
+   - **État actuel** : Fonctionne, compresse >100 clés (50-60%)
+   - **À vérifier** : Est-ce que le seuil de 100 clés est optimal ?
+   - **Action** : Monitorer la compression réelle (logs) en production 2-3 semaines
+
+2. **Cleanup localStorage** ✅ NON-BLOQUANT
+   - **État actuel** : Planifié tous les 72h, déploie gracieusement (pas de blocking)
+   - **À vérifier** : La durée 72h est-elle pertinente ? Pourrait-on le faire plus agressivement (24h) ?
+   - **Action** : Évaluer impact sur UX avant réduction
+
+3. **Indexes de recherche** ✅ NON-BLOQUANT
+   - **État actuel** : `findInvoiceByNumber()`, `findQuoteByNumber()`, `findClientByName()` existent
+   - **À vérifier** : Sont-ils vraiment utilisés ? Devraient-ils être optimisés (lazy indexing) ?
+   - **Action** : Instrumenter avec logs pour mesurer utilisation réelle
+
+4. **Quota monitoring + alertes** ❌ À FAIRE - NON-BLOQUANT
+   - **Bénéfice** : Prévention proactive des dépassements quota
+   - **Implémentation suggérée** :
+     ```javascript
+     async function checkStorageQuota() {
+         const stats = await storageManager.getStorageStats();
+         if (stats.percentageUsed > 80) {
+             showToast('⚠️ Quota de stockage à 80%', 'warning');
+             // Proposer archivage ou compression
+         }
+     }
+     // Exécuter au démarrage + toutes les 24h
+     ```
+   - **Effort estimé** : 30 minutes
+
+**Roadmap v2.1.5** (Semaine 2, janvier 2026) :
+1. Ajouter instrumentation/logs pour mesurer compression réelle
+2. Ajouter logs d'utilisation des indexes de recherche
+3. Décider : cleanup 24h ou 72h basé sur données collectées
+4. Implémenter quota monitoring + alertes UI
+5. Documenter en STORAGE_GUIDE.md
+
+---
+
+**Dernière mise à jour** : 3 janvier 2026  
 **Auteur** : GitHub Copilot  
-**Version du document** : 1.0
+**Version du document** : 1.1
