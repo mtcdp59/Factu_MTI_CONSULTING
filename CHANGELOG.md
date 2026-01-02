@@ -7,6 +7,31 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-01-02
+
+### Optimisations stockage IndexedDB
+
+- Compression automatique LZ-string (>100 clés) avec décompression transparente
+- Batch save/load parallélisés (+ helpers `batchSaveAllData` / `batchLoadAllData`)
+- Statistiques de quota via `navigator.storage.estimate()` et nettoyage localStorage optionnel
+- CDN LZ-string ajouté (fallback si non disponible)
+
+## [2.5.1] - 2026-01-01
+
+### Migration progressive vers storageManager
+
+- Remplacement des accès direct localStorage par `storageManager` (config, sync log, data)
+- Fonctions critiques passées en async (load/save config, sync log, save/load Drive, delete/convert)
+- Tests localhost documentés et validés
+
+## [2.5.0] - 2026-01-01
+
+### Infrastructure IndexedDB
+
+- Ajout de `storageManager` (init, get/set/remove/clear/keys) avec localforage
+- Dual-write IndexedDB + localStorage, flag `mti_indexeddb_migrated`
+- Wrappers de compatibilité (save/load invoices/quotes/rams/clients)
+
 ## [2.4.3] - 2025-12-31
 
 ### Améliorations UX : Indicateur de sync et contrôle auto-sync

@@ -66,11 +66,33 @@
 
 Application web de gestion complète pour micro-entreprise (BNC) avec intégration Google Drive, Gmail et Calendar.
 
-![Version](https://img.shields.io/badge/version-2.4.3-blue)
+![Version](https://img.shields.io/badge/version-2.5.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production-brightgreen)
 
 ## Historique des versions
+
+### v2.5.2 (Janvier 2026)
+
+**Optimisations stockage IndexedDB**
+- Compression automatique LZ-string (>100 clés) pour réduire l'espace (50-70% typique)
+- Batch save/load (4 clés) ≈2.7x plus rapide qu'en séquentiel
+- Statistiques de stockage (navigator.storage.estimate) + nettoyage localStorage optionnel
+- Helpers globaux console: `batchSaveAllData`, `batchLoadAllData`, `getStorageStatus`
+
+### v2.5.1 (Janvier 2026)
+
+**Migration progressive vers storageManager**
+- Toutes les lectures/écritures passent par IndexedDB (localforage) avec backup localStorage
+- Fonctions critiques rendues async (config, sync log, load/save Drive, delete/convert)
+- Guide de test localhost ajouté
+
+### v2.5.0 (Janvier 2026)
+
+**Infrastructure IndexedDB**
+- Abstraction `storageManager` (init, get/set/remove/clear/keys)
+- Dual-write IndexedDB + localStorage, flag de migration `mti_indexeddb_migrated`
+- Compatibilité wrappers (save/load invoices/quotes/rams/clients)
 
 ### v2.4.3 (Décembre 2025)
 
