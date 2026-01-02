@@ -2629,7 +2629,7 @@ tr:hover {
         // Initialiser l'affichage du stockage dans les paramètres
         async function updateStorageUI() {
             try {
-                const mode = getStorageMode();
+                const mode = window.getStorageMode();
                 const stats = await storageManager.getStorageStats();
                 const backupEnabled = storageManager.backupEnabled;
 

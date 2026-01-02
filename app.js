@@ -22,11 +22,13 @@ const STORAGE_META_KEYS_TO_KEEP = ['mti_indexeddb_migrated', 'mti_app_config'];
 const storageManager = {
     mode: 'indexeddb',
     backupEnabled: true, // Backup localStorage activé par sécurité
+    memCache: new Map(), // Cache mémoire pour optimiser les lectures
 
     // Initialiser localforage et choisir le mode
     init() {
         this.mode = 'indexeddb';
         this.backupEnabled = true; // Backup localStorage activé par sécurité
+        this.memCache.clear(); // Reset cache
 
         if (typeof localforage === 'undefined') {
             this.switchToLocalStorage('localforage absent');
@@ -69,12 +71,25 @@ const storageManager = {
 
     // Lire une clé (async)
     async getItem(key) {
+        // Vérifier cache mémoire d'abord
+        if (this.memCache.has(key)) {
+            return this.memCache.get(key);
+        }
+
         try {
+            let data;
             if (this.isIndexedDB() && typeof localforage !== 'undefined') {
-                return await localforage.getItem(key);
+                data = await localforage.getItem(key);
+            } else {
+                const raw = localStorage.getItem(key);
+                data = raw ? JSON.parse(raw) : null;
             }
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : null;
+            
+            // Mettre en cache
+            if (data !== null && data !== undefined) {
+                this.memCache.set(key, data);
+            }
+            return data;
         } catch (e) {
             if (this.isIndexedDB()) this.switchToLocalStorage(e.toString());
             console.error(`Error reading ${key}:`, e);
@@ -84,6 +99,9 @@ const storageManager = {
 
     // Écrire une clé (async)
     async setItem(key, value) {
+        // Invalider cache
+        this.memCache.delete(key);
+        
         try {
             if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 await localforage.setItem(key, value);
@@ -98,6 +116,9 @@ const storageManager = {
 
     // Supprimer une clé (async)
     async removeItem(key) {
+        // Invalider cache
+        this.memCache.delete(key);
+        
         try {
             if (this.isIndexedDB() && typeof localforage !== 'undefined') {
                 await localforage.removeItem(key);
@@ -325,6 +346,7 @@ const storageManager = {
                     const idbData = await this.getItem(key);
                     if (idbData) {
                         localStorage.removeItem(key);
+                        this.memCache.delete(key); // Invalider cache
                         cleaned++;
                         console.log(`🧹 Cleaned localStorage: ${key}`);
                     }
@@ -950,10 +972,31 @@ let editingInvoiceIndex = -1;
 // GOOGLE DRIVE STORAGE
 // ==========================================
 
+// Debounce helper
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Sauvegarder toutes les données dans Google Drive
+let saveToDriveInProgress = false;
 async function saveToDrive(options = {}) {
-    const { skipSheetsSync = false } = options;
+    if (saveToDriveInProgress) {
+        console.log('⏳ Sauvegarde Drive déjà en cours, ignorée');
+        return true;
+    }
+    
+    saveToDriveInProgress = true;
+    
     try {
+        const { skipSheetsSync = false } = options;
         const data = { clients, invoices, quotes, tasks, rams, recurringInvoices, companyInfo, taxSettings };
         const result = await callBackend('saveToDrive', { data });
         if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
@@ -976,6 +1019,8 @@ async function saveToDrive(options = {}) {
         console.error('❌ Erreur sauvegarde:', error);
         try { showBackendRawResponse(error && (error.stack || error.message || JSON.stringify(error))); } catch (e) {}
         return false;
+    } finally {
+        saveToDriveInProgress = false;
     }
 }
 
@@ -983,6 +1028,9 @@ async function saveToDrive(options = {}) {
 async function syncToDrive() {
     return await saveToDrive();
 }
+
+// Version debounced de saveToDrive (2 secondes)
+const debouncedSaveToDrive = debounce(saveToDrive, 2000);
 
 // Debounced synchronisation automatique vers Sheets (factures, devis, RAM, tiers)
 function queueSheetsSync(reason = '') {
@@ -4745,7 +4793,7 @@ function deleteInvoice(index) {
 
             // Auto-sync after deletion
             autoSync('delete');
-            saveToDrive();
+            debouncedSaveToDrive();
         }
     );
 }
