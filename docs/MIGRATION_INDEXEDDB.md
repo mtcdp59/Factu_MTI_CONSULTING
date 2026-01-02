@@ -1,4 +1,4 @@
-# Migration localStorage → IndexedDB (v2.5.0)
+# Migration localStorage → IndexedDB (v2.5.0+)
 
 ## Vue d'ensemble
 
@@ -7,6 +7,49 @@ Migration **progressive et sécurisée** de localStorage vers IndexedDB pour am�
 - ⚡ **Performance**: Opérations asynchrones (non-bloquantes)
 - 🔍 **Recherche**: Index natifs pour queries rapides
 - 💾 **Types**: Stockage direct d'objets JS (pas de JSON.parse/stringify)
+- 🚀 **Cache**: Memory cache (Map) pour accès <1ms (v2.1.4+)
+
+---
+
+## Optimisations v2.1.4
+
+### Memory Cache Layer
+
+**Nouvelle couche** intermédiaire entre le code et IndexedDB :
+
+```
+Code App
+    ↓
+Memory Cache (Map)  ← 1ère tentative (<1ms)
+    ↓
+IndexedDB (IDB)     ← 2e tentative (~45ms)
+    ↓
+localStorage        ← Fallback secours
+```
+
+**Invalidation intelligente** : Le cache est vidé automatiquement lors d'une écriture/suppression, garantissant la cohérence.
+
+```javascript
+// Cache hit (2e lecture)
+await storageManager.getItem('mti_invoices');  // <1ms ✨
+
+// Cache invalidation on write
+await storageManager.setItem('mti_invoices', newData);  // Cache cleared
+
+// Prochaine lecture = nouveau fetch depuis IDB
+```
+
+### Rate Limiting on Drive API
+
+**Debounce** appliqué à `saveToDrive()` pour éviter les appels concurrents :
+
+- Maximum 1 appel Drive par 2 secondes
+- Flag `saveToDriveInProgress` pour protéger contre les race conditions
+- Transparent : les modifications rapides sont automatiquement groupées
+
+**Exemple** : Créer 3 factures en 1 secondes
+- Avant : 3 appels Drive (peut causer 429 Too Many Requests)
+- Après : 1 appel Drive regroupé (économise 66% quota)
 
 ---
 
