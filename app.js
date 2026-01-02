@@ -233,24 +233,24 @@ const CONFIG = window.CONFIG || {
     DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
 };
 
-// Charger la configuration depuis localStorage (pour GitHub Pages) ou window.CONFIG (pour fichier local)
-function loadConfigFromStorage() {
-    const storedConfig = localStorage.getItem('mti_app_config');
-    if (storedConfig) {
-        try {
-            return JSON.parse(storedConfig);
-        } catch (e) {
-            console.warn('Configuration invalide dans localStorage');
+// Charger la configuration depuis IndexedDB/localStorage (pour GitHub Pages) ou window.CONFIG (pour fichier local)
+async function loadConfigFromStorage() {
+    try {
+        const storedConfig = await storageManager.getItem('mti_app_config');
+        if (storedConfig) {
+            return storedConfig;
         }
+    } catch (e) {
+        console.warn('Configuration invalide dans IndexedDB/localStorage');
     }
     return null;
 }
 
-// Sauvegarder la configuration dans localStorage
-function saveConfigToStorage(config) {
+// Sauvegarder la configuration dans IndexedDB + localStorage backup
+async function saveConfigToStorage(config) {
     try {
-        localStorage.setItem('mti_app_config', JSON.stringify(config));
-        console.log('✅ Configuration sauvegardée dans localStorage');
+        await storageManager.saveDual('mti_app_config', config);
+        console.log('✅ Configuration sauvegardée dans IndexedDB + localStorage');
     } catch (e) {
         console.error('Impossible de sauvegarder la configuration:', e);
     }
@@ -259,8 +259,16 @@ function saveConfigToStorage(config) {
 // Configuration chargée (credentials en dur dans CONFIG ci-dessus)
 console.log('✅ Configuration chargée depuis app.js (v42 style)');
 
+// Sync version - reads from CONFIG (already loaded at startup)
 function getConfiguredCalendarId() {
-    return localStorage.getItem('mti_calendar_id') || CONFIG.CALENDAR_ID;
+    // Check if stored value is in CONFIG first (from initial load)
+    return CONFIG.CALENDAR_ID;
+}
+
+// Async version for saving
+async function setConfiguredCalendarId(calendarId) {
+    await storageManager.saveDual('mti_calendar_id', calendarId);
+    CONFIG.CALENDAR_ID = calendarId;
 }
 
 // Send mode storage key: 'drive' or 'manual'
@@ -503,11 +511,11 @@ async function saveToDrive(options = {}) {
 
         // Sauvegarde locale pour assurer la cohérence après suppression
         try {
-            localStorage.setItem('mti_invoices', JSON.stringify(invoices || []));
-            localStorage.setItem('mti_quotes', JSON.stringify(quotes || []));
-            localStorage.setItem('mti_rams', JSON.stringify(rams || []));
+            await storageManager.saveDual('mti_invoices', invoices || []);
+            await storageManager.saveDual('mti_quotes', quotes || []);
+            await storageManager.saveDual('mti_rams', rams || []);
         } catch (e) {
-            console.warn('Backup localStorage après saveToDrive échoué:', e);
+            console.warn('Backup IndexedDB après saveToDrive échoué:', e);
         }
 
         if (!skipSheetsSync && autoSheetsSyncEnabled && !suppressSheetsSync) {
@@ -536,14 +544,14 @@ function queueSheetsSync(reason = '') {
 async function syncSheetsNow(reason = 'auto') {
     if (sheetsSyncInProgress) {
         pendingSheetsSync = true;
-        addSyncLogEntry('pending', 'Sync déjà en cours, mise en file d\'attente');
+        await addSyncLogEntry('pending', 'Sync déjà en cours, mise en file d\'attente');
         return;
     }
 
     sheetsSyncInProgress = true;
     pendingSheetsSync = false;
     updateSyncIndicator(true);
-    addSyncLogEntry('pending', `Début sync Sheets (${reason})`);
+    await addSyncLogEntry('pending', `Début sync Sheets (${reason})`);
     
     try {
         const itemCount = invoices.length + quotes.length + rams.length + clients.length;
@@ -560,7 +568,7 @@ async function syncSheetsNow(reason = 'auto') {
         
         console.log('✅ Sync Sheets auto OK', reason ? `(${reason})` : '');
         updateSyncIndicator(false);
-        addSyncLogEntry('success', `Sync Sheets réussie (${itemCount} items)`, {
+        await addSyncLogEntry('success', `Sync Sheets réussie (${itemCount} items)`, {
             itemsSynced: itemCount,
             reason: reason
         });
@@ -573,7 +581,7 @@ async function syncSheetsNow(reason = 'auto') {
         syncStats.errorCount++;
         syncStats.lastError = err.message || String(err);
         updateSyncIndicator(false, true);
-        addSyncLogEntry('error', `Erreur sync Sheets: ${err.message || err}`, {
+        await addSyncLogEntry('error', `Erreur sync Sheets: ${err.message || err}`, {
             errorMessage: err.message || String(err)
         });
         showToast('❌ Sync Sheets auto : ' + (err.message || err) + ' [Nouvelle tentative en 2s]', 'error');
@@ -581,7 +589,7 @@ async function syncSheetsNow(reason = 'auto') {
         sheetsSyncInProgress = false;
         if (pendingSheetsSync) {
             pendingSheetsSync = false;
-            addSyncLogEntry('retry', 'Relance sync après attente');
+            await addSyncLogEntry('retry', 'Relance sync après attente');
             queueSheetsSync('replay');
         }
     }
@@ -589,7 +597,7 @@ async function syncSheetsNow(reason = 'auto') {
 
 // Charger toutes les données depuis Google Drive (POST puis fallback JSONP si CORS)
 async function loadFromDrive() {
-    const applyData = (data) => {
+    const applyData = async (data) => {
         if (data.clients) clients = data.clients;
         if (data.invoices) invoices = data.invoices;
         if (data.quotes) quotes = data.quotes;
@@ -601,18 +609,18 @@ async function loadFromDrive() {
 
         console.log('✅ Données chargées depuis Drive');
 
-        // Sauvegarde backup localStorage
+        // Sauvegarde backup IndexedDB
         try {
             if (quotes && quotes.length > 0) {
-                localStorage.setItem('mti_quotes', JSON.stringify(quotes));
-                console.log(`Backup: ${quotes.length} devis en localStorage`);
+                await storageManager.saveDual('mti_quotes', quotes);
+                console.log(`Backup: ${quotes.length} devis en IndexedDB`);
             }
             if (rams && rams.length > 0) {
-                localStorage.setItem('mti_rams', JSON.stringify(rams));
-                console.log(`Backup: ${rams.length} RAMs en localStorage`);
+                await storageManager.saveDual('mti_rams', rams);
+                console.log(`Backup: ${rams.length} RAMs en IndexedDB`);
             }
         } catch (e) {
-            console.warn('Erreur backup localStorage:', e);
+            console.warn('Erreur backup IndexedDB:', e);
         }
 
         // Rafraîchir vues si fonctions définies
@@ -632,14 +640,14 @@ async function loadFromDrive() {
             console.log('Pas de données Drive, utilisation données par défaut');
             return false;
         }
-        applyData(result.data || {});
+        await applyData(result.data || {});
         return true;
     } catch (error) {
         console.warn('loadFromDrive POST failed, trying JSONP fallback', error);
         try {
             const result = await callBackendJSONP('loadFromDrive');
             if (result && result.success) {
-                applyData(result.data || {});
+                await applyData(result.data || {});
                 console.log('✅ Données chargées via JSONP (fallback)');
                 return true;
             }
@@ -672,17 +680,17 @@ let syncStats = {
 };
 
 // Sync history/journal for troubleshooting
-// Stored in localStorage with max 50 entries (to avoid bloating)
+// Stored in IndexedDB + localStorage with max 50 entries (to avoid bloating)
 let syncLog = [];
 const SYNC_LOG_MAX_ENTRIES = 50;
 const SYNC_LOG_STORAGE_KEY = 'mti_syncLog';
 
-// Load sync log from localStorage on startup
-function loadSyncLog() {
+// Load sync log from IndexedDB/localStorage on startup
+async function loadSyncLog() {
     try {
-        const saved = localStorage.getItem(SYNC_LOG_STORAGE_KEY);
+        const saved = await storageManager.getItem(SYNC_LOG_STORAGE_KEY);
         if (saved) {
-            syncLog = JSON.parse(saved);
+            syncLog = saved;
             if (!Array.isArray(syncLog)) {
                 syncLog = [];
             }
@@ -694,7 +702,7 @@ function loadSyncLog() {
 }
 
 // Add entry to sync log
-function addSyncLogEntry(status, message, details = {}) {
+async function addSyncLogEntry(status, message, details = {}) {
     const entry = {
         timestamp: new Date().toISOString(),
         status: status, // 'pending', 'success', 'error', 'retry'
@@ -711,9 +719,9 @@ function addSyncLogEntry(status, message, details = {}) {
         syncLog = syncLog.slice(0, SYNC_LOG_MAX_ENTRIES);
     }
     
-    // Save to localStorage
+    // Save to IndexedDB + localStorage
     try {
-        localStorage.setItem(SYNC_LOG_STORAGE_KEY, JSON.stringify(syncLog));
+        await storageManager.saveDual(SYNC_LOG_STORAGE_KEY, syncLog);
     } catch (e) {
         console.warn('Could not save sync log:', e);
     }
@@ -727,10 +735,10 @@ function getSyncLog(limit = 20) {
 }
 
 // Clear sync log
-function clearSyncLog() {
+async function clearSyncLog() {
     syncLog = [];
     try {
-        localStorage.removeItem(SYNC_LOG_STORAGE_KEY);
+        await storageManager.removeItem(SYNC_LOG_STORAGE_KEY);
     } catch (e) {
         console.warn('Could not clear sync log:', e);
     }
@@ -860,14 +868,14 @@ async function autoReconcile() {
     const isConfigured = CONFIG.BACKEND_URL && !CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID');
     if (!isConfigured) {
         console.log('⚠️ Auto-reconciliation skipped (backend not configured)');
-        addSyncLogEntry('info', 'Réconciliation ignorée: backend non configuré');
+        await addSyncLogEntry('info', 'Réconciliation ignorée: backend non configuré');
         return;
     }
     
     const result = await detectDataDivergences();
     if (!result) {
         console.log('⚠️ Auto-reconciliation skipped (no Drive data)');
-        addSyncLogEntry('info', 'Réconciliation ignorée: pas de données Drive');
+        await addSyncLogEntry('info', 'Réconciliation ignorée: pas de données Drive');
         return;
     }
     
@@ -876,12 +884,12 @@ async function autoReconcile() {
     
     if (!hasDivergence) {
         console.log('✅ No divergences detected');
-        addSyncLogEntry('success', 'Réconciliation: aucune divergence détectée');
+        await addSyncLogEntry('success', 'Réconciliation: aucune divergence détectée');
         return;
     }
     
     console.warn('⚠️ Divergences detected:', divergences.details);
-    addSyncLogEntry('pending', 'Divergences détectées, réconciliation en cours...', divergences.details);
+    await addSyncLogEntry('pending', 'Divergences détectées, réconciliation en cours...', divergences.details);
     
     // Reconcile each data type (always apply if divergence detected)
     let hasChanges = false;
@@ -915,14 +923,14 @@ async function autoReconcile() {
     }
     
     if (hasChanges) {
-        // Save reconciled data to localStorage
+        // Save reconciled data to IndexedDB + localStorage
         try {
-            localStorage.setItem('mti_invoices', JSON.stringify(invoices));
-            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
-            localStorage.setItem('mti_rams', JSON.stringify(rams));
-            localStorage.setItem('mti_clients', JSON.stringify(clients));
+            await storageManager.saveDual('mti_invoices', invoices);
+            await storageManager.saveDual('mti_quotes', quotes);
+            await storageManager.saveDual('mti_rams', rams);
+            await storageManager.saveDual('mti_clients', clients);
         } catch (e) {
-            console.error('Error saving reconciled data to localStorage:', e);
+            console.error('Error saving reconciled data to IndexedDB:', e);
         }
         
         // Sync to Drive (source of truth)
@@ -934,10 +942,10 @@ async function autoReconcile() {
         if (typeof renderQuoteList === 'function') renderQuoteList();
         if (typeof renderRAMList === 'function') renderRAMList();
         
-        addSyncLogEntry('success', `Réconciliation terminée: ${Object.keys(divergences.details.local).reduce((sum, key) => sum + divergences.details.local[key], 0)} items synchronisés`);
+        await addSyncLogEntry('success', `Réconciliation terminée: ${Object.keys(divergences.details.local).reduce((sum, key) => sum + divergences.details.local[key], 0)} items synchronisés`);
         showToast('✅ Réconciliation automatique terminée', 'success');
     } else {
-        addSyncLogEntry('success', 'Réconciliation: données déjà synchronisées');
+        await addSyncLogEntry('success', 'Réconciliation: données déjà synchronisées');
     }
 }
 
@@ -1221,7 +1229,7 @@ async function importInvoicesFromSheets() {
         }
         if (result.data && Array.isArray(result.data.invoices)) {
             invoices = result.data.invoices;
-            localStorage.setItem('mti_invoices', JSON.stringify(invoices));
+            await storageManager.saveDual('mti_invoices', invoices);
             renderInvoiceList();
             showToast(`✅ ${invoices.length} facture(s) importée(s)`,'success');
             await saveToDrive({ skipSheetsSync: true });
@@ -4471,7 +4479,7 @@ function loadTechnicalConfig() {
 }
 
 // Sauvegarder la configuration technique
-function saveTechnicalConfig() {
+async function saveTechnicalConfig() {
     if (!document.getElementById('configBackendURL')) return;
     
     const newConfig = {
@@ -4496,8 +4504,8 @@ function saveTechnicalConfig() {
         return false;
     }
     
-    // Sauvegarder dans localStorage
-    saveConfigToStorage(newConfig);
+    // Sauvegarder dans IndexedDB + localStorage
+    await saveConfigToStorage(newConfig);
     
     // Mettre à jour l'objet CONFIG global
     Object.assign(CONFIG, newConfig);
@@ -8062,7 +8070,7 @@ async function downloadInvoiceFromList(index) {
 window.downloadInvoiceFromList = downloadInvoiceFromList;
 
 // Initialize app
-function initApp() {
+async function initApp() {
     // Migrate to IndexedDB if not already done (v2.5.0)
     storageManager.migrateFromLocalStorage().then(() => {
         console.log('✅ Storage migration check complete');
@@ -8070,40 +8078,40 @@ function initApp() {
         console.error('⚠️ Migration error:', err);
     });
     
-    // Load sync log and auto-sync preference early
-    loadSyncLog();
+    // Load sync log and auto-sync preference early (loadSyncLog is now async)
+    await loadSyncLog();
     loadAutoSyncPreference();
     
-    // Load data from localStorage first (backup si Drive échoue)
+    // Load data from IndexedDB first (backup si Drive échoue)
     try {
-        const storedQuotes = localStorage.getItem('mti_quotes');
+        const storedQuotes = await storageManager.getItem('mti_quotes');
         if (storedQuotes) {
-            quotes = JSON.parse(storedQuotes);
-            console.log(`✅ ${quotes.length} devis chargés depuis localStorage`);
+            quotes = storedQuotes;
+            console.log(`✅ ${quotes.length} devis chargés depuis IndexedDB`);
         }
     } catch (e) {
-        console.warn('Erreur chargement quotes localStorage:', e);
+        console.warn('Erreur chargement quotes IndexedDB:', e);
     }
     
     try {
-        const storedRAMs = localStorage.getItem('mti_rams');
+        const storedRAMs = await storageManager.getItem('mti_rams');
         if (storedRAMs) {
-            rams = JSON.parse(storedRAMs);
-            console.log(`✅ ${rams.length} RAMs chargés depuis localStorage`);
+            rams = storedRAMs;
+            console.log(`✅ ${rams.length} RAMs chargés depuis IndexedDB`);
         }
     } catch (e) {
-        console.warn('Erreur chargement RAMs localStorage:', e);
+        console.warn('Erreur chargement RAMs IndexedDB:', e);
     }
 
-    // Charger les factures depuis localStorage si disponibles et si aucune facture n'est chargée
+    // Charger les factures depuis IndexedDB si disponibles et si aucune facture n'est chargée
     try {
-        const storedInvoices = localStorage.getItem('mti_invoices');
+        const storedInvoices = await storageManager.getItem('mti_invoices');
         if ((!invoices || invoices.length === 0) && storedInvoices) {
-            invoices = JSON.parse(storedInvoices);
-            console.log(`✅ ${invoices.length} factures chargées depuis localStorage`);
+            invoices = storedInvoices;
+            console.log(`✅ ${invoices.length} factures chargées depuis IndexedDB`);
         }
     } catch (e) {
-        console.warn('Erreur chargement factures localStorage:', e);
+        console.warn('Erreur chargement factures IndexedDB:', e);
     }
     
     // Setup lazy DOM references
@@ -8256,7 +8264,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (urlParams.has('autoconfig')) {
         try {
             const configData = JSON.parse(decodeURIComponent(urlParams.get('autoconfig')));
-            saveConfigToStorage(configData);
+            await saveConfigToStorage(configData);
             CONFIG = { ...CONFIG_DEFAULTS, ...configData };
             console.log('✅ Configuration automatique appliquée depuis URL');
             showToast('✅ Configuration importée avec succès ! Rechargez la page.', 'success');
@@ -8327,7 +8335,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Toujours initialiser l'app (même en mode dégradé)
     try {
-        initApp();
+        await initApp();
         // Update sync log display after init
         setTimeout(() => {
             updateSyncLogDisplay();
@@ -9020,7 +9028,7 @@ async function generateRAMFromModal() {
     
     // Enregistrer directement le RAM (sans étape aperçu)
     rams.push(ram);
-    localStorage.setItem('mti_rams', JSON.stringify(rams));
+    await storageManager.saveDual('mti_rams', rams);
     await syncToDrive();
 
     // Réinitialiser le mode édition
@@ -9140,7 +9148,7 @@ async function saveRAM(ramId) {
         }
         
         // Sauvegarder localement
-        localStorage.setItem('mti_rams', JSON.stringify(rams));
+        await storageManager.saveDual('mti_rams', rams);
         
         // Synchroniser avec Drive
         await syncToDrive();
@@ -9942,7 +9950,7 @@ async function saveRAMFromForm() {
         }
         
         // Sauvegarder
-        localStorage.setItem('mti_rams', JSON.stringify(rams));
+        await storageManager.saveDual('mti_rams', rams);
         await syncToDrive();
         
         // Export Sheets (non bloquant)
@@ -9971,7 +9979,7 @@ async function deleteRAM(index) {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce rapport d\'activité ?')) return;
     
     rams.splice(index, 1);
-    localStorage.setItem('mti_rams', JSON.stringify(rams));
+    await storageManager.saveDual('mti_rams', rams);
     await syncToDrive();
     renderRAMList();
     showToast('✅ RAM supprimé', 'success');
@@ -10455,7 +10463,7 @@ async function importRAMsFromSheets() {
         }
         
         rams = result.data.rams || [];
-        localStorage.setItem('mti_rams', JSON.stringify(rams));
+        await storageManager.saveDual('mti_rams', rams);
         await saveToDrive({ skipSheetsSync: true });
         renderRAMList();
         
@@ -10539,7 +10547,7 @@ async function importQuotesFromSheets() {
         await saveToDrive({ skipSheetsSync: true });
         // Sauvegarde backup localStorage
         try {
-            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+            await storageManager.saveDual('mti_quotes', quotes);
         } catch (e) {
             console.warn('Erreur sauvegarde quotes localStorage:', e);
         }
@@ -11268,7 +11276,7 @@ async function saveQuote(e) {
     saveToDrive();
     // Sauvegarde backup localStorage
     try {
-        localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+        await storageManager.saveDual('mti_quotes', quotes);
     } catch (e) {
         console.warn('Erreur sauvegarde quotes localStorage:', e);
     }
@@ -11369,7 +11377,7 @@ function resetQuoteForm() {
 /**
  * Supprime un devis
  */
-function deleteQuote(index) {
+async function deleteQuote(index) {
     const quote = quotes[index];
     if (!quote) return;
     
@@ -11377,12 +11385,12 @@ function deleteQuote(index) {
         quotes.splice(index, 1);
         showToast('✅ Devis supprimé');
         renderQuoteList();
-        saveToDrive();
-        // Sauvegarde backup localStorage
+        await saveToDrive();
+        // Sauvegarde backup IndexedDB
         try {
-            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+            await storageManager.saveDual('mti_quotes', quotes);
         } catch (e) {
-            console.warn('Erreur sauvegarde quotes localStorage:', e);
+            console.warn('Erreur sauvegarde quotes IndexedDB:', e);
         }
         try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
     }
@@ -11968,7 +11976,7 @@ async function confirmQuoteEmailSend(index) {
         await saveToDrive();
         // Sauvegarde backup localStorage
         try {
-            localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+            await storageManager.saveDual('mti_quotes', quotes);
         } catch (e) {
             console.warn('Erreur sauvegarde quotes localStorage:', e);
         }
@@ -12237,7 +12245,7 @@ function showQuotePreview() {
 /**
  * Convertit un devis en facture
  */
-function convertQuoteToInvoice(index) {
+async function convertQuoteToInvoice(index) {
     const quote = quotes[index];
     if (!quote) {
         showToast('❌ Devis introuvable', 'error');
@@ -12272,12 +12280,12 @@ function convertQuoteToInvoice(index) {
     quotes[index].status = 'Accepté';
     quotes[index].linkedInvoiceNumber = newInvoice.number;
     
-    saveToDrive();
-    // Sauvegarde backup localStorage
+    await saveToDrive();
+    // Sauvegarde backup IndexedDB
     try {
-        localStorage.setItem('mti_quotes', JSON.stringify(quotes));
+        await storageManager.saveDual('mti_quotes', quotes);
     } catch (e) {
-        console.warn('Erreur sauvegarde quotes localStorage:', e);
+        console.warn('Erreur sauvegarde quotes IndexedDB:', e);
     }
     renderInvoiceList();
     renderQuoteList();
@@ -13293,4 +13301,6 @@ if (document.readyState === 'loading') {
         renderRecurringList();
     }, 1000);
 }
+
+
 
