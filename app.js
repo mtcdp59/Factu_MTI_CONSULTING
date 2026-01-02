@@ -421,6 +421,13 @@ async function getStorageStatus() {
     return `Storage: ${stats.used} / ${stats.available} (${stats.percentage})`;
 }
 
+// Expose helpers in console for fast diagnostics (v2.5.2)
+window.ensureIndexes = (payload) => storageManager.ensureIndexes(payload || { invoices, quotes, clients });
+window.findInvoiceByNumber = (number) => storageManager.findInvoiceByNumber(number);
+window.findQuoteByNumber = (number) => storageManager.findQuoteByNumber(number);
+window.findClientByName = (name) => storageManager.findClientByName(name);
+window.cleanupLocalStorage = (keysToKeep) => storageManager.cleanupLocalStorage(keysToKeep);
+
 // ========== ORIGINAL HELPERS (for compatibility) ==========
 
 // Save invoices (dual-write: IndexedDB + localStorage)
