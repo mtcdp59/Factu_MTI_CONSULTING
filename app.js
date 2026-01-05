@@ -13800,5 +13800,96 @@ if (document.readyState === 'loading') {
     }, 1000);
 }
 
+async function updateStorageUI() {
+    try {
+        const mode = window.getStorageMode();
+        const stats = await storageManager.getStorageStats();
+        const backupEnabled = storageManager.backupEnabled;
 
+        document.getElementById('storageMode').textContent = mode === 'indexeddb' ? 'IndexedDB' : 'localStorage';
+        document.getElementById('storageBackupStatus').textContent = backupEnabled ? 'Activé ✅' : 'Désactivé ❌';
+        document.getElementById('storageBackupStatus').style.color = backupEnabled ? 'var(--color-success)' : 'var(--color-error)';
+        document.getElementById('storageSpaceUsed').textContent = `${stats.used} / ${stats.available} (${stats.percentage})`;
+    } catch (e) {
+        console.error('Erreur mise à jour UI stockage:', e);
+    }
+}
+
+// Handlers boutons stockage
+document.getElementById('refreshStorageStatsBtn')?.addEventListener('click', async () => {
+    await updateStorageUI();
+    showToast('Statistiques actualisées', 'success');
+});
+
+document.getElementById('exportLocalBackupBtn')?.addEventListener('click', async () => {
+    try {
+        const backup = await exportLocalBackup(true);
+        const blob = new Blob([backup.serialized], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mti_backup_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Backup exporté avec succès', 'success');
+    } catch (e) {
+        showToast(`Erreur export: ${e.message}`, 'error');
+    }
+});
+
+document.getElementById('importLocalBackupBtn')?.addEventListener('click', async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const result = await importLocalBackup(text, { compressed: true });
+            showToast(`Import réussi: ${result.restored.length} clés restaurées`, 'success');
+            await updateStorageUI();
+            location.reload(); // Recharger pour appliquer
+        } catch (e) {
+            showToast(`Erreur import: ${e.message}`, 'error');
+        }
+    };
+    input.click();
+});
+
+document.getElementById('toggleBackupBtn')?.addEventListener('click', () => {
+    const newState = !storageManager.backupEnabled;
+    setStorageBackupEnabled(newState);
+    updateStorageUI();
+    showToast(`Backup localStorage ${newState ? 'activé' : 'désactivé'}`, newState ? 'success' : 'info');
+});
+
+// Initialiser au chargement de l'onglet paramètres
+const parametresTab = document.querySelector('[onclick*="parametres"]');
+if (parametresTab) {
+    parametresTab.addEventListener('click', () => {
+        setTimeout(updateStorageUI, 100);
+    });
+}
+
+// Init au chargement de la page
+setTimeout(updateStorageUI, 1000);
+
+(function(){
+    try {
+        var cfg = window.CONFIG || (function(){ try { return JSON.parse(localStorage.getItem('mti_app_config')||'{}'); } catch(e){ return {}; } })();
+        if (!cfg || !cfg.DEBUG_UI_BADGES) {
+            var showcase = document.getElementById('statusShowcase');
+            var toggleBtn = document.getElementById('toggleStatusShowcaseBtn');
+            if (showcase) showcase.remove();
+            if (toggleBtn) toggleBtn.remove();
+        }
+    } catch(e) {
+        var showcase = document.getElementById('statusShowcase');
+        var toggleBtn = document.getElementById('toggleStatusShowcaseBtn');
+        if (showcase) showcase.remove();
+        if (toggleBtn) toggleBtn.remove();
+    }
+})();
 
