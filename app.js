@@ -1,3 +1,119 @@
+import {
+    CONFIG,
+    defaultSettings,
+    LOCALSTORAGE_CLEANUP_INTERVAL_MS,
+    SHEETS_SYNC_DEBOUNCE,
+    STORAGE_DATA_KEYS,
+    STORAGE_META_KEYS_TO_KEEP,
+    SYNC_LOG_MAX_ENTRIES,
+    SYNC_LOG_STORAGE_KEY
+} from './src/modules/config.js';
+
+// VARIABLES
+
+// Planifier un cleanup localStorage périodique (72h) si IndexedDB est OK
+let cleanupTimer = null;
+
+let isSyncing = false;
+let lastSyncTime = null;
+
+// Feuilles Sheets : sync auto (debounce)
+let autoSheetsSyncEnabled = true;  // Can be toggled by user
+let sheetsSyncTimer = null;
+let sheetsSyncInProgress = false;
+let suppressSheetsSync = false;
+let pendingSheetsSync = false;
+
+// Sync statistics for UI
+let syncStats = {
+    lastSyncTime: null,
+    itemsSynced: 0,
+    errorCount: 0,
+    lastError: null
+};
+
+// Sync history/journal for troubleshooting
+// Stored in IndexedDB + localStorage with max 50 entries (to avoid bloating)
+let syncLog = [];
+
+// Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
+let clients = [];
+let invoices = [];
+let quotes = []; // Devis
+let tasks = [];
+let rams = []; // Rapports d'Activité Mensuels
+let recurringInvoices = []; // Factures récurrentes / abonnements
+
+// Calendar state
+let currentView = 'week';
+let currentDate = new Date();
+let useAppCalendar = false; // true = app calendar (day/week/month), false = FullCalendar (Google)
+
+// Company info - now editable via settings
+let companyInfo = {
+    name: 'MTI CONSULTING',
+    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
+    siret: '994 149 904 00017',
+    address: '13A rue du Général de Gaulle',
+    postalCode: '59110',
+    city: 'La Madeleine',
+    email: 'contact@mticonsulting.fr',
+    phone: '07 56 98 99 59',
+    website: 'www.mticonsulting.fr',
+    iban: 'FR76 4061 8804 9700 0403 3099 557', // IBAN professionnel affiché en footer de facture
+    bic: 'BOUSFRPPXXX'   // BIC (Code SWIFT) de la banque
+};
+
+// Tax rates - now stored in memory, editable via settings
+let taxSettings = {
+    tauxIS: 0,
+    versementLiberatoire: 2.2,
+    prorationMensuelle: 8.33,
+    cfeAnnuel: 600,
+    // Charges sociales URSSAF (BNC - Prestations de services / Activités libérales)
+    // Source : https://www.autoentrepreneur.urssaf.fr/portail/accueil/sinformer-sur-le-statut/lessentiel-du-statut.html
+    // ACRE depuis 2020 : durée 12 mois (plus de dégressivité sur 3 ans)
+    acreActif: 12.3,          // Année 1 avec ACRE - Taux réduit BNC 2025 : 12,30% (hors CFP)
+    acreInactif: 24.6,        // Année 2+ sans ACRE - Taux plein 2025 (évolution +1%/an jusqu'en 2029)
+    // CFP (Contribution Formation Professionnelle) BNC - OBLIGATOIRE
+    cfpBNC: 0.2,              // 0,2% du CA (Code du travail L6331-48)
+    // Conditions versement libératoire
+    rfrMaxVL: 28797,          // RFR max par part pour VL 2026 (27478€ pour 2025)
+    // Seuils fiscaux annuels
+    seuilTVAAnnuel: 37500,    // Franchise TVA (prestations de services)
+    seuilTVAMajore: 39100,    // Seuil majoré TVA (tolérance 2 ans)
+    caMaxBNC: 77700,          // Plafond CA BNC pour micro-entreprise
+    objectifCAMensuel: 6000,  // Objectif CA mensuel personnalisable (€)
+    // Barème IRPP progressif 2025 (tranches annuelles - célibataire 1 part)
+    // Source : https://www.service-public.gouv.fr/particuliers/vosdroits/F1419
+    irppBareme: [
+        { min: 0, max: 11497, taux: 0 },
+        { min: 11498, max: 29315, taux: 11 },
+        { min: 29316, max: 83823, taux: 30 },
+        { min: 83824, max: 180294, taux: 41 },
+        { min: 180295, max: Infinity, taux: 45 }
+    ],
+    // BNC (Bénéfices Non Commerciaux) - abattement forfaitaire
+    bncAbattement: 34
+};
+
+// Application-specific settings persisted with Drive data
+let appSettings = {
+    sendMode: 'drive', // 'drive' or 'compose'
+    previewBeforeSend: true // if true, open saved Drive PDF before sending
+};
+
+// DOM Elements (lazy initialization)
+let navTabs = null;
+let tabContents = null;
+let invoiceForm = null;
+let invoiceNumberInput = null;
+let invoiceDateInput = null;
+let dueDateInput = null;
+let quantityInput = null;
+let unitPriceInput = null;
+let totalHTInput = null;
+
 // MTI CONSULTING - Application de facturation
 // Version 2.1.3 - Google Drive Storage + Gmail API + Calendar API + FullCalendar + RAMs
 
@@ -7,18 +123,7 @@ console.log('✅ app.js chargé - début du script');
 // STORAGE MANAGER - IndexedDB prioritaire + secours localStorage
 // ==========================================
 
-const STORAGE_DATA_KEYS = [
-    'mti_invoices',
-    'mti_quotes',
-    'mti_rams',
-    'mti_clients',
-    'mti_syncLog',
-    'mti_autoSyncEnabled',
-    'mti_app_config'
-];
-
-const STORAGE_META_KEYS_TO_KEEP = ['mti_indexeddb_migrated', 'mti_app_config'];
-
+// TODO: STORAGE
 const storageManager = {
     mode: 'indexeddb',
     backupEnabled: true, // Backup localStorage activé par sécurité
@@ -540,12 +645,11 @@ const storageManager = {
 };
 
 // Initialiser le stockage au chargement
+// TODO: STORAGE
 storageManager.init();
 
-// Planifier un cleanup localStorage périodique (72h) si IndexedDB est OK
-const LOCALSTORAGE_CLEANUP_INTERVAL_MS = 72 * 60 * 60 * 1000;
-let cleanupTimer = null;
 
+// TODO: STORAGE
 function scheduleLocalStorageCleanup() {
     if (cleanupTimer || !storageManager.isIndexedDB()) return; // éviter doublons ou mode fallback
     cleanupTimer = setInterval(() => {
@@ -562,6 +666,7 @@ function scheduleLocalStorageCleanup() {
     }, 5000);
 }
 
+// TODO: ON LAISSE ICI
 scheduleLocalStorageCleanup();
 
 // ==========================================
@@ -571,6 +676,7 @@ scheduleLocalStorageCleanup();
 // ========== v2.5.2 FONCTIONS HELPER ========== 
 
 // Sauvegarder en batch factures, devis, RAM et clients en une seule opération
+// TODO: STORAGE
 async function batchSaveAllData() {
     const items = {
         'mti_invoices': invoices,
@@ -588,6 +694,7 @@ async function batchSaveAllData() {
 }
 
 // Charger en batch toutes les données avec décompression
+// TODO: STORAGE
 async function batchLoadAllData() {
     const keys = ['mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients'];
     const data = await storageManager.batchLoad(keys);
@@ -602,6 +709,7 @@ async function batchLoadAllData() {
 }
 
 // Obtenir l'état du stockage (barre de statut UI)
+// TODO: STORAGE
 async function getStorageStatus() {
     const stats = await storageManager.getStorageStats();
     const mode = storageManager.isIndexedDB() ? 'IndexedDB' : 'localStorage';
@@ -609,15 +717,18 @@ async function getStorageStatus() {
 }
 
 // Export/import manuel (backup JSON local)
+// TODO: STORAGE
 async function exportLocalBackup(compress = true) {
     return storageManager.exportSnapshot(STORAGE_DATA_KEYS, { compress });
 }
 
+// TODO: STORAGE
 async function importLocalBackup(serialized, options = {}) {
     return storageManager.importSnapshot(serialized, options);
 }
 
 // Exposer les helpers en console pour un diagnostic rapide (v2.5.2)
+// TODO: JE LAISSE ICI POUR L'INSTANT
 window.ensureIndexes = (payload) => storageManager.ensureIndexes(payload || { invoices, quotes, clients });
 window.findInvoiceByNumber = (number) => storageManager.findInvoiceByNumber(number);
 window.findQuoteByNumber = (number) => storageManager.findQuoteByNumber(number);
@@ -631,46 +742,55 @@ window.getStorageMode = () => storageManager.mode;
 // ========== HELPERS ORIGINELS (compatibilité) ========== 
 
 // Sauvegarder les factures (stockage principal, backup optionnel)
+// TODO: STORAGE
 async function saveInvoicesToStorage(invoicesData) {
     await storageManager.saveDual('mti_invoices', invoicesData);
 }
 
 // Charger les factures (avec repli)
+// TODO: STORAGE
 async function loadInvoicesFromStorage() {
     return await storageManager.loadDual('mti_invoices');
 }
 
 // Sauvegarder les devis (stockage principal, backup optionnel)
+// TODO: STORAGE
 async function saveQuotesToStorage(quotesData) {
     await storageManager.saveDual('mti_quotes', quotesData);
 }
 
 // Charger les devis
+// TODO: STORAGE
 async function loadQuotesFromStorage() {
     return await storageManager.loadDual('mti_quotes');
 }
 
 // Sauvegarder les RAMs (stockage principal, backup optionnel)
+// TODO: STORAGE
 async function saveRAMsToStorage(ramsData) {
     await storageManager.saveDual('mti_rams', ramsData);
 }
 
 // Charger les RAMs
+// TODO: STORAGE
 async function loadRAMsFromStorage() {
     return await storageManager.loadDual('mti_rams');
 }
 
 // Sauvegarder les clients (stockage principal, backup optionnel)
+// TODO: STORAGE
 async function saveClientsToStorage(clientsData) {
     await storageManager.saveDual('mti_clients', clientsData);
 }
 
 // Charger les clients
+// TODO: STORAGE
 async function loadClientsFromStorage() {
     return await storageManager.loadDual('mti_clients');
 }
 
 // Export pour debug console
+// TODO: ON LAISSE ICI POUR L'INSTANT
 window.storageManager = storageManager;
 window.saveInvoicesToStorage = saveInvoicesToStorage;
 window.loadInvoicesFromStorage = loadInvoicesFromStorage;
@@ -681,20 +801,9 @@ window.findInvoiceByNumber = (num) => storageManager.findInvoiceByNumber(num);
 window.findQuoteByNumber = (num) => storageManager.findQuoteByNumber(num);
 window.findClientByName = (name) => storageManager.findClientByName(name);
 
-// Configuration : priorité à window.CONFIG (config.js), sinon valeurs par défaut
-const CONFIG = window.CONFIG || {
-    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwE4GfTi5MQaYdvcwgFg3UUW6l-VEyzbPFYXjhkFGW1ZowsAlrLANMnhp8K-zIQ622D/exec',
-    DRIVE_FILE_NAME: 'mti_data.json',
-    SHEETS_ID: '17YPRArzfDaxQ5m1LKQLSzKOqeuCxfgLisKeQMthESi4',
-    CALENDAR_ID: 'contact@mticonsulting.fr',
-    GOOGLE_CLIENT_ID: '419421611576-v36rss6abjs0ahrv3vt9u6tcl4hhtos9.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: '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',
-    GOOGLE_API_KEY: '',
-    GOOGLE_SCOPES: 'https://www.googleapis.com/auth/calendar.events',
-    DRIVE_FOLDER: 'MTI_CONSULTING_DATA'
-};
 
 // Charger la configuration depuis IndexedDB/localStorage (pour GitHub Pages) ou window.CONFIG (pour fichier local)
+// TODO: STORAGE
 async function loadConfigFromStorage() {
     try {
         const storedConfig = await storageManager.getItem('mti_app_config');
@@ -708,6 +817,7 @@ async function loadConfigFromStorage() {
 }
 
 // Sauvegarder la configuration dans IndexedDB + localStorage backup
+// TODO: STORAGE
 async function saveConfigToStorage(config) {
     try {
         await storageManager.saveDual('mti_app_config', config);
@@ -721,21 +831,22 @@ async function saveConfigToStorage(config) {
 console.log('✅ Configuration chargée depuis app.js (v42 style)');
 
 // Sync version - reads from CONFIG (already loaded at startup)
+// TODO: CALENDAR
 function getConfiguredCalendarId() {
     // Check if stored value is in CONFIG first (from initial load)
     return CONFIG.CALENDAR_ID;
 }
 
 // Async version for saving
+// TODO: CALENDAR
 async function setConfiguredCalendarId(calendarId) {
     await storageManager.saveDual('mti_calendar_id', calendarId);
     CONFIG.CALENDAR_ID = calendarId;
 }
 
-// Send mode storage key: 'drive' or 'manual'
-const SEND_MODE_KEY = 'mti_send_mode';
 
 // Helper to call the Apps Script backend with better error handling and CORS guidance
+// TODO: API
 async function callBackend(action, payload = {}) {
     // Vérifier si le backend est configuré
     if (!CONFIG.BACKEND_URL || CONFIG.BACKEND_URL.includes('VOTRE_SCRIPT_ID')) {
@@ -785,6 +896,7 @@ async function callBackend(action, payload = {}) {
 }
 
 // Open Gmail compose in a new tab and provide the generated PDF for review/download
+// TODO: MAIL
 async function openGmailComposeWithPDF(invoice, toEmail) {
     if (!invoice) throw new Error('Invoice missing');
     const client = clients.find(c => c.name === invoice.client) || {};
@@ -827,6 +939,7 @@ async function openGmailComposeWithPDF(invoice, toEmail) {
 }
 
 // JSONP fallback for simple GET-based actions to avoid CORS preflight when running from file://
+// TODO: API
 function callBackendJSONP(action, params = {}) {
     return new Promise((resolve, reject) => {
         try {
@@ -854,6 +967,7 @@ function callBackendJSONP(action, params = {}) {
 }
 
 // Quick backend tester (uses GET to call doGet and shows raw response in a modal)
+// TODO: API
 async function testBackend() {
     const modal = document.getElementById('backendModal');
     const pre = document.getElementById('backendRawResponse');
@@ -872,6 +986,7 @@ async function testBackend() {
 }
 
 // Export FEC (Fichier des Écritures Comptables)
+// TODO: EXPORT
 async function exportFEC() {
     try {
         // Demander l'exercice comptable à l'utilisateur
@@ -973,6 +1088,7 @@ let editingInvoiceIndex = -1;
 // ==========================================
 
 // Debounce helper
+// TODO: DRIVE
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -987,6 +1103,8 @@ function debounce(func, wait) {
 
 // Sauvegarder toutes les données dans Google Drive
 let saveToDriveInProgress = false;
+
+// TODO: DRIVE
 async function saveToDrive(options = {}) {
     if (saveToDriveInProgress) {
         console.log('⏳ Sauvegarde Drive déjà en cours, ignorée');
@@ -1025,20 +1143,24 @@ async function saveToDrive(options = {}) {
 }
 
 // Alias pour compatibilité
+// TODO: DRIVE
 async function syncToDrive() {
     return await saveToDrive();
 }
 
 // Version debounced de saveToDrive (2 secondes)
+// TODO: DRIVE
 const debouncedSaveToDrive = debounce(saveToDrive, 2000);
 
 // Debounced synchronisation automatique vers Sheets (factures, devis, RAM, tiers)
+// TODO: SHEETS
 function queueSheetsSync(reason = '') {
     if (!autoSheetsSyncEnabled || suppressSheetsSync) return;
     clearTimeout(sheetsSyncTimer);
     sheetsSyncTimer = setTimeout(() => syncSheetsNow(reason), SHEETS_SYNC_DEBOUNCE);
 }
 
+// TODO: SHEETS
 async function syncSheetsNow(reason = 'auto') {
     if (sheetsSyncInProgress) {
         pendingSheetsSync = true;
@@ -1094,6 +1216,7 @@ async function syncSheetsNow(reason = 'auto') {
 }
 
 // Charger toutes les données depuis Google Drive (POST puis fallback JSONP si CORS)
+// TODO: DRIVE
 async function loadFromDrive() {
     const applyData = async (data) => {
         if (data.clients) clients = data.clients;
@@ -1157,31 +1280,6 @@ async function loadFromDrive() {
     }
 }
 
-const SYNC_TIMEOUT = 15000;
-let isSyncing = false;
-let lastSyncTime = null;
-
-// Feuilles Sheets : sync auto (debounce)
-let autoSheetsSyncEnabled = true;  // Can be toggled by user
-const SHEETS_SYNC_DEBOUNCE = 2000;
-let sheetsSyncTimer = null;
-let sheetsSyncInProgress = false;
-let suppressSheetsSync = false;
-let pendingSheetsSync = false;
-
-// Sync statistics for UI
-let syncStats = {
-    lastSyncTime: null,
-    itemsSynced: 0,
-    errorCount: 0,
-    lastError: null
-};
-
-// Sync history/journal for troubleshooting
-// Stored in IndexedDB + localStorage with max 50 entries (to avoid bloating)
-let syncLog = [];
-const SYNC_LOG_MAX_ENTRIES = 50;
-const SYNC_LOG_STORAGE_KEY = 'mti_syncLog';
 
 // Load sync log from IndexedDB/localStorage on startup
 async function loadSyncLog() {
@@ -1200,6 +1298,7 @@ async function loadSyncLog() {
 }
 
 // Add entry to sync log
+// TODO: SYNC LOG
 async function addSyncLogEntry(status, message, details = {}) {
     const entry = {
         timestamp: new Date().toISOString(),
@@ -1228,11 +1327,13 @@ async function addSyncLogEntry(status, message, details = {}) {
 }
 
 // Get sync log (for display in UI)
+// TODO: SYNC LOG
 function getSyncLog(limit = 20) {
     return syncLog.slice(0, limit);
 }
 
 // Clear sync log
+// TODO: SYNC LOG
 async function clearSyncLog() {
     syncLog = [];
     try {
@@ -1251,6 +1352,7 @@ window.clearSyncLog = clearSyncLog;
 // ==========================================
 
 // Fetch Drive data without applying (for comparison)
+// TODO: DRIVE
 async function fetchDriveDataOnly() {
     try {
         const result = await callBackend('loadFromDrive');
@@ -1452,95 +1554,6 @@ window.detectDataDivergences = detectDataDivergences;
 window.reconcileData = reconcileData;
 window.autoReconcile = autoReconcile;
 
-// Données chargées depuis Google Drive (vides par défaut, seront écrasées au chargement)
-let clients = [];
-let invoices = [];
-let quotes = []; // Devis
-let tasks = [];
-let rams = []; // Rapports d'Activité Mensuels
-let recurringInvoices = []; // Factures récurrentes / abonnements
-
-// Calendar state
-let currentView = 'week';
-let currentDate = new Date();
-let useAppCalendar = false; // true = app calendar (day/week/month), false = FullCalendar (Google)
-
-// Company info - now editable via settings
-let companyInfo = {
-    name: 'MTI CONSULTING',
-    logoUrl: 'https://github.com/mtcdp59/Factu_MTI_CONSULTING/blob/main/MTI_CONSULTING.png?raw=true',
-    siret: '994 149 904 00017',
-    address: '13A rue du Général de Gaulle',
-    postalCode: '59110',
-    city: 'La Madeleine',
-    email: 'contact@mticonsulting.fr',
-    phone: '07 56 98 99 59',
-    website: 'www.mticonsulting.fr',
-    iban: 'FR76 4061 8804 9700 0403 3099 557', // IBAN professionnel affiché en footer de facture
-    bic: 'BOUSFRPPXXX'   // BIC (Code SWIFT) de la banque
-};
-
-// Tax rates - now stored in memory, editable via settings
-let taxSettings = {
-    tauxIS: 0,
-    versementLiberatoire: 2.2,
-    prorationMensuelle: 8.33,
-    cfeAnnuel: 600,
-    // Charges sociales URSSAF (BNC - Prestations de services / Activités libérales)
-    // Source : https://www.autoentrepreneur.urssaf.fr/portail/accueil/sinformer-sur-le-statut/lessentiel-du-statut.html
-    // ACRE depuis 2020 : durée 12 mois (plus de dégressivité sur 3 ans)
-    acreActif: 12.3,          // Année 1 avec ACRE - Taux réduit BNC 2025 : 12,30% (hors CFP)
-    acreInactif: 24.6,        // Année 2+ sans ACRE - Taux plein 2025 (évolution +1%/an jusqu'en 2029)
-    // CFP (Contribution Formation Professionnelle) BNC - OBLIGATOIRE
-    cfpBNC: 0.2,              // 0,2% du CA (Code du travail L6331-48)
-    // Conditions versement libératoire
-    rfrMaxVL: 28797,          // RFR max par part pour VL 2026 (27478€ pour 2025)
-    // Seuils fiscaux annuels
-    seuilTVAAnnuel: 37500,    // Franchise TVA (prestations de services)
-    seuilTVAMajore: 39100,    // Seuil majoré TVA (tolérance 2 ans)
-    caMaxBNC: 77700,          // Plafond CA BNC pour micro-entreprise
-    objectifCAMensuel: 6000,  // Objectif CA mensuel personnalisable (€)
-    // Barème IRPP progressif 2025 (tranches annuelles - célibataire 1 part)
-    // Source : https://www.service-public.gouv.fr/particuliers/vosdroits/F1419
-    irppBareme: [
-        { min: 0, max: 11497, taux: 0 },
-        { min: 11498, max: 29315, taux: 11 },
-        { min: 29316, max: 83823, taux: 30 },
-        { min: 83824, max: 180294, taux: 41 },
-        { min: 180295, max: Infinity, taux: 45 }
-    ],
-    // BNC (Bénéfices Non Commerciaux) - abattement forfaitaire
-    bncAbattement: 34
-};
-
-// Application-specific settings persisted with Drive data
-let appSettings = {
-    sendMode: 'drive', // 'drive' or 'compose'
-    previewBeforeSend: true // if true, open saved Drive PDF before sending
-};
-
-const defaultSettings = {
-    tauxIS: 0,
-    versementLiberatoire: 2.2,
-    prorationMensuelle: 8.33,
-    cfeAnnuel: 600,
-    acreActif: 12.3,
-    acreInactif: 24.6,
-    cfpBNC: 0.2,
-    rfrMaxVL: 28797,
-    seuilTVAAnnuel: 37500,
-    seuilTVAMajore: 39100,
-    caMaxBNC: 77700,
-    objectifCAMensuel: 6000,
-    irppBareme: [
-        { min: 0, max: 11497, taux: 0 },
-        { min: 11498, max: 29315, taux: 11 },
-        { min: 29316, max: 83823, taux: 30 },
-        { min: 83824, max: 180294, taux: 41 },
-        { min: 180295, max: Infinity, taux: 45 }
-    ],
-    bncAbattement: 34
-};
 
 // ========== CALCUL IRPP PROGRESSIF ==========
 
@@ -1550,6 +1563,7 @@ const defaultSettings = {
  * @param {Array} bareme - Barème IRPP (tranches avec min, max, taux)
  * @returns {number} Montant de l'impôt annuel
  */
+// TODO: TAX
 function calculateIRPPProgressif(revenuImposable, bareme = null) {
     if (!bareme) bareme = taxSettings.irppBareme;
     // Sécurité : vérifier que le barème existe et est un tableau
@@ -1586,6 +1600,7 @@ function calculateIRPPProgressif(revenuImposable, bareme = null) {
  * @param {number} abattement - Taux d'abattement (défaut 34%)
  * @returns {number} Revenu imposable
  */
+// TODO: TAX
 function calculateBNCRevenuImposable(caAnnuel, abattement = null) {
     if (!abattement) abattement = taxSettings.bncAbattement || defaultSettings.bncAbattement || 34;
     const revenuImposable = caAnnuel * (1 - abattement / 100);
@@ -1597,6 +1612,7 @@ function calculateBNCRevenuImposable(caAnnuel, abattement = null) {
  * @param {number} caAnnuel - Chiffre d'affaires annuel
  * @returns {Object} { versementLib, irppProgressif, difference, meilleurChoix }
  */
+// TODO: TAX
 function compareImpots(caAnnuel) {
     // Versement libératoire : taux fixe sur CA
     const versementLib = caAnnuel * (taxSettings.versementLiberatoire / 100);
@@ -1618,16 +1634,6 @@ function compareImpots(caAnnuel) {
     };
 }
 
-// DOM Elements (lazy initialization)
-let navTabs = null;
-let tabContents = null;
-let invoiceForm = null;
-let invoiceNumberInput = null;
-let invoiceDateInput = null;
-let dueDateInput = null;
-let quantityInput = null;
-let unitPriceInput = null;
-let totalHTInput = null;
 
 // Navigation - set up after DOM ready
 function setupNavigation() {
@@ -1666,6 +1672,7 @@ function setupNavigation() {
 }
 
 // TIERS - Client Management
+// TODO: CLIENT
 function renderClientsTable() {
     const tbody = document.getElementById('clientsTableBody');
     if (!tbody) return;
@@ -1716,7 +1723,9 @@ function setupLegacyBindings() {
         if (importInvoicesBtnList) importInvoicesBtnList.addEventListener('click', () => { importInvoicesFromSheets(); });
         const exportInvoicesBtnList = document.getElementById('exportInvoicesBtnList');
         if (exportInvoicesBtnList) exportInvoicesBtnList.addEventListener('click', () => { exportInvoicesToSheets(); });
+
 // Import invoices from Google Sheets
+// TODO: INVOICES
 async function importInvoicesFromSheets() {
     suppressSheetsSync = true;
     try {
@@ -1743,6 +1752,7 @@ async function importInvoicesFromSheets() {
 }
 
 // Export invoices to Google Sheets
+// TODO: INVOICES
 async function exportInvoicesToSheets() {
     try {
         const result = await callBackend('exportInvoicesToSheets', { sheetId: CONFIG.SHEETS_ID, invoices });
@@ -1755,6 +1765,7 @@ async function exportInvoicesToSheets() {
 }
 
 // Nettoyer l'onglet Sheets Factures
+// TODO: INVOICES
 async function clearInvoicesInSheets() {
     if (!confirm('⚠️ Cela va vider l\'onglet "Factures" dans Sheets (les données locales restent). Continuer ?')) return;
     try {
@@ -1856,6 +1867,7 @@ async function clearInvoicesInSheets() {
     if (deleteBtn) deleteBtn.addEventListener('click', deleteTaskFromEdit);
 }
 
+// TODO: CLIENT
 function populateClientSelects() {
     const clientSelect = document.getElementById('clientSelect');
     const clientFilterSelect = document.getElementById('clientFilterSelect');
@@ -1904,6 +1916,7 @@ function populateClientSelects() {
 }
 
 // Client select change
+// TODO: CLIENT
 function setupClientSelectListener() {
     const clientSelect = document.getElementById('clientSelect');
     if (!clientSelect) return;
@@ -1948,6 +1961,7 @@ function setupClientSelectListener() {
 }
 
 // Setup RAM client select listener
+// TODO: CLIENT
 function setupRAMClientSelectListener() {
     const ramClientSelect = document.getElementById('ramClientSelect');
     if (!ramClientSelect) return;
@@ -1995,6 +2009,7 @@ function setupRAMClientSelectListener() {
 }
 
 // Client Form handlers
+// TODO: CLIENT
 function setupClientFormHandlers() {
     const addClientBtn = document.getElementById('addClientBtn');
     if (addClientBtn) {
@@ -2071,6 +2086,7 @@ function setupClientFormHandlers() {
     }
 }
 
+// TODO: CLIENT
 function editClient(index) {
     const client = clients[index];
     const title = document.getElementById('clientFormTitle');
@@ -2107,6 +2123,7 @@ function editClient(index) {
     if (card) card.style.display = 'block';
 }
 
+// TODO: CLIENT
 function deleteClient(index) {
     const client = clients[index];
     const clientInvoices = invoices.filter(inv => inv.client === client.name);
@@ -2153,6 +2170,7 @@ window.deleteClient = deleteClient;
 // lazy elements will be initialized in initApp
 
 // Initialize invoice number with new format YYYYMM-NNN
+// TODO: INVOICES
 function getNextInvoiceNumber(date = null) {
     const invoiceDate = date ? new Date(date) : new Date();
     const year = invoiceDate.getFullYear();
@@ -2185,6 +2203,7 @@ function getNextInvoiceNumber(date = null) {
 }
 
 // Set default dates
+// TODO: UTILS/DATES
 function setDefaultDates() {
     const today = new Date();
     const defaultDue = new Date(today);
@@ -2195,6 +2214,7 @@ function setDefaultDates() {
 }
 
 // Auto-update due date and invoice number when invoice date changes
+// TODO: INVOICES
 function setupInvoiceFormListeners() {
     if (invoiceDateInput) {
         invoiceDateInput.addEventListener('change', () => {
@@ -2509,6 +2529,7 @@ function calculateTotal() {
 }
 
 // Format date to French format
+// TODO: UTILS/DATES
 function formatDateFR(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -2516,6 +2537,7 @@ function formatDateFR(dateString) {
 }
 
 // Format number with thousands separator (space)
+// TODO: UTILS/NUMBER
 function formatNumber(number, decimals = 2) {
     if (number === null || number === undefined || isNaN(number)) return '0,00';
     
@@ -2532,6 +2554,7 @@ function formatNumber(number, decimals = 2) {
 // Email sending functionality (preview)
 let currentInvoiceData = null;
 
+// TODO: EMAIL
 function setupEmailPreviewHandlers() {
     const sendEmailBtn = document.getElementById('sendEmailBtn');
     if (sendEmailBtn) {
@@ -2581,6 +2604,7 @@ function setupEmailPreviewHandlers() {
     // See line 5729: setupEmailPreviewHandlersForConfirmSend() handles click with proper protection.
 }
 
+// TODO: EMAIL
 function showEmailPreview() {
     if (!currentInvoiceData) return;
     const { clientName, invoiceNumber, invoiceDate, dueDate, total, client } = currentInvoiceData;
@@ -2636,6 +2660,7 @@ document.getElementById('cancelEditBtn')?.addEventListener('click', () => {
 let currentInvoiceItems = [];
 let currentInvoiceSourceQuoteNumber = '';
 
+// TODO: INVOICES
 function addInvoiceItem() {
     const item = {
         description: '',
@@ -2647,12 +2672,14 @@ function addInvoiceItem() {
     renderInvoiceItems();
 }
 
+// TODO: INVOICES
 function removeInvoiceItem(index) {
     currentInvoiceItems.splice(index, 1);
     renderInvoiceItems();
     updateInvoiceTotal();
 }
 
+// TODO: INVOICES
 function updateInvoiceItemField(index, field, value) {
     if (!currentInvoiceItems[index]) return;
     
@@ -2669,6 +2696,7 @@ function updateInvoiceItemField(index, field, value) {
     updateInvoiceTotal();
 }
 
+// TODO: INVOICES
 function renderInvoiceItems() {
     const tbody = document.getElementById('invoiceItemsBody');
     if (!tbody) return;
@@ -2725,17 +2753,20 @@ function renderInvoiceItems() {
     });
 }
 
+// TODO: INVOICES
 function updateInvoiceTotal() {
     // Recalculate and update the invoice total display
     calculateTotal();
 }
 
+// TODO: INVOICES
 function clearInvoiceItems() {
     currentInvoiceItems = [];
     renderInvoiceItems();
     updateInvoiceTotal();
 }
 
+// TODO: INVOICES
 function loadInvoiceItems(items) {
     currentInvoiceItems = items && items.length > 0 ? [...items] : [];
     renderInvoiceItems();
@@ -2753,6 +2784,7 @@ window.updateInvoiceItemField = updateInvoiceItemField;
 let isSubmittingInvoice = false;
 
 // Save invoice
+// TODO: INVOICES
 function setupInvoiceSaveHandler() {
     if (!invoiceForm) return;
     invoiceForm.addEventListener('submit', (e) => {
@@ -2946,6 +2978,7 @@ function setupInvoiceSaveHandler() {
 }
 
 // Add a reset button handler
+// TODO: INVOICES
 function resetInvoiceForm() {
     // Exit edit mode if active
     if (isEditMode) {
@@ -2988,6 +3021,7 @@ function resetInvoiceForm() {
 window.resetInvoiceForm = resetInvoiceForm;
 
 // PLANNING - Calendar with Day/Week/Month views
+// TODO: CALENDAR
 function changeCalendarView(view) {
     currentView = view;
     document.getElementById('viewDay')?.classList.remove('active');
@@ -2998,6 +3032,7 @@ function changeCalendarView(view) {
     renderCalendar();
 }
 
+// TODO: CALENDAR
 function navigateCalendar(direction) {
     if (direction === 0) {
         currentDate = new Date();
@@ -3011,6 +3046,7 @@ function navigateCalendar(direction) {
     renderCalendar();
 }
 
+// TODO: UTILS/DATE
 function getWeekDates(date) {
     const d = new Date(date);
     const day = d.getDay();
@@ -3026,6 +3062,7 @@ function getWeekDates(date) {
     return dates;
 }
 
+// TODO: UTILS/DATE
 function formatDate(date) {
     if (!date) return '';
     const d = new Date(date);
@@ -3035,6 +3072,7 @@ function formatDate(date) {
     return `${year}-${month}-${day}`;
 }
 
+// TODO: CALENDAR
 function renderCalendar() {
     updateCurrentDateDisplay();
 
@@ -3049,6 +3087,7 @@ function renderCalendar() {
     updateWeeklyStats();
 }
 
+// TODO: CALENDAR
 function updateCurrentDateDisplay() {
     const display = document.getElementById('currentDateDisplay');
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
@@ -3067,6 +3106,7 @@ function updateCurrentDateDisplay() {
     }
 }
 
+// TODO: CALENDAR
 function renderDayView() {
     // Always render to appCalendarContainer (app's own calendar views)
     const container = document.getElementById('appCalendarContainer');
@@ -3104,6 +3144,7 @@ function renderDayView() {
     container.innerHTML = html;
 }
 
+// TODO: CALENDAR
 function renderWeekView() {
     // Always render to appCalendarContainer (app's own calendar views)
     const container = document.getElementById('appCalendarContainer');
@@ -3136,6 +3177,7 @@ function renderWeekView() {
     container.innerHTML = html;
 }
 
+// TODO: CALENDAR
 function renderMonthView() {
     // Always render to appCalendarContainer (app's own calendar views)
     const container = document.getElementById('appCalendarContainer');
@@ -3191,6 +3233,7 @@ function renderMonthView() {
     container.innerHTML = html;
 }
 
+// TODO: UTILS/DATES ?
 function showDayTasks(dateStr) {
     const dayTasks = tasks.filter(task => task.date === dateStr);
     const date = new Date(dateStr);
@@ -3215,6 +3258,7 @@ window.navigateCalendar = navigateCalendar;
 window.showDayTasks = showDayTasks;
 
 // --- Calendar Manager UI & actions ---
+// TODO: CALENDAR
 function initCalendarManager() {
     const container = document.getElementById('calendarEmbedContainer');
     if (!container) return;
@@ -3294,6 +3338,7 @@ function initCalendarManager() {
     });
 }
 
+// TODO: CALENDAR
 async function loadCalendarEvents(startDate, endDate) {
     const listEl = document.getElementById('mgrEventsList');
     if (!listEl) return;
@@ -3370,6 +3415,7 @@ let accessToken = null;
 let tokenClient = null;
 
 // Initialize Google Identity Services (GIS) for OAuth2
+// TODO: AUTH
 function initGoogleAuth() {
     // Check if running from file:// protocol (not supported by Google OAuth2)
     if (window.location.protocol === 'file:') {
@@ -3451,6 +3497,7 @@ Option 3 (VS Code) :
 }
 
 // Handle sign-in/sign-out button
+// TODO: AUTH
 function handleAuthClick() {
     if (!isGoogleAuthInitialized) {
         showToast('Google Auth non initialisé', 'error');
@@ -3475,6 +3522,7 @@ function handleAuthClick() {
 }
 
 // Update UI based on sign-in status
+// TODO: AUTH
 function updateSignInStatus(signedIn) {
     isGoogleSignedIn = signedIn;
     const authBtn = document.getElementById('googleAuthBtn');
@@ -3521,6 +3569,7 @@ function updateSignInStatus(signedIn) {
 }
 
 // Load events from Google Calendar API
+// TODO: CALENDAR
 async function loadGoogleCalendarEvents(fetchInfo, successCallback, failureCallback) {
     if (!isGoogleSignedIn) {
         // Return empty array instead of error when not connected
@@ -3571,6 +3620,7 @@ function getEventColor(googleEvent) {
 }
 
 // Create event in Google Calendar
+// TODO: CALENDAR
 async function createGoogleCalendarEvent(eventData) {
     if (!isGoogleSignedIn) {
         throw new Error('Non connecté à Google');
@@ -3612,6 +3662,7 @@ async function createGoogleCalendarEvent(eventData) {
 }
 
 // Update event in Google Calendar
+// TODO: CALENDAR
 async function updateGoogleCalendarEvent(eventId, changes) {
     if (!isGoogleSignedIn) {
         throw new Error('Non connecté à Google');
@@ -3653,6 +3704,7 @@ async function updateGoogleCalendarEvent(eventId, changes) {
 }
 
 // Delete event from Google Calendar
+// TODO: CALENDAR
 async function deleteGoogleCalendarEvent(eventId) {
     if (!isGoogleSignedIn) {
         throw new Error('Non connecté à Google');
@@ -3889,6 +3941,7 @@ function showEventEditModal(event) {
 }
 
 // Initialize FullCalendar with Google Calendar API integration
+// TODO: CALENDAR
 async function initFullCalendar() {
     const calendarEl = document.getElementById('fullCalendar');
     if (!calendarEl) {
@@ -4049,6 +4102,7 @@ async function initFullCalendar() {
 }
 
 // Legacy function kept for compatibility (redirects to FullCalendar)
+// TODO: CALENDAR
 function initGoogleCalendarEmbed() {
     initFullCalendar();
 }
@@ -4089,6 +4143,7 @@ function updateWeeklyStats() {
 }
 
 // Task form
+// TODO: TASK
 function setupTaskHandlers() {
     const addTaskBtn = document.getElementById('addTaskBtn');
     if (addTaskBtn) {
@@ -4154,6 +4209,7 @@ function setupTaskHandlers() {
 }
 
 // Edit task
+// TODO: TASK
 function editTask(index) {
     const task = tasks[index];
     if (!task) return;
@@ -4203,6 +4259,7 @@ document.getElementById('editTaskForm')?.addEventListener('submit', (e) => {
     saveToDrive();
 });
 
+// TODO: TASK
 function deleteTaskFromEdit() {
     const index = parseInt(document.getElementById('editTaskIndex').value);
     showConfirmation(
@@ -4263,6 +4320,7 @@ function deleteTaskFromEdit() {
 window.deleteTaskFromEdit = deleteTaskFromEdit;
 
 // SUIVI - Invoice Tracking
+// TODO: INVOICES
 function checkOverdueInvoices() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -4277,6 +4335,7 @@ function checkOverdueInvoices() {
     });
 }
 
+// TODO: INVOICES
 function getFilteredInvoices() {
     let filtered = [...invoices];
     
@@ -4357,6 +4416,7 @@ function applyFilters() {
     try { updateAlerts(); } catch (e) { console.warn('updateAlerts error', e); }
 }
 
+// TODO: INVOICES
 function renderInvoiceTable(filteredInvoices) {
     const tbody = document.getElementById('invoiceTableBody');
     if (!tbody) return;
@@ -4392,6 +4452,7 @@ function renderInvoiceTable(filteredInvoices) {
 // ========== DROPDOWN MENU FUNCTIONS ==========
 
 // Toggle secondary actions visibility
+// TODO: INVOICES
 function toggleInvoiceSecondaryActions(button) {
     const actionsDiv = button.parentElement.nextElementSibling;
     if (!actionsDiv || !actionsDiv.classList.contains('invoice-secondary-actions')) {
@@ -4433,6 +4494,7 @@ function changeStatusFromBadge(statusBadge, dataType, index, currentStatus) {
 // ========== END DROPDOWN FUNCTIONS ==========
 
 // Render invoice list in FACTURES tab
+// TODO: INVOICES
 function renderInvoiceList() {
     const tbody = document.getElementById('invoiceListBody');
     if (!tbody) return;
@@ -4490,6 +4552,7 @@ function renderInvoiceList() {
 }
 
 // Edit invoice in main form (FACTURES tab)
+// TODO: INVOICES
 function editInvoiceInForm(index) {
     const invoice = invoices[index];
     if (!invoice) return;
@@ -4588,6 +4651,7 @@ function editInvoiceInForm(index) {
 /**
  * Filtre la liste des factures selon la recherche
  */
+// TODO: INVOICES
 function filterInvoiceList() {
     const searchInput = document.getElementById('invoiceSearchInput');
     if (!searchInput) return;
@@ -4686,6 +4750,7 @@ window.editInvoiceInForm = editInvoiceInForm;
 window.cancelEditMode = cancelEditMode;
 
 // Edit invoice (for tracking table modal)
+// TODO: INVOICES
 function editInvoice(index) {
     const invoice = invoices[index];
     if (!invoice) return;
@@ -4746,6 +4811,7 @@ document.getElementById('editInvoiceForm')?.addEventListener('submit', (e) => {
 });
 
 // Delete invoice from list (FACTURES tab)
+// TODO: INVOICES
 function deleteInvoiceFromList(index) {
     const invoice = invoices[index];
     showConfirmation(
@@ -4774,6 +4840,7 @@ function deleteInvoiceFromList(index) {
 window.deleteInvoiceFromList = deleteInvoiceFromList;
 
 // Delete invoice (for tracking table)
+// TODO: INVOICES
 function deleteInvoice(index) {
     const invoice = invoices[index];
     showConfirmation(
@@ -4801,6 +4868,7 @@ function deleteInvoice(index) {
 window.deleteInvoice = deleteInvoice;
 
 // Duplicate invoice
+// TODO: INVOICES
 async function duplicateInvoice(index) {
     const invoice = invoices[index];
     if (!invoice) return;
@@ -4886,6 +4954,7 @@ window.updateMontantRecu = updateMontantRecu;
 window.updateDateReception = updateDateReception;
 
 // Send email for existing invoice from tracking table
+// TODO: EMAIL
 function sendInvoiceEmail(index) {
     const invoice = invoices[index];
     const client = clients.find(c => c.name === invoice.client);
@@ -4932,6 +5001,7 @@ function sendInvoiceEmail(index) {
 window.sendInvoiceEmail = sendInvoiceEmail;
 
 // Quick status update for invoices
+// TODO: INVOICES
 function setInvoiceStatus(index, status) {
     const invoice = invoices[index];
     if (!invoice) return;
@@ -4964,6 +5034,7 @@ function setupFilterListeners() {
 // PARAMÈTRES - Settings Management
 
 // Charger la configuration technique dans l'UI (pré-remplit avec les valeurs de CONFIG)
+// TODO: SETTINGS
 function loadTechnicalConfig() {
     if (document.getElementById('configBackendURL')) {
         // Pré-remplir avec les valeurs hardcodées de CONFIG (v42 style)
@@ -4977,6 +5048,7 @@ function loadTechnicalConfig() {
 }
 
 // Sauvegarder la configuration technique
+// TODO: SETTINGS
 async function saveTechnicalConfig() {
     if (!document.getElementById('configBackendURL')) return;
     
@@ -5012,6 +5084,7 @@ async function saveTechnicalConfig() {
     return true;
 }
 
+// TODO: SETTINGS
 function loadCompanySettings() {
     // Charger la config technique
     loadTechnicalConfig();
@@ -5063,6 +5136,7 @@ function loadCompanySettings() {
     }
 }
 
+// TODO: SETTINGS
 function saveSettings() {
     // Save company info
     if (document.getElementById('logoUrl')) {
@@ -5101,6 +5175,7 @@ function saveSettings() {
     saveToDrive();
 }
 
+// TODO: SETTINGS
 function resetSettings() {
     document.getElementById('tauxIS').value = defaultSettings.tauxIS;
     document.getElementById('tauxVersementLib').value = defaultSettings.versementLiberatoire;
@@ -5121,6 +5196,7 @@ function resetSettings() {
 
 // ========== GESTION UI BARÈME IRPP ==========
 
+// TODO: TAX
 function renderIRPPBareme() {
     const container = document.getElementById('irppBaremeContainer');
     if (!container) return;
@@ -5177,6 +5253,7 @@ function renderIRPPBareme() {
     container.appendChild(addBtn);
 }
 
+// TODO: TAX
 function updateIRPPTranche(index, field, value) {
     if (!taxSettings.irppBareme[index]) return;
 
@@ -5192,6 +5269,7 @@ function updateIRPPTranche(index, field, value) {
     renderIRPPBareme();
 }
 
+// TODO: TAX
 function addIRPPTranche() {
     const lastTranche = taxSettings.irppBareme[taxSettings.irppBareme.length - 1];
     const newMin = lastTranche && lastTranche.max !== Infinity ? lastTranche.max + 1 : 0;
@@ -5199,6 +5277,7 @@ function addIRPPTranche() {
     renderIRPPBareme();
 }
 
+// TODO: TAX
 function removeIRPPTranche(index) {
     if (taxSettings.irppBareme.length <= 1) {
         alert('⚠️ Vous devez conserver au moins une tranche');
@@ -5208,6 +5287,7 @@ function removeIRPPTranche(index) {
     renderIRPPBareme();
 }
 
+// TODO: TAX
 function resetIRPPBareme() {
     if (confirm('Réinitialiser le barème IRPP aux valeurs par défaut 2025 ?')) {
         taxSettings.irppBareme = JSON.parse(JSON.stringify(defaultSettings.irppBareme));
@@ -5337,6 +5417,7 @@ const MON_ENTREPRISE_API_BASE = 'https://mon-entreprise.urssaf.fr/api/v1';
  * @param {Array<string>} expressions - List of expressions (rules) to evaluate
  * @returns {Promise<Object>} Map of expression -> { value, unit, nodeValue }
  */
+// TODO: API
 async function evaluateMonEntreprise(situation, expressions, attempt = 1) {
     try {
         const res = await fetch(`${MON_ENTREPRISE_API_BASE}/evaluate`, {
@@ -5387,6 +5468,7 @@ async function evaluateMonEntreprise(situation, expressions, attempt = 1) {
  * Fetch rule details with exponential backoff
  * @param {string} rule - Publicodes rule name
  */
+// TODO: API
 async function fetchUrssafRule(rule, attempt = 1) {
     try {
         const res = await fetch(`${MON_ENTREPRISE_API_BASE}/rules/${encodeURIComponent(rule)}`);
@@ -5436,6 +5518,7 @@ let cotisationsCache = {
  * Load fiscal thresholds (TVA, micro-BNC) from URSSAF API when possible.
  * Updates `taxSettings` and refreshes dependent UI.
  */
+// TODO: TAX OU API ?
 async function loadFiscalThresholdsFromAPI() {
     // If cached within 24h, reuse
     const now = Date.now();
@@ -5538,6 +5621,7 @@ async function loadFiscalThresholdsFromAPI() {
 }
 
 // Helper to initialize API-driven thresholds on app start
+// TODO: TAX OU API ?
 async function initUrssafIntegration() {
     // Add timeout to avoid excessive concurrent requests
     await Promise.race([
@@ -5587,6 +5671,7 @@ window.refreshFiscalThresholds = async function() {
  * Exemples: taux de versement libératoire, abattement BNC.
  * Met à jour taxSettings avec fallback silencieux.
  */
+// TODO: TAX OU API ?
 async function loadAdditionalFiscalParamsFromAPI() {
     // Tentatives de récupération de paramètres additionnels
     const expressions = [
@@ -5625,6 +5710,7 @@ async function loadAdditionalFiscalParamsFromAPI() {
  * @param {string} creationDate - Date de création au format 'DD/MM/YYYY'
  * @returns {Promise<{montantAnnuel: number, taux: number}>} Cotisations annuelles et taux effectif
  */
+// TODO: TAX OU API ?
 async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
     // Validation de la date
     if (!creationDate || !creationDate.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
@@ -5734,6 +5820,7 @@ async function calculateCotisationsDynamically(ca, hasACRE, creationDate) {
     return { versementLiberatoire: taxSettings.versementLiberatoire, bncAbattement: taxSettings.bncAbattement };
 }
 
+// TODO: TAX OU API ?
 function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
     const { vl, irpp } = scenarios;
     const isMensuel = multiplicateur === 1;
@@ -5778,6 +5865,7 @@ function updateComparaisonVL_IRPP(ca, multiplicateur, scenarios) {
     }
 }
 
+// TODO: TAX
 function calculateTaxes() {
     // Sécurité : initialiser le barème IRPP si absent
     if (!taxSettings.irppBareme || taxSettings.irppBareme.length === 0) {
@@ -5838,6 +5926,7 @@ function calculateTaxes() {
  * Calcule cotisations avec cache et fallback automatique.
  * Tente API d'abord, puis fallback sur valeurs locales si échec.
  */
+// TODO: TAX OU API ?
 async function calculateCotisationsWithFallback(caAnnuel, hasACRE, creationDate) {
     // Vérifier cache (5 min de validité)
     const cacheKey = `${caAnnuel}_${hasACRE}_${creationDate}`;
@@ -5880,6 +5969,7 @@ async function calculateCotisationsWithFallback(caAnnuel, hasACRE, creationDate)
  * Test manuel de l'API URSSAF (avec/sans ACRE) depuis l'onglet Calculs.
  * Affiche les taux URSSAF et CFP séparés pour vérifier que l'API répond.
  */
+// TODO: TAX OU API ?
 async function testUrssafAPI() {
     try {
         const ca = parseFloat(document.getElementById('caInput')?.value) || 0;
@@ -5925,6 +6015,7 @@ async function testUrssafAPI() {
  * @param {number} chargesMensuelles - Montant charges mensuelles URSSAF (hors CFP, récupéré séparément via API)
  * @param {number} tauxEffectif - Taux effectif en %
  */
+// TODO: TAX
 function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif) {
     const chargesLabel = acreActive ? 'ACRE Année 1 (12 mois)' : 'Sans ACRE (taux plein)'
     
@@ -6053,6 +6144,7 @@ function finalizeTaxCalculation(ca, acreActive, chargesMensuelles, tauxEffectif)
     renderChargesDistributionChart(scenarios, multiplicateur);
 }
 
+// TODO: TAX
 function updateComparaison(caMensuel) {
     const compContainer = document.getElementById('comparaisonContainer');
     if (!compContainer) return;
@@ -6281,6 +6373,7 @@ const cfeFallbackDB = {
 };
 
 // Fonction récupération CFE depuis API Open Data Soft
+// TODO: API
 async function getCFEFromAPI(commune) {
     const communeLower = commune.toLowerCase();
     
@@ -6355,6 +6448,8 @@ async function getCFEFromAPI(commune) {
 
 // Fonction recherche communes dynamique via API
 let communesSearchCache = {};
+
+// TODO: API
 async function searchCommunesAPI(query) {
     const autocompleteDiv = document.getElementById('communeAutocomplete');
     if (!autocompleteDiv) return;
@@ -6452,6 +6547,7 @@ const SIRET_CACHE_KEY = 'mti_siret_cache';
 const SIRET_CACHE_TTL = 90 * 24 * 60 * 60 * 1000; // 90 jours
 const INSEE_API_KEY = '84dbb5c2-6a3c-41d4-9bb5-c26a3c41d4f4'; // Clé API SIRENE INSEE
 
+// TODO: API
 async function validateSIRET(siret, statusElementId, infoElementId) {
     const statusEl = document.getElementById(statusElementId);
     const infoEl = document.getElementById(infoElementId);
@@ -6574,6 +6670,7 @@ async function validateSIRET(siret, statusElementId, infoElementId) {
 }
 
 // Fonction fallback si API INSEE échoue
+// TODO: API
 async function validateSIRETFallback(siret, statusElementId, infoElementId, cache) {
     try {
         const url = `https://recherche-entreprises.api.gouv.fr/search?q=${siret}&page=1&per_page=1`;
@@ -6612,6 +6709,7 @@ async function validateSIRETFallback(siret, statusElementId, infoElementId, cach
 }
 
 // Fonction auto-remplissage champs client depuis données SIRENE
+// TODO: COMPANY
 function autoFillClientFromSIRET(statusElementId, siretData) {
     if (!siretData) return;
     
@@ -6681,6 +6779,7 @@ function autoFillClientFromSIRET(statusElementId, siretData) {
     showToast(toastMsg);
 }
 
+// TODO: COMPANY
 function updateSiretStatus(statusElementId, infoElementId, state, message) {
     const statusEl = document.getElementById(statusElementId);
     const infoEl = document.getElementById(infoElementId);
@@ -6705,6 +6804,7 @@ function updateSiretStatus(statusElementId, infoElementId, state, message) {
 }
 
 // Fonction estimation CFE par commune (version API)
+// TODO: COMPANY
 async function updateCFEEstimation() {
     const commune = communeInput?.value.trim();
     const cfeEstimationDiv = document.getElementById('cfeEstimation');
@@ -6745,6 +6845,7 @@ async function updateCFEEstimation() {
 }
 
 // Fonction calcul période ACRE
+// TODO: COMPANY
 function calculateACREPeriod() {
     const dateDebutInput = document.getElementById('dateDebutActivite');
     const acrePeriodeInfo = document.getElementById('acrePeriodeInfo');
@@ -6834,6 +6935,7 @@ function calculateACREPeriod() {
 }
 
 // Fonction sauvegarde paramètres simulation
+// TODO: SIMULATION
 function saveSimulationParams() {
     const params = {
         ca: parseFloat(caInput?.value) || 0,
@@ -6858,6 +6960,7 @@ function saveSimulationParams() {
 }
 
 // Fonction chargement paramètres simulation
+// TODO: SIMULATION
 function loadSimulationParams() {
     const saved = localStorage.getItem('mti_simulation_params');
     if (!saved) return;
@@ -6924,6 +7027,7 @@ function loadSimulationParams() {
 }
 
 // Fonction réinitialisation simulation
+// TODO: SIMULATION
 function resetSimulationParams() {
     if (caInput) caInput.value = 0;
     
@@ -6963,6 +7067,7 @@ function resetSimulationParams() {
 }
 
 // Fonction vérification éligibilité Versement Libératoire
+// TODO: SIMULATION
 function verifierEligibiliteVL() {
     const rfr = parseFloat(rfrInput?.value) || 0;
     const eligibiliteDiv = document.getElementById('eligibiliteVL');
@@ -6990,6 +7095,7 @@ function verifierEligibiliteVL() {
 }
 
 // Fonction génération projection 3-5 ans
+// TODO: TAX
 function updateProjection3_5Ans(ca, multiplicateur, baseScenario) {
     const projectionBody = document.getElementById('projectionTableBody');
     if (!projectionBody) return;
@@ -7036,6 +7142,7 @@ function updateProjection3_5Ans(ca, multiplicateur, baseScenario) {
 }
 
 // Fonction rendu graphique distribution charges
+// TODO: TAX
 function renderChargesDistributionChart(scenarios, multiplicateur) {
     const canvas = document.getElementById('chargesDistributionChart');
     if (!canvas) return;
@@ -7132,6 +7239,7 @@ function renderChargesDistributionChart(scenarios, multiplicateur) {
 }
 
 // Fonction export PDF simulateur
+// TODO: SIMULATION
 function exportSimulateurPDF() {
     if (typeof jsPDF === 'undefined') {
         alert('⚠️ jsPDF non chargé. Vérifiez les paramètres pour activer la génération PDF.');
@@ -7181,11 +7289,13 @@ function exportSimulateurPDF() {
 }
 
 // Charts
+// TODO: CHARTS
 function renderCharts() {
     renderCAChart();
     renderStatusChart();
 }
 
+// TODO: CHARTS
 function renderCAChart() {
     const canvas = document.getElementById('caChart');
     if (!canvas) return;
@@ -7243,6 +7353,7 @@ function renderCAChart() {
     });
 }
 
+// TODO: CHARTS
 function renderStatusChart() {
     const canvas = document.getElementById('statusChart');
     if (!canvas) return;
@@ -7323,6 +7434,7 @@ function renderStatusChart() {
 }
 
 // Update sync indicator (visual UI feedback)
+// TODO: SHEETS
 function updateSyncIndicator(syncing = false, hasError = false) {
     const indicator = document.getElementById('syncIndicator');
     const toggleBtn = document.getElementById('toggleAutoSyncBtn');
@@ -7363,6 +7475,7 @@ function updateSyncIndicator(syncing = false, hasError = false) {
 }
 
 // Toggle auto-sync on/off
+// TODO: SYNC
 function toggleAutoSync() {
     autoSheetsSyncEnabled = !autoSheetsSyncEnabled;
     localStorage.setItem('mti_autoSyncEnabled', String(autoSheetsSyncEnabled));
@@ -7375,6 +7488,7 @@ function toggleAutoSync() {
 window.toggleAutoSync = toggleAutoSync;
 
 // Display sync log in UI preview
+// TODO: SYNC
 function updateSyncLogDisplay() {
     const preview = document.getElementById('syncLogPreview');
     if (!preview) return;
@@ -7402,6 +7516,7 @@ function updateSyncLogDisplay() {
 }
 
 // Show sync log modal
+// TODO: SYNC
 function showSyncLogModal() {
     const entries = getSyncLog(50);
     let html = '<h3 style="margin: 0 0 var(--space-16) 0; font-size: var(--font-size-lg);">Historique Sync (50 derniers)</h3>';
@@ -7467,6 +7582,7 @@ function showSyncLogModal() {
 window.showSyncLogModal = showSyncLogModal;
 
 // Load auto-sync preference from localStorage
+// TODO: SYNC
 function loadAutoSyncPreference() {
     const saved = localStorage.getItem('mti_autoSyncEnabled');
     if (saved !== null) {
@@ -7515,6 +7631,7 @@ function showToast(message, type = 'success') {
 }
 
 // Google Sheets Sync Functions
+// TODO: SYNC
 async function syncToGoogleSheets() {
     if (isSyncing) {
         showToast('⏳ Synchronisation déjà en cours...', 'info');
@@ -7612,6 +7729,7 @@ async function syncToGoogleSheets() {
 }
 
 // Auto-sync disabled - user manually syncs
+// TODO: SYNC
 function autoSync(action = 'modification') {
     // Auto-sync disabled in this version
     // User will manually click sync button when needed
@@ -7619,6 +7737,7 @@ function autoSync(action = 'modification') {
 }
 
 // Update last sync time
+// TODO: UTILS/DATES
 function updateLastSyncTime() {
     lastSyncTime = new Date();
     const timeString = lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -7629,6 +7748,7 @@ function updateLastSyncTime() {
 }
 
 // Google Calendar Sync
+// TODO: CALENDAR
 async function syncToGoogleCalendar() {
     if (isSyncing) {
         showToast('⏳ Synchronisation déjà en cours...', 'info');
@@ -7718,91 +7838,8 @@ async function syncToGoogleCalendar() {
     }
 }
 
-// Send invoice via Gmail with PDF
-async function sendInvoiceWithPDF(invoice) {
-    // New behavior: generate a high-fidelity PDF (html2canvas -> jsPDF) and open Gmail compose in a new tab
-    try {
-        showToast('📧 Préparation de l\'email (ouverture Gmail)...', 'info');
-
-        const client = clients.find(c => c.name === invoice.client) || {};
-        const clientEmail = client.email_facturation || '';
-        const subject = `Facture ${invoice.number} - MTI CONSULTING`;
-        const body = generateEmailBody(invoice, client || { name: invoice.client });
-
-        // Generate PDF base64 (html2canvas -> jsPDF preferred)
-        let pdfBase64;
-        try {
-            pdfBase64 = await generateInvoicePDFBase64(invoice);
-        } catch (err) {
-            console.error('PDF generation failed:', err);
-            showToast('⚠️ Impossible de générer le PDF automatiquement. L\'aperçu s\'ouvrira.', 'error');
-            // Fallback to preview modal
-            currentInvoiceData = {
-                clientName: invoice.client,
-                invoiceNumber: invoice.number,
-                invoiceDate: invoice.date,
-                dueDate: invoice.dueDate,
-                total: invoice.total,
-                client: client
-            };
-            showEmailPreview();
-            return;
-        }
-
-        // Convert base64 to blob and open in a new tab so user can review/attach
-        const blob = base64ToBlob(pdfBase64, 'application/pdf');
-        const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, '_blank'); // opens the PDF for review
-
-        // Trigger download to facilitate attaching in Gmail (browser may block automatic download)
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        const listDlInvNum = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
-        a.download = `Facture_${listDlInvNum}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 1000);
-
-        // Open Gmail compose in a new tab (prefilled). Attachments cannot be auto-attached via URL,
-        // so user should attach the downloaded PDF (drag/drop is possible from the opened PDF tab).
-        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(clientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        window.open(gmailUrl, '_blank');
-
-        showToast('📨 Gmail ouvert en nouvel onglet. Vérifiez la pièce jointe et envoyez manuellement.', 'info');
-    } catch (error) {
-        console.error('sendInvoiceWithPDF (compose) error:', error);
-        showToast('❌ Erreur lors de la préparation du mail', 'error');
-    }
-}
-
-// Save invoice PDF to Drive (without sending email) - returns { fileId, fileName, fileUrl }
-async function saveInvoicePdfToDrive(invoice) {
-    if (!invoice) throw new Error('Invoice missing');
-    
-    // Generate PDF base64
-    const pdfBase64 = await generateInvoicePDFBase64(invoice);
-    
-    // Save to Drive via backend
-    const safeInvNumDrive = String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '');
-    const saveRes = await callBackend('savePdfToDrive', { 
-        pdfBase64: pdfBase64, 
-        pdfFilename: `Facture_${safeInvNumDrive}.pdf`, 
-        folderName: 'Factures' 
-    });
-    
-    if (!saveRes || saveRes.success === false) {
-        try { showBackendRawResponse(saveRes); } catch (e) {}
-        throw new Error((saveRes && (saveRes.data || saveRes.error)) || 'Erreur sauvegarde PDF sur Drive');
-    }
-    
-    const fileId = saveRes.data && saveRes.data.fileId;
-    const fileUrl = saveRes.data && saveRes.data.fileUrl;
-    if (!fileId) throw new Error('savePdfToDrive n\'a pas retourné fileId');
-    
-    return { fileId, fileName: `Facture_${safeInvNumDrive}.pdf`, fileUrl };
-}
-
 // Preferred flow: generate PDF, save to Drive, then send email attaching that Drive file
+// TODO: INVOICE
 async function sendInvoiceViaDrive(invoice, toEmail) {
     if (!invoice) throw new Error('Invoice missing');
     const client = clients.find(c => c.name === invoice.client) || {};
@@ -7950,33 +7987,7 @@ document.getElementById('confirmAction')?.addEventListener('click', async () => 
     }
 });
 
-// --- Preview/confirm flow (always uses Drive mode) ---
-// Send mode selection removed - app now always uses automatic Drive mode with preview
-
-function openGmailComposePrefilled(to, subject, body) {
-    try {
-        const url = 'https://mail.google.com/mail/?view=cm&fs=1'
-            + '&to=' + encodeURIComponent(to || '')
-            + '&su=' + encodeURIComponent(subject || '')
-            + '&body=' + encodeURIComponent(body || '');
-        window.open(url, '_blank');
-        return true;
-    } catch (e) {
-        console.error('Impossible d\'ouvrir Gmail compose:', e);
-        return false;
-    }
-}
-
-async function saveInvoicesAndRefreshUI() {
-    try {
-        await saveToDrive();
-    } catch (e) { console.warn('saveToDrive failed', e); }
-    try { renderInvoiceList(); } catch (e) {}
-    try { applyFilters(); } catch (e) {}
-    try { renderCharts(); } catch (e) {}
-    try { updateDevisKPIs(); } catch (e) { console.warn('updateDevisKPIs failed', e); }
-}
-
+// TODO: INVOICE
 function getCurrentInvoiceForPreview() {
     // Build an invoice object from the form fields (with multi-line items support)
     try {
@@ -8009,6 +8020,7 @@ function getCurrentInvoiceForPreview() {
 }
 
 // Preview & confirm flow: (1) generate and save PDF to Drive (replacing existing), (2) open Drive PDF in new tab for preview, (3) show email modal with unified body for review, (4) on confirm send via backend or open compose
+// TODO: INVOICE
 async function previewAndConfirmSend(invoice) {
     if (!invoice) throw new Error('Invoice missing');
 
@@ -8051,6 +8063,7 @@ async function previewAndConfirmSend(invoice) {
     showEmailPreviewForConfirmSend(to, subject, body);
 }
 
+// TODO: MAIL
 function showEmailPreviewForConfirmSend(to, subject, body) {
     const emailToEl = document.getElementById('emailTo');
     const emailSubjectEl = document.getElementById('emailSubject');
@@ -8074,6 +8087,7 @@ function showEmailPreviewForConfirmSend(to, subject, body) {
     if (modal) modal.classList.add('show');
 }
 
+// TODO: MAIL
 function setupEmailPreviewHandlersForConfirmSend() {
     const confirmEmail = document.getElementById('confirmEmail');
     if (confirmEmail) {
@@ -8133,7 +8147,9 @@ function setupEmailPreviewHandlersForConfirmSend() {
             if (modal) modal.classList.remove('show');
         });
     }
-}function initPreviewConfirmButton() {
+}
+
+function initPreviewConfirmButton() {
     const btn = document.getElementById('previewConfirmSendBtn');
     if (!btn) return;
     btn.addEventListener('click', async () => {
@@ -8198,6 +8214,7 @@ function setupEmailPreviewHandlersForConfirmSend() {
 }
 
 // PDF Download functionality using iframe print fallback
+// TODO: INVOICE
 function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate, dueDate, description, quantity, unitPrice, total, tvaEnabled, items, sourceQuoteNumber}) {
     // Support multi-line items or legacy single-line
     const invoiceItems = items && items.length > 0 ? items : [
@@ -8212,10 +8229,10 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
         ? `${companyInfo.address}, ${companyInfo.postalCode} ${companyInfo.city}`
         : '[À compléter dans Paramètres]';
 
-    // Force local logo file - always use assets/images/MTI_CONSULTING.png unless data-URI is provided
+    // Force local logo file - always use ../assets/images/MTI_CONSULTING.png unless data-URI is provided
     const logoSrc = companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:') 
         ? companyInfo.logoUrl 
-        : 'assets/images/MTI_CONSULTING.png';
+        : '../assets/images/MTI_CONSULTING.png';
     const logoHTML = `<img src="${logoSrc}" style="max-width: 180px; max-height: 90px; object-fit: contain; margin-bottom: 8px; display: block;" crossorigin="anonymous">`;
 
     return `<!doctype html>
@@ -8365,81 +8382,6 @@ function buildInvoiceHtml({clientName, clientAddress, invoiceNumber, invoiceDate
 </html>`;
 }
 
-function downloadInvoicePDF() {
-    const clientNameEl = document.getElementById('clientName');
-    const clientAddressEl = document.getElementById('clientAddress');
-
-    // Validation: check required fields
-    if (!clientNameEl || !clientAddressEl || !invoiceNumberInput || !invoiceDateInput || !dueDateInput) {
-        alert('Veuillez remplir tous les champs obligatoires avant de télécharger le PDF');
-        return;
-    }
-
-    // Validate that we have at least one item with description
-    if (!currentInvoiceItems || currentInvoiceItems.length === 0) {
-        alert('Veuillez ajouter au moins une ligne de facturation');
-        return;
-    }
-
-    const hasEmptyDescription = currentInvoiceItems.some(item => !item.description || item.description.trim() === '');
-    if (hasEmptyDescription) {
-        alert('Toutes les lignes doivent avoir une description');
-        return;
-    }
-
-    const clientName = clientNameEl.value;
-    const clientAddress = clientAddressEl.value;
-    const invoiceNumber = invoiceNumberInput.value;
-    const invoiceDate = invoiceDateInput.value;
-    const dueDate = dueDateInput.value;
-    const total = calculateTotal();
-
-    const tvaEnabled = document.getElementById('tvaToggle') && document.getElementById('tvaToggle').checked;
-
-    // Use buildInvoiceHtml with items array
-    const pdfContent = buildInvoiceHtml({
-        clientName, 
-        clientAddress, 
-        invoiceNumber, 
-        invoiceDate, 
-        dueDate, 
-        total, 
-        tvaEnabled,
-        sourceQuoteNumber: currentInvoiceSourceQuoteNumber || '',
-        items: currentInvoiceItems,
-        // Legacy fields for backward compatibility (use first item)
-        description: currentInvoiceItems[0]?.description || '',
-        quantity: currentInvoiceItems[0]?.quantity || 0,
-        unitPrice: currentInvoiceItems[0]?.unitPrice || 0
-    });
-    
-
-    // Create a temporary iframe to render the PDF with enhanced rendering
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-
-    const iframeDoc = iframe.contentWindow.document;
-    iframeDoc.open();
-    iframeDoc.write(pdfContent);
-    iframeDoc.close();
-
-    // Wait for content to load, then print
-    setTimeout(() => {
-        try {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-        } catch (e) {
-            console.error('Print error', e);
-            alert('Erreur lors de la génération du PDF');
-        } finally {
-            setTimeout(() => {
-                document.body.removeChild(iframe);
-            }, 1000);
-        }
-    }, 500);
-}
-
 // Download PDF button: generate, save to Drive (replacing existing), open Drive PDF for preview
 document.getElementById('downloadPDF')?.addEventListener('click', async () => {
     const invoice = getCurrentInvoiceForPreview();
@@ -8506,6 +8448,7 @@ document.getElementById('downloadPDF')?.addEventListener('click', async () => {
 });
 
 // Télécharger une facture depuis la liste (même logique que le générateur)
+// TODO: INVOICE
 async function downloadInvoiceFromList(index) {
     const invoice = invoices[index];
     if (!invoice) { showToast('❌ Facture introuvable', 'error'); return; }
@@ -8716,6 +8659,7 @@ async function initApp() {
 }
 
 // Setup listeners pour mise à jour automatique du select factures dans le formulaire RAM
+// TODO: RAM
 function setupRAMFormListeners() {
     const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
@@ -8849,52 +8793,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 // ENVOI EMAIL GMAIL API (legacy functions kept)
 // ==========================================
 
-// Envoyer une facture par email avec PDF (legacy helper)
-async function sendInvoiceByEmail(index) {
-    const invoice = invoices[index];
-    const client = clients.find(c => c.name === invoice.client);
-
-    if (!client || !client.email_facturation) {
-        alert('❌ Email de facturation manquant');
-        return;
-    }
-
-    if (!confirm(`📧 Envoyer la facture ${invoice.number} à ${client.email_facturation} ?`)) {
-        return;
-    }
-
-    try {
-        // Générer PDF base64 (requires jsPDF & autotable)
-        const pdfBase64 = await generateInvoicePDFBase64(invoice);
-
-        // Envoyer via backend (use callBackend to avoid CORS preflight)
-        const result = await callBackend('sendEmail', {
-            to: client.email_facturation,
-            subject: `Facture ${invoice.number} - MTI CONSULTING`,
-            body: generateEmailBody(invoice, client),
-            pdfBase64: pdfBase64,
-            pdfFilename: `Facture_${String(invoice.number || Date.now()).replace(/^(FACTURE|INVOICE)[-_ ]?/i, '')}.pdf`
-        });
-        if (!result || !result.success) {
-            try { showBackendRawResponse(result); } catch (e) {}
-            throw new Error((result && (result.data || result.error)) || 'Unknown error');
-        }
-
-        // Mark invoice as sent and persist
-        try {
-            invoices[index].status = 'Envoyée';
-            await saveToDrive();
-            renderInvoiceList();
-        } catch (e) { console.warn('Impossible de marquer/sauver la facture après envoi automatique:', e); }
-
-        alert(`✅ Facture envoyée à ${client.email_facturation}`);
-    } catch (error) {
-        console.error('❌ Erreur:', error);
-        alert('Erreur : ' + (error.message || error));
-    }
-}
-
 // Envoyer une relance pour une facture (même pattern que sendInvoiceByEmail)
+// TODO: MAIL
 async function sendRelanceFromList(index) {
     const invoice = invoices[index];
     const client = clients.find(c => c.name === invoice.client);
@@ -9058,6 +8958,7 @@ MTI CONSULTING`;
 }
 
 // Générer le corps de l'email
+// TODO: MAIL
 function generateEmailBody(invoice, client) {
     const contactName = client.contact_name || client.name;
     return `Bonjour ${contactName},
@@ -9078,6 +8979,7 @@ Web : www.mticonsulting.fr`;
 }
 
 // Helper: convert base64 (no prefix) to Blob
+// TODO: UTILS/FILE
 function base64ToBlob(base64, mime) {
     const byteChars = atob(base64);
     const byteNumbers = new Array(byteChars.length);
@@ -9089,6 +8991,7 @@ function base64ToBlob(base64, mime) {
 }
 
 // Générer PDF en base64 en priorité via html2canvas -> jsPDF pour conserver le rendu HTML, sinon fallback jsPDF legacy
+// TODO: API
 async function generateInvoicePDFBase64(invoice) {
     // Helper: try to fetch an image URL and convert to data URI (best-effort, may fail due to CORS)
     async function fetchImageAsDataUri(url) {
@@ -9121,7 +9024,7 @@ async function generateInvoicePDFBase64(invoice) {
     let originalLogo = companyInfo.logoUrl;
     let logoDataUri = null;
     try {
-        logoDataUri = await fetchImageAsDataUri('assets/images/MTI_CONSULTING.png');
+        logoDataUri = await fetchImageAsDataUri('../assets/images/MTI_CONSULTING.png');
         if (logoDataUri) companyInfo.logoUrl = logoDataUri;
     } catch (e) {
         console.warn('Inline local logo failed', e);
@@ -9274,6 +9177,7 @@ async function generateInvoicePDFBase64(invoice) {
 // ==========================================
 
 // Générer le Rapport d'Activité Mensuelle pour une facture
+// TODO: RAM
 async function generateRAMForInvoice(index) {
     const invoice = invoices[index];
     if (!invoice) {
@@ -9288,6 +9192,7 @@ async function generateRAMForInvoice(index) {
 window.generateRAMForInvoice = generateRAMForInvoice;
 
 // Afficher le modal de saisie du RAM
+// TODO: RAM
 function showRAMModal(invoice, ramIndex = null) {
     // Stocker l'index si on édite un RAM existant
     if (ramIndex !== null) {
@@ -9387,6 +9292,7 @@ function showRAMModal(invoice, ramIndex = null) {
 window.showRAMModal = showRAMModal;
 
 // Générer le calendrier mensuel complet
+// TODO: RAM
 function generateRAMCalendar(month, year) {
     const tbody = document.getElementById('ramActivityBody');
     if (!tbody) return;
@@ -9432,6 +9338,7 @@ function generateRAMCalendar(month, year) {
 window.generateRAMCalendar = generateRAMCalendar;
 
 // Rafraîchir le calendrier quand on change le mois/année
+// TODO: RAM
 function refreshRAMCalendar() {
     const month = parseInt(document.getElementById('ramMonth').value);
     const year = parseInt(document.getElementById('ramYear').value);
@@ -9450,6 +9357,7 @@ function closeRAMModal() {
 window.closeRAMModal = closeRAMModal;
 
 // Générer le RAM à partir des données du modal
+// TODO: RAM
 async function generateRAMFromModal() {
     const clientSelect = document.getElementById('ramClientSelect').value;
     const clientManual = document.getElementById('ramClientManual').value;
@@ -9551,6 +9459,7 @@ async function generateRAMFromModal() {
 window.generateRAMFromModal = generateRAMFromModal;
 
 // Afficher l'aperçu du RAM
+// TODO: RAM
 function showRAMPreview(ram) {
     const previewContainer = document.getElementById('ramPreview');
     if (!previewContainer) {
@@ -9627,6 +9536,7 @@ function showRAMPreview(ram) {
 window.showRAMPreview = showRAMPreview;
 
 // Enregistrer le RAM
+// TODO: RAM
 async function saveRAM(ramId) {
     const ram = window.currentRAM;
     if (!ram) {
@@ -9665,6 +9575,7 @@ async function saveRAM(ramId) {
 window.saveRAM = saveRAM;
 
 // Télécharger le PDF du RAM
+// TODO: RAM
 async function downloadRAMPDF(ramId) {
     const ram = window.currentRAM || rams.find(r => r.id === ramId);
     if (!ram) {
@@ -9700,6 +9611,7 @@ async function downloadRAMPDF(ramId) {
 window.downloadRAMPDF = downloadRAMPDF;
 
 // Envoyer le RAM par email
+// TODO: API
 async function sendRAMEmail(ramId) {
     const ram = window.currentRAM || rams.find(r => r.id === ramId);
     if (!ram) {
@@ -9745,6 +9657,7 @@ async function sendRAMEmail(ramId) {
 window.sendRAMEmail = sendRAMEmail;
 
 // Modifier le RAM
+// TODO: RAM
 function editRAM(ramId) {
     const ram = window.currentRAM;
     if (!ram) return;
@@ -9842,6 +9755,7 @@ function editRAM(ramId) {
 window.editRAM = editRAM;
 
 // Mettre à jour le RAM depuis le modal d'édition
+// TODO: RAM
 function updateRAMFromModal() {
     const ram = window.currentRAM;
     if (!ram) return;
@@ -9897,6 +9811,7 @@ function updateRAMFromModal() {
 window.updateRAMFromModal = updateRAMFromModal;
 
 // Exporter le RAM vers Google Sheets
+// TODO: RAM
 async function exportRAMToSheets(ram) {
     try {
         const result = await callBackend('exportRAMToSheets', { ram });
@@ -9910,6 +9825,7 @@ async function exportRAMToSheets(ram) {
 }
 
 // Nettoyer toutes les lignes RAM dans Google Sheets
+// TODO: RAM
 async function clearRAMsInSheets() {
     if (!confirm('⚠️ Attention !\n\nCette action va SUPPRIMER TOUTES les lignes RAM dans Google Sheets (historique compris).\n\nLes RAMs dans votre application locale ne seront PAS supprimés.\n\nVoulez-vous continuer ?')) {
         return;
@@ -9933,6 +9849,7 @@ async function clearRAMsInSheets() {
 window.clearRAMsInSheets = clearRAMsInSheets;
 
 // Afficher la liste des RAMs enregistrés (table comme les factures)
+// TODO: RAM
 function renderRAMList() {
     const tbody = document.getElementById('ramTableBody');
     if (!tbody) return;
@@ -9985,6 +9902,7 @@ window.filterRAMList = filterRAMList;
 /**
  * Filtre la liste des RAM selon la recherche
  */
+// TODO: RAM
 function filterRAMList() {
     const searchInput = document.getElementById('ramSearchInput');
     if (!searchInput) return;
@@ -10057,6 +9975,7 @@ function filterRAMList() {
 }
 
 // Modifier un RAM dans le formulaire (comme les factures)
+// TODO: RAM
 function editRAMInForm(index) {
     const ram = rams[index];
     if (!ram) return;
@@ -10129,6 +10048,7 @@ function editRAMInForm(index) {
 window.editRAMInForm = editRAMInForm;
 
 // Annuler l'édition d'un RAM
+// TODO: RAM
 function cancelRAMEdit() {
     window.editingRAMIndex = -1;
     window.currentRAM = null;
@@ -10146,6 +10066,7 @@ function cancelRAMEdit() {
 window.cancelRAMEdit = cancelRAMEdit;
 
 // Peupler le select des factures filtrées par client et mois/année
+// TODO: RAM
 function populateRAMInvoiceSelect(clientName = '', month = null, year = null) {
     const invoiceSelect = document.getElementById('ramInvoiceNumber');
     if (!invoiceSelect) return;
@@ -10192,6 +10113,7 @@ function populateRAMInvoiceSelect(clientName = '', month = null, year = null) {
 window.populateRAMInvoiceSelect = populateRAMInvoiceSelect;
 
 // Réinitialiser le formulaire RAM
+// TODO: RAM
 function resetRAMForm() {
     const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
@@ -10238,6 +10160,7 @@ function resetRAMForm() {
 window.resetRAMForm = resetRAMForm;
 
 // Afficher le formulaire de nouveau RAM
+// TODO: RAM
 function showNewRAMForm() {
     window.editingRAMIndex = -1;
     window.currentRAM = null;
@@ -10257,6 +10180,7 @@ function showNewRAMForm() {
 window.showNewRAMForm = showNewRAMForm;
 
 // Générer le calendrier dans le formulaire
+// TODO: RAM
 function generateRAMCalendarInForm(month, year, existingActivities = null) {
     const tbody = document.getElementById('ramCalendarBody');
     if (!tbody) return;
@@ -10316,6 +10240,7 @@ function generateRAMCalendarInForm(month, year, existingActivities = null) {
 window.generateRAMCalendarInForm = generateRAMCalendarInForm;
 
 // Rafraîchir le calendrier du formulaire
+// TODO: RAM
 function refreshRAMFormCalendar() {
     const monthSelect = document.getElementById('ramMonthSelect');
     const yearInput = document.getElementById('ramYearInput');
@@ -10332,6 +10257,7 @@ function refreshRAMFormCalendar() {
 window.refreshRAMFormCalendar = refreshRAMFormCalendar;
 
 // Sauvegarder le RAM depuis le formulaire
+// TODO: RAM
 async function saveRAMFromForm() {
     const clientSelect = document.getElementById('ramClientSelect');
     const clientInput = document.getElementById('ramClientInput');
@@ -10473,6 +10399,7 @@ async function saveRAMFromForm() {
 window.saveRAMFromForm = saveRAMFromForm;
 
 // Supprimer un RAM
+// TODO: RAM
 async function deleteRAM(index) {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce rapport d\'activité ?')) return;
     
@@ -10486,6 +10413,7 @@ async function deleteRAM(index) {
 window.deleteRAM = deleteRAM;
 
 // Envoyer facture + RAM ensemble (si liés)
+// TODO: API
 async function sendInvoiceWithRAM(invoiceIndex) {
     const invoice = invoices[invoiceIndex];
     if (!invoice) {
@@ -10553,6 +10481,7 @@ async function sendInvoiceWithRAM(invoiceIndex) {
 window.sendInvoiceWithRAM = sendInvoiceWithRAM;
 
 // Générer le PDF du RAM (format facture A4 portrait)
+// TODO: API
 async function generateRAMPDF(ram) {
     if (!window.jspdf) {
         throw new Error('jsPDF non chargé');
@@ -10591,7 +10520,7 @@ async function generateRAMPDF(ram) {
             // Utiliser logo local si l'URL GitHub n'est pas accessible
             const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') 
                 ? companyInfo.logoUrl 
-                : 'assets/images/MTI_CONSULTING.png';
+                : '../images/MTI_CONSULTING.png';
             const dataUri = await fetchImageAsDataUri(logoSrc);
             if (dataUri) {
                 doc.addImage(dataUri, 'PNG', 10, 15, 35, 18);
@@ -10600,7 +10529,7 @@ async function generateRAMPDF(ram) {
             console.warn('Logo non chargé:', e);
             // Fallback: essayer directement le fichier local
             try {
-                const localDataUri = await fetchImageAsDataUri('assets/images/MTI_CONSULTING.png');
+                const localDataUri = await fetchImageAsDataUri('../assets/images/MTI_CONSULTING.png');
                 if (localDataUri) {
                     doc.addImage(localDataUri, 'PNG', 10, 15, 35, 18);
                 }
@@ -10788,7 +10717,7 @@ async function generateRAMPDF(ram) {
     
     // Ajouter la signature dans la case Prestataire (centrée)
     try {
-        const signaturePath = 'assets/images/signature_pandadoc.png';
+        const signaturePath = '../assets/images/signature_pandadoc.png';
         const sigDataUri = await fetchImageAsDataUri(signaturePath);
         if (sigDataUri) {
             doc.addImage(sigDataUri, 'PNG', 36, sigY + 4, 50, 15);
@@ -10814,20 +10743,12 @@ async function generateRAMPDF(ram) {
     return doc.output('datauristring').split(',')[1];
 }
 
-// Fonction helper pour obtenir le numéro de semaine
-function getWeekNumber(date) {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
-    return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
-}
-
 // ==========================================
 // SYNC TIERS GOOGLE SHEETS
 // ==========================================
 
 // Importer clients depuis Sheets
+// TODO: CLIENT
 async function importClientsFromSheets() {
     const btn = document.getElementById('importClientsBtn');
     if (btn) {
@@ -10861,6 +10782,7 @@ async function importClientsFromSheets() {
 }
 
 // Exporter clients vers Sheets
+// TODO: CLIENT
 async function exportClientsToSheets() {
     const btn = document.getElementById('exportClientsBtn');
     if (btn) {
@@ -10891,6 +10813,7 @@ async function exportClientsToSheets() {
 }
 
 // Nettoyer l'onglet Sheets Tiers
+// TODO: CLIENT
 async function clearClientsInSheets() {
     if (!confirm('⚠️ Cela va vider l\'onglet "Tiers" dans Sheets (les données locales restent). Continuer ?')) return;
     try {
@@ -10911,6 +10834,7 @@ window.clearClientsInSheets = clearClientsInSheets;
 // ==========================================
 
 // Exporter tous les RAMs vers Sheets
+// TODO: RAM
 async function exportRAMsToSheets() {
     if (isSyncing) {
         alert('⏳ Une synchronisation est déjà en cours...');
@@ -10943,6 +10867,7 @@ async function exportRAMsToSheets() {
 }
 
 // Importer les RAMs depuis Sheets
+// TODO: RAM
 async function importRAMsFromSheets() {
     if (isSyncing) {
         alert('⏳ Une synchronisation est déjà en cours...');
@@ -10983,6 +10908,7 @@ window.importRAMsFromSheets = importRAMsFromSheets;
 // ==========================================
 
 // Exporter tous les devis vers Sheets (tolère un export vide pour effacer la feuille)
+// TODO: QUOTES
 async function exportQuotesToSheets() {
     if (isSyncing) {
         alert('⏳ Une synchronisation est déjà en cours...');
@@ -11010,6 +10936,7 @@ async function exportQuotesToSheets() {
 }
 
 // Nettoyer l'onglet Sheets Devis
+// TODO: QUOTES
 async function clearQuotesInSheets() {
     if (!confirm('⚠️ Cela va vider l\'onglet "Devis" dans Sheets (les données locales restent). Continuer ?')) return;
     try {
@@ -11024,6 +10951,7 @@ async function clearQuotesInSheets() {
 }
 
 // Importer les devis depuis Sheets
+// TODO: QUOTES
 async function importQuotesFromSheets() {
     if (isSyncing) {
         alert('⏳ Une synchronisation est déjà en cours...');
@@ -11246,6 +11174,7 @@ let editingQuoteIndex = -1;
  * Génère le prochain numéro de devis
  * Format: DEVIS-YYYY-NNN
  */
+// TODO: QUOTES
 function getNextQuoteNumber(date = null) {
     const targetDate = date ? new Date(date) : new Date();
     const year = targetDate.getFullYear();
@@ -11264,6 +11193,7 @@ function getNextQuoteNumber(date = null) {
 /**
  * Ajoute une ligne de devis
  */
+// TODO: QUOTES
 function addQuoteItem() {
     const item = {
         description: '',
@@ -11278,6 +11208,7 @@ function addQuoteItem() {
 /**
  * Supprime une ligne de devis
  */
+// TODO: QUOTES
 function removeQuoteItem(index) {
     if (currentQuoteItems.length <= 1) {
         showToast('⚠️ Un devis doit contenir au moins une ligne', 'error');
@@ -11290,6 +11221,7 @@ function removeQuoteItem(index) {
 /**
  * Met à jour un champ d'une ligne de devis
  */
+// TODO: QUOTES
 function updateQuoteItemField(index, field, value) {
     if (!currentQuoteItems[index]) return;
     
@@ -11306,6 +11238,7 @@ function updateQuoteItemField(index, field, value) {
 /**
  * Affiche les lignes de devis dans le tableau
  */
+// TODO: QUOTES
 function renderQuoteItems() {
     const tbody = document.getElementById('quoteItemsBody');
     if (!tbody) return;
@@ -11350,6 +11283,7 @@ function renderQuoteItems() {
 /**
  * Met à jour les totaux du devis
  */
+// TODO: QUOTES
 function updateQuoteTotals() {
     const totalHT = currentQuoteItems.reduce((sum, item) => sum + (item.total || 0), 0);
     
@@ -11360,6 +11294,7 @@ function updateQuoteTotals() {
 /**
  * Initialise les lignes de devis
  */
+// TODO: QUOTES
 function loadQuoteItems(items) {
     currentQuoteItems = items && items.length > 0 ? [...items] : [];
     renderQuoteItems();
@@ -11368,6 +11303,7 @@ function loadQuoteItems(items) {
 /**
  * Vide les lignes de devis
  */
+// TODO: QUOTES
 function clearQuoteItems() {
     currentQuoteItems = [];
     renderQuoteItems();
@@ -11376,6 +11312,7 @@ function clearQuoteItems() {
 /**
  * Affiche la liste des devis
  */
+// TODO: QUOTES
 function renderQuoteList() {
     const tbody = document.getElementById('quoteListBody');
     if (!tbody) return;
@@ -11431,6 +11368,7 @@ function renderQuoteList() {
 /**
  * Ouvre un devis par son numéro (appelé depuis badge dans liste factures)
  */
+// TODO: QUOTES
 function openQuoteByNumber(quoteNumber) {
     const index = quotes.findIndex(q => q.number === quoteNumber);
     if (index === -1) {
@@ -11453,6 +11391,7 @@ window.openQuoteByNumber = openQuoteByNumber;
 /**
  * Filtre la liste des devis
  */
+// TODO: QUOTES
 function filterQuoteList() {
     const searchInput = document.getElementById('quoteSearchInput');
     if (!searchInput) return;
@@ -11551,6 +11490,7 @@ window.openQuoteByNumber = function(number) {
 };
 
 // Met à jour le statut d'un devis et rafraîchit l'UI + KPIs
+// TODO: QUOTES
 function setQuoteStatus(index, status) {
     const quote = quotes[index];
     if (!quote) return;
@@ -11566,6 +11506,7 @@ window.setQuoteStatus = setQuoteStatus;
 /**
  * Initialise le formulaire de devis
  */
+// TODO: QUOTES
 function initQuoteForm() {
     const quoteForm = document.getElementById('quoteForm');
     if (!quoteForm) return;
@@ -11696,6 +11637,7 @@ function initQuoteForm() {
 /**
  * Configure le listener pour la sélection client dans devis
  */
+// TODO: QUOTES
 function setupQuoteClientSelectListener() {
     const quoteClientSelect = document.getElementById('quoteClientSelect');
     if (!quoteClientSelect) return;
@@ -11724,6 +11666,7 @@ function setupQuoteClientSelectListener() {
 /**
  * Sauvegarde un devis
  */
+// TODO: QUOTES
 async function saveQuote(e) {
     if (e) e.preventDefault();
     
@@ -11784,6 +11727,7 @@ async function saveQuote(e) {
 /**
  * Édite un devis
  */
+// TODO: QUOTES
 function editQuoteInForm(index) {
     const quote = quotes[index];
     if (!quote) return;
@@ -11838,6 +11782,7 @@ function editQuoteInForm(index) {
 /**
  * Annule le mode édition
  */
+// TODO: QUOTES
 function cancelQuoteEditMode() {
     isQuoteEditMode = false;
     editingQuoteIndex = -1;
@@ -11857,6 +11802,7 @@ function cancelQuoteEditMode() {
 /**
  * Réinitialise le formulaire devis
  */
+// TODO: QUOTES
 function resetQuoteForm() {
     const quoteForm = document.getElementById('quoteForm');
     if (quoteForm) quoteForm.reset();
@@ -11875,6 +11821,7 @@ function resetQuoteForm() {
 /**
  * Supprime un devis
  */
+// TODO: QUOTES
 async function deleteQuote(index) {
     const quote = quotes[index];
     if (!quote) return;
@@ -11897,6 +11844,7 @@ async function deleteQuote(index) {
 /**
  * Construit le HTML d'un devis (même format que les factures)
  */
+// TODO: QUOTES
 function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, validityDate, items}) {
     const quoteItems = items && items.length > 0 ? items : [];
     const totalHT = quoteItems.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -11907,7 +11855,7 @@ function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, vali
 
     const logoSrc = companyInfo.logoUrl && companyInfo.logoUrl.startsWith('data:') 
         ? companyInfo.logoUrl 
-        : 'assets/images/MTI_CONSULTING.png';
+        : '../assets/images/MTI_CONSULTING.png';
     const logoHTML = `<img src="${logoSrc}" style="max-width: 180px; max-height: 90px; object-fit: contain; margin-bottom: 8px; display: block;" crossorigin="anonymous">`;
 
     return `<!doctype html>
@@ -12064,6 +12012,7 @@ function buildQuoteHtml({clientName, clientAddress, quoteNumber, quoteDate, vali
 /**
  * Génère un PDF pour un devis (Base64)
  */
+// TODO: API
 async function generateQuotePDFBase64(quote) {
     // Helper: fetch image as data URI
     async function fetchImageAsDataUri(url) {
@@ -12103,7 +12052,7 @@ async function generateQuotePDFBase64(quote) {
     try {
         const logoSrc = companyInfo.logoUrl && !companyInfo.logoUrl.includes('github') 
             ? companyInfo.logoUrl 
-            : 'assets/images/MTI_CONSULTING.png';
+            : '../assets/images/MTI_CONSULTING.png';
         logoDataUri = await fetchImageAsDataUri(logoSrc);
         if (logoDataUri) companyInfo.logoUrl = logoDataUri;
     } catch (e) {
@@ -12258,6 +12207,7 @@ async function generateQuotePDFBase64(quote) {
 /**
  * Télécharge le PDF d'un devis
  */
+// TODO: QUOTES
 async function downloadQuotePDF(index) {
     const quote = quotes[index];
     if (!quote) {
@@ -12317,6 +12267,7 @@ async function downloadQuotePDF(index) {
 /**
  * Génère le corps du mail pour un devis
  */
+// TODO: QUOTES
 function generateQuoteEmailBody(quote, client) {
     const contactName = client.contact_name || client.name;
     return `Bonjour ${contactName},
@@ -12342,6 +12293,7 @@ Web : www.mticonsulting.fr`;
 // Store current quote index for email sending from modal
 let currentQuoteIndexForEmail = null;
 
+// TODO: QUOTES
 function showQuoteEmailPreview(index) {
     const quote = quotes[index];
     if (!quote) {
@@ -12393,6 +12345,7 @@ function showQuoteEmailPreview(index) {
     if (modal) modal.classList.add('show');
 }
 
+// TODO: QUOTES
 function setupQuoteEmailConfirmButton(index, hasEmail) {
     const confirmEmail = document.getElementById('confirmEmail');
     if (confirmEmail) {
@@ -12433,6 +12386,7 @@ function setupQuoteEmailConfirmButton(index, hasEmail) {
 /**
  * Confirme et envoie l'email du devis
  */
+// TODO: QUOTES
 async function confirmQuoteEmailSend(index) {
     const quote = quotes[index];
     if (!quote) {
@@ -12495,6 +12449,7 @@ async function confirmQuoteEmailSend(index) {
 /**
  * Envoie un devis par email avec PDF
  */
+// TODO: QUOTES
 async function sendQuoteEmail(index) {
     const quote = quotes[index];
     if (!quote) {
@@ -12515,6 +12470,7 @@ async function sendQuoteEmail(index) {
 /**
  * Prévisualise et prépare l'envoi d'un devis depuis le formulaire
  */
+// TODO: QUOTES
 async function previewAndConfirmQuoteSend() {
     const quoteNumber = document.getElementById('quoteNumber').value;
     const clientName = document.getElementById('quoteClientName').value;
@@ -12560,6 +12516,7 @@ async function previewAndConfirmQuoteSend() {
 /**
  * Affiche le modal de prévisualisation pour l'envoi d'un devis
  */
+// TODO: QUOTES
 function showEmailPreviewForQuoteConfirmSend(to, subject, body, quote) {
     const emailToEl = document.getElementById('emailTo');
     const emailSubjectEl = document.getElementById('emailSubject');
@@ -12595,6 +12552,7 @@ function showEmailPreviewForQuoteConfirmSend(to, subject, body, quote) {
 /**
  * Configure le bouton de confirmation pour l'envoi depuis le formulaire
  */
+// TODO: QUOTES
 function setupQuoteEmailConfirmButtonForForm(hasEmail) {
     const confirmEmail = document.getElementById('confirmEmail');
     if (confirmEmail) {
@@ -12635,6 +12593,7 @@ function setupQuoteEmailConfirmButtonForForm(hasEmail) {
 /**
  * Confirme et envoie l'email du devis depuis le formulaire
  */
+// TODO: QUOTES
 async function confirmQuoteEmailSendFromForm() {
     if (!currentQuoteTempForEmail) {
         showToast('❌ Devis manquant', 'error');
@@ -12695,6 +12654,7 @@ let currentQuoteTempForEmail = null;
 /**
  * Affiche l'aperçu d'un devis
  */
+// TODO: QUOTES
 function showQuotePreview() {
     const quoteNumber = document.getElementById('quoteNumber').value;
     const client = document.getElementById('quoteClientName').value;
@@ -12743,6 +12703,7 @@ function showQuotePreview() {
 /**
  * Convertit un devis en facture
  */
+// TODO: QUOTES
 async function convertQuoteToInvoice(index) {
     const quote = quotes[index];
     if (!quote) {
@@ -12830,6 +12791,7 @@ window.confirmQuoteEmailSendFromForm = confirmQuoteEmailSendFromForm;
  * @param {string} startDate - Date de première génération (format YYYY-MM-DD) - optionnel
  * @returns {object} Facture récurrente créée
  */
+// TODO: INVOICE
 function createRecurringInvoice(invoice, frequency = 'monthly', startDate = null) {
     if (!invoice) throw new Error('Facture modèle requise');
     
@@ -12858,6 +12820,7 @@ function createRecurringInvoice(invoice, frequency = 'monthly', startDate = null
  * @param {string} frequency - Fréquence
  * @returns {string} Prochaine date (ISO format)
  */
+// TODO: UTILS/DATE
 function calculateNextDate(currentDate, frequency) {
     const date = new Date(currentDate);
     
@@ -12883,6 +12846,7 @@ function calculateNextDate(currentDate, frequency) {
  * @param {string} recurringId - ID de la facture récurrente
  * @returns {object} Nouvelle facture générée
  */
+// TODO: INVOICE
 function generateFromRecurring(recurringId) {
     const recurring = recurringInvoices.find(r => r.id === recurringId);
     if (!recurring) throw new Error('Facture récurrente introuvable');
@@ -12918,6 +12882,7 @@ function generateFromRecurring(recurringId) {
  * Vérifie les factures récurrentes à générer (à exécuter quotidiennement)
  * @returns {Array} Liste des factures générées
  */
+// TODO: INVOICE
 function checkRecurringInvoices() {
     const today = new Date().toISOString().split('T')[0];
     const generated = [];
@@ -12938,21 +12903,10 @@ function checkRecurringInvoices() {
 }
 
 /**
- * Désactive une facture récurrente
- * @param {string} recurringId - ID de la facture récurrente
- */
-function deactivateRecurring(recurringId) {
-    const recurring = recurringInvoices.find(r => r.id === recurringId);
-    if (recurring) {
-        recurring.active = false;
-        saveToDrive();
-    }
-}
-
-/**
  * Supprime une facture récurrente
  * @param {string} recurringId - ID de la facture récurrente
  */
+// TODO: INVOICE
 function deleteRecurring(recurringId) {
     const index = recurringInvoices.findIndex(r => r.id === recurringId);
     if (index !== -1) {
@@ -12969,6 +12923,7 @@ function deleteRecurring(recurringId) {
 /**
  * Met à jour l'affichage du compteur CA annuel dans l'onglet Suivi
  */
+// TODO: REVENUE
 function updateCADisplay(annee = new Date().getFullYear()) {
     const caCumule = getCACumule(annee);
     const caPaye = getCAnnuel(annee);
@@ -13020,6 +12975,7 @@ function updateCADisplay(annee = new Date().getFullYear()) {
 /**
  * Met \u00e0 jour la liste des ann\u00e9es disponibles dans le s\u00e9lecteur CA
  */
+// TODO: REVENUE
 function updateCAYearOptions() {
     const yearSelect = document.getElementById('caYearSelect');
     if (!yearSelect) return;
@@ -13059,6 +13015,7 @@ function updateCAYearOptions() {
 /**
  * Initialise les event listeners pour le compteur CA annuel
  */
+// TODO: REVENUE
 function initCACounterListeners() {
     const yearSelect = document.getElementById('caYearSelect');
     if (yearSelect) {
@@ -13543,6 +13500,7 @@ function initTVACalculatorListeners() {
  * Exécute la vérification quotidienne des factures récurrentes
  * (À appeler au chargement de l'app)
  */
+// TODO: INVOICE
 function autoCheckRecurringInvoices() {
     const generated = checkRecurringInvoices();
     
@@ -13561,6 +13519,7 @@ function autoCheckRecurringInvoices() {
 /**
  * Affiche la liste des factures récurrentes dans le tableau
  */
+// TODO: INVOICE
 function renderRecurringList() {
     const tbody = document.getElementById('recurringListBody');
     if (!tbody) return;
@@ -13624,6 +13583,7 @@ function renderRecurringList() {
 /**
  * Génère immédiatement une facture récurrente (action manuelle)
  */
+// TODO: INVOICE
 function generateRecurringNow(recurringId) {
     try {
         const invoice = generateFromRecurring(recurringId);
@@ -13642,6 +13602,7 @@ function generateRecurringNow(recurringId) {
 /**
  * Active/désactive une facture récurrente
  */
+// TODO: INVOICE
 function toggleRecurring(recurringId) {
     const recurring = recurringInvoices.find(r => r.id === recurringId);
     if (recurring) {
@@ -13657,6 +13618,7 @@ function toggleRecurring(recurringId) {
 /**
  * Confirmation avant suppression d'une récurrence
  */
+// TODO: INVOICE
 function confirmDeleteRecurring(recurringId) {
     const recurring = recurringInvoices.find(r => r.id === recurringId);
     if (!recurring) return;
@@ -13679,6 +13641,7 @@ function confirmDeleteRecurring(recurringId) {
 /**
  * Initialise les listeners pour la gestion des factures récurrentes
  */
+// TODO: INVOICE
 function initRecurringInvoicesListeners() {
     // Bouton "Créer récurrence"
     const createBtn = document.getElementById('createRecurringBtn');
