@@ -3,10 +3,15 @@ import {
     defaultSettings,
     LOCALSTORAGE_CLEANUP_INTERVAL_MS,
     SHEETS_SYNC_DEBOUNCE,
-    STORAGE_DATA_KEYS,
-    STORAGE_META_KEYS_TO_KEEP,
     SYNC_LOG_MAX_ENTRIES,
-    SYNC_LOG_STORAGE_KEY
+    SYNC_LOG_STORAGE_KEY,
+    getCurrentDate,
+    setCurrentDate,
+    getTasks,
+    setTasks,
+    getIsSyncing,
+    setIsSyncing,
+    getFullCalendarInstance,
 } from './src/modules/config.js';
 import {
     storageManager,
@@ -16,22 +21,33 @@ import {
     importLocalBackup,
     saveInvoicesToStorage,
     loadInvoicesFromStorage,
-    saveQuotesToStorage,
-    loadQuotesFromStorage,
-    saveRAMsToStorage,
-    loadRAMsFromStorage,
-    saveClientsToStorage,
-    loadClientsFromStorage,
-    loadConfigFromStorage,
     saveConfigToStorage
 } from './src/modules/storage.js';
+import {
+    getConfiguredCalendarId,
+    renderDayView,
+    renderWeekView,
+    renderMonthView,
+    initCalendarManager,
+    createGoogleCalendarEvent,
+    updateGoogleCalendarEvent,
+    deleteGoogleCalendarEvent,
+    initGoogleCalendarEmbed,
+    syncToGoogleCalendar,
+} from './src/modules/calendar.js';
+import {
+    formatDate,
+    getWeekDates
+} from './src/modules/date-utils.js';
+import {
+    showToast
+} from './src/modules/toast.js';
 
 // VARIABLES
 
 // Planifier un cleanup localStorage périodique (72h) si IndexedDB est OK
 let cleanupTimer = null;
 
-let isSyncing = false;
 let lastSyncTime = null;
 
 // Feuilles Sheets : sync auto (debounce)
@@ -57,13 +73,11 @@ let syncLog = [];
 let clients = [];
 let invoices = [];
 let quotes = []; // Devis
-let tasks = [];
 let rams = []; // Rapports d'Activité Mensuels
 let recurringInvoices = []; // Factures récurrentes / abonnements
 
 // Calendar state
 let currentView = 'week';
-let currentDate = new Date();
 let useAppCalendar = false; // true = app calendar (day/week/month), false = FullCalendar (Google)
 
 // Company info - now editable via settings
@@ -212,21 +226,6 @@ window.findClientByName = (name) => storageManager.findClientByName(name);
 
 // Configuration chargée (credentials en dur dans CONFIG ci-dessus)
 console.log('✅ Configuration chargée depuis app.js (v42 style)');
-
-// Sync version - reads from CONFIG (already loaded at startup)
-// TODO: CALENDAR
-function getConfiguredCalendarId() {
-    // Check if stored value is in CONFIG first (from initial load)
-    return CONFIG.CALENDAR_ID;
-}
-
-// Async version for saving
-// TODO: CALENDAR
-async function setConfiguredCalendarId(calendarId) {
-    await storageManager.saveDual('mti_calendar_id', calendarId);
-    CONFIG.CALENDAR_ID = calendarId;
-}
-
 
 // Helper to call the Apps Script backend with better error handling and CORS guidance
 // TODO: API
@@ -498,6 +497,7 @@ async function saveToDrive(options = {}) {
     
     try {
         const { skipSheetsSync = false } = options;
+        const tasks = getTasks()
         const data = { clients, invoices, quotes, tasks, rams, recurringInvoices, companyInfo, taxSettings };
         const result = await callBackend('saveToDrive', { data });
         if (!result || !result.success) throw new Error(result && result.error ? result.error : 'Unknown error');
@@ -605,7 +605,7 @@ async function loadFromDrive() {
         if (data.clients) clients = data.clients;
         if (data.invoices) invoices = data.invoices;
         if (data.quotes) quotes = data.quotes;
-        if (data.tasks) tasks = data.tasks;
+        if (data.tasks) setTasks(data.tasks);
         if (data.rams) rams = data.rams;
         if (data.recurringInvoices) recurringInvoices = data.recurringInvoices;
         if (data.companyInfo) companyInfo = data.companyInfo;
@@ -2404,7 +2404,7 @@ function resetInvoiceForm() {
 window.resetInvoiceForm = resetInvoiceForm;
 
 // PLANNING - Calendar with Day/Week/Month views
-// TODO: CALENDAR
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 function changeCalendarView(view) {
     currentView = view;
     document.getElementById('viewDay')?.classList.remove('active');
@@ -2415,47 +2415,21 @@ function changeCalendarView(view) {
     renderCalendar();
 }
 
-// TODO: CALENDAR
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 function navigateCalendar(direction) {
     if (direction === 0) {
-        currentDate = new Date();
+        setCurrentDate(new Date());
     } else if (currentView === 'day') {
-        currentDate.setDate(currentDate.getDate() + direction);
+        getCurrentDate().setDate(getCurrentDate().getDate() + direction);
     } else if (currentView === 'week') {
-        currentDate.setDate(currentDate.getDate() + (direction * 7));
+        getCurrentDate().setDate(getCurrentDate().getDate() + (direction * 7));
     } else if (currentView === 'month') {
-        currentDate.setMonth(currentDate.getMonth() + direction);
+        getCurrentDate().setMonth(getCurrentDate().getMonth() + direction);
     }
     renderCalendar();
 }
 
-// TODO: UTILS/DATE
-function getWeekDates(date) {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setDate(diff));
-
-    const dates = [];
-    for (let i = 0; i < 7; i++) {
-        const weekDay = new Date(monday);
-        weekDay.setDate(monday.getDate() + i);
-        dates.push(weekDay);
-    }
-    return dates;
-}
-
-// TODO: UTILS/DATE
-function formatDate(date) {
-    if (!date) return '';
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-// TODO: CALENDAR
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 function renderCalendar() {
     updateCurrentDateDisplay();
 
@@ -2470,7 +2444,7 @@ function renderCalendar() {
     updateWeeklyStats();
 }
 
-// TODO: CALENDAR
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 function updateCurrentDateDisplay() {
     const display = document.getElementById('currentDateDisplay');
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
@@ -2478,147 +2452,20 @@ function updateCurrentDateDisplay() {
     if (!display) return;
 
     if (currentView === 'day') {
-        display.textContent = currentDate.toLocaleDateString('fr-FR', options);
+        display.textContent = getCurrentDate().toLocaleDateString('fr-FR', options);
     } else if (currentView === 'week') {
-        const weekDates = getWeekDates(currentDate);
+        const weekDates = getWeekDates(getCurrentDate());
         const start = weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
         const end = weekDates[6].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
         display.textContent = `Semaine du ${start} au ${end}`;
     } else if (currentView === 'month') {
-        display.textContent = currentDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' });
+        display.textContent = getCurrentDate().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' });
     }
-}
-
-// TODO: CALENDAR
-function renderDayView() {
-    // Always render to appCalendarContainer (app's own calendar views)
-    const container = document.getElementById('appCalendarContainer');
-    if (!container) return;
-    const dateStr = formatDate(currentDate);
-    const dayTasks = tasks.filter(task => task.date === dateStr);
-
-    const timeSlots = [];
-    for (let h = 8; h <= 18; h++) {
-        for (let m = 0; m < 60; m += 30) {
-            if (h === 18 && m > 0) break;
-            timeSlots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-        }
-    }
-
-    let html = '<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); overflow: hidden;">';
-
-    timeSlots.forEach(slot => {
-        const tasksAtTime = dayTasks.filter(task => task.startTime === slot);
-        html += `<div style="display: flex; border-bottom: 1px solid var(--color-card-border);">`;
-        html += `<div style="width: 80px; padding: var(--space-8); background-color: var(--color-bg-1); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm);">${slot}</div>`;
-        html += `<div style="flex: 1; padding: var(--space-8); min-height: 40px;">`;
-
-        tasksAtTime.forEach(task => {
-            const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
-            html += `<div style="background-color: rgba(var(--color-teal-500-rgb), 0.1); border-left: 3px solid ${color}; padding: var(--space-6); border-radius: var(--radius-sm); margin-bottom: var(--space-4); cursor: pointer;" onclick="editTask(${tasks.indexOf(task)})">`;
-            html += `<strong>${task.description}</strong> (${task.duration}h)`;
-            html += `</div>`;
-        });
-
-        html += `</div></div>`;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-}
-
-// TODO: CALENDAR
-function renderWeekView() {
-    // Always render to appCalendarContainer (app's own calendar views)
-    const container = document.getElementById('appCalendarContainer');
-    if (!container) return;
-    const weekDates = getWeekDates(currentDate);
-    const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-
-    let html = '<div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-8);">';
-
-    weekDates.forEach((date, index) => {
-        const dateStr = formatDate(date);
-        const dayTasks = tasks.filter(task => task.date === dateStr);
-        const isToday = formatDate(new Date()) === dateStr;
-
-        html += `<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); padding: var(--space-12); min-height: 200px; background-color: var(--color-surface); ${isToday ? 'box-shadow: 0 0 0 2px var(--color-primary);' : ''}">`;
-        html += `<div style="font-weight: var(--font-weight-semibold); margin-bottom: var(--space-8); padding-bottom: var(--space-8); border-bottom: 1px solid var(--color-card-border); font-size: var(--font-size-sm);">${daysOfWeek[index]}<br><span style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">${date.getDate()}/${date.getMonth()+1}</span></div>`;
-
-        dayTasks.forEach(task => {
-            const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
-            html += `<div style="background-color: rgba(var(--color-teal-500-rgb), 0.1); border-left: 3px solid ${color}; padding: var(--space-6); border-radius: var(--radius-sm); margin-bottom: var(--space-6); font-size: var(--font-size-xs); cursor: pointer;" onclick="editTask(${tasks.indexOf(task)})">`;
-            html += `<div style="font-weight: var(--font-weight-semibold); color: var(--color-text);">${task.startTime} (${task.duration}h)</div>`;
-            html += `<div style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">${task.description}</div>`;
-            html += `</div>`;
-        });
-
-        html += `</div>`;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-}
-
-// TODO: CALENDAR
-function renderMonthView() {
-    // Always render to appCalendarContainer (app's own calendar views)
-    const container = document.getElementById('appCalendarContainer');
-    if (!container) return;
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-    const daysInMonth = lastDay.getDate();
-
-    let html = '<div style="border: 1px solid var(--color-card-border); border-radius: var(--radius-base); overflow: hidden;">';
-
-    // Header
-    html += '<div style="display: grid; grid-template-columns: repeat(7, 1fr); background-color: var(--color-bg-1);">';
-    ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].forEach(day => {
-        html += `<div style="padding: var(--space-8); text-align: center; font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">${day}</div>`;
-    });
-    html += '</div>';
-
-    // Days
-    html += '<div style="display: grid; grid-template-columns: repeat(7, 1fr);">';
-
-    for (let i = 0; i < firstDayOfWeek; i++) {
-        html += '<div style="padding: var(--space-8); min-height: 80px; border: 1px solid var(--color-card-border); background-color: var(--color-secondary);"></div>';
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month, day);
-        const dateStr = formatDate(date);
-        const dayTasks = tasks.filter(task => task.date === dateStr);
-        const isToday = formatDate(new Date()) === dateStr;
-        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-
-        html += `<div style="padding: var(--space-8); min-height: 80px; border: 1px solid var(--color-card-border); cursor: pointer; ${isToday ? 'background-color: rgba(var(--color-teal-500-rgb), 0.1); font-weight: var(--font-weight-bold);' : ''} ${isWeekend ? 'background-color: var(--color-secondary);' : ''}" onclick="showDayTasks('${dateStr}')">`;
-        html += `<div style="font-size: var(--font-size-sm); margin-bottom: var(--space-4);">${day}</div>`;
-
-        if (dayTasks.length > 0) {
-            dayTasks.slice(0, 2).forEach(task => {
-                const color = task.type === 'Travail' ? 'var(--color-primary)' : task.type === 'Réunion client' ? '#3B82F6' : 'var(--color-slate-500)';
-                html += `<div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${color}; display: inline-block; margin-right: var(--space-4);"></div>`;
-            });
-            if (dayTasks.length > 2) {
-                html += `<span style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">+${dayTasks.length - 2}</span>`;
-            }
-        }
-
-        html += '</div>';
-    }
-
-    html += '</div></div>';
-    container.innerHTML = html;
 }
 
 // TODO: UTILS/DATES ?
 function showDayTasks(dateStr) {
-    const dayTasks = tasks.filter(task => task.date === dateStr);
+    const dayTasks = getTasks().filter(task => task.date === dateStr);
     const date = new Date(dateStr);
     const dateFormatted = date.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -2640,472 +2487,11 @@ window.changeCalendarView = changeCalendarView;
 window.navigateCalendar = navigateCalendar;
 window.showDayTasks = showDayTasks;
 
-// --- Calendar Manager UI & actions ---
-// TODO: CALENDAR
-function initCalendarManager() {
-    const container = document.getElementById('calendarEmbedContainer');
-    if (!container) return;
-
-    // Manager panel will be inserted below the iframe
-    let manager = document.getElementById('calendarManager');
-    if (manager) return; // already initialized
-
-    manager = document.createElement('div');
-    manager.id = 'calendarManager';
-    manager.style.marginTop = '12px';
-    manager.innerHTML = `
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-            <label style="font-size:13px; color:var(--color-text-secondary);">Gérer les RDV</label>
-            <input type="date" id="mgrStartDate" class="form-control" style="width:160px;" />
-            <input type="date" id="mgrEndDate" class="form-control" style="width:160px;" />
-            <button class="btn btn-sm btn-primary" id="mgrLoadEvents">Charger</button>
-            <button class="btn btn-sm btn-secondary" id="mgrNewEvent">Nouvel RDV</button>
-        </div>
-        <div id="mgrEventsList" style="max-height:260px; overflow:auto; border:1px solid var(--color-card-border); padding:8px; border-radius:6px; background:#fff;"></div>
-        <div id="mgrEventForm" style="display:none; margin-top:8px; border:1px solid var(--color-card-border); padding:12px; border-radius:6px; background:#fff;">
-            <div style="display:flex; gap:8px; margin-bottom:8px;"><input type="date" id="evtDate" class="form-control" style="width:160px;" /><input type="time" id="evtTime" class="form-control" style="width:120px;" /><input type="number" id="evtDuration" class="form-control" style="width:100px;" value="1" step="0.5" /></div>
-            <input type="text" id="evtDesc" class="form-control" placeholder="Titre / description" style="margin-bottom:8px;" />
-            <select id="evtType" class="form-control" style="margin-bottom:8px;"><option value="Travail">Travail</option><option value="Réunion">Réunion</option><option value="Administratif">Administratif</option></select>
-            <div style="display:flex; gap:8px; justify-content:flex-end;"><button class="btn btn-secondary" id="evtCancel">Annuler</button><button class="btn btn-primary" id="evtSave">Enregistrer</button></div>
-        </div>
-    `;
-
-    container.appendChild(manager);
-
-    // Bind controls
-    document.getElementById('mgrLoadEvents').addEventListener('click', async () => {
-        const sd = document.getElementById('mgrStartDate').value;
-        const ed = document.getElementById('mgrEndDate').value;
-        if (!sd || !ed) { alert('Sélectionnez une plage de dates'); return; }
-        await loadCalendarEvents(sd, ed);
-    });
-
-    document.getElementById('mgrNewEvent').addEventListener('click', () => {
-        openEventForm();
-    });
-
-    document.getElementById('evtCancel').addEventListener('click', () => {
-        closeEventForm();
-    });
-
-    document.getElementById('evtSave').addEventListener('click', async () => {
-        const eid = document.getElementById('evtDate').dataset.eventId || null;
-        const evt = {
-            eventId: eid,
-            date: document.getElementById('evtDate').value,
-            time: document.getElementById('evtTime').value,
-            duration: parseFloat(document.getElementById('evtDuration').value) || 1,
-            description: document.getElementById('evtDesc').value || 'RDV',
-            type: document.getElementById('evtType').value || 'Autre',
-            calendarId: getConfiguredCalendarId()
-        };
-
-        try {
-            if (eid) {
-                const resp = await callBackend('updateCalendarEvent', { event: evt });
-                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur mise à jour event'); return; }
-                showToast('✅ Événement mis à jour');
-            } else {
-                const resp = await callBackend('addCalendarEvent', { event: evt });
-                if (!resp || resp.success === false) { showBackendRawResponse(resp); alert('Erreur création event'); return; }
-                showToast('✅ Événement créé');
-            }
-            closeEventForm();
-            // reload list if a range present
-            const sd = document.getElementById('mgrStartDate').value;
-            const ed = document.getElementById('mgrEndDate').value;
-            if (sd && ed) await loadCalendarEvents(sd, ed);
-            // Auto-refresh FullCalendar to show new/updated event
-            if (window.mti_fullCalendar) window.mti_fullCalendar.refetchEvents();
-        } catch (e) { console.error('evtSave failed', e); alert('Erreur lors de la sauvegarde'); }
-    });
-}
-
-// TODO: CALENDAR
-async function loadCalendarEvents(startDate, endDate) {
-    const listEl = document.getElementById('mgrEventsList');
-    if (!listEl) return;
-    listEl.innerHTML = 'Chargement...';
-    try {
-        const resp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId(), maxResults: 500 });
-        if (!resp || resp.success === false) { listEl.innerHTML = 'Erreur chargement'; showBackendRawResponse(resp); return; }
-        const events = resp.data && resp.data.events ? resp.data.events : [];
-        if (events.length === 0) { listEl.innerHTML = '<div style="padding:8px;">Aucun événement</div>'; return; }
-        listEl.innerHTML = '';
-        events.forEach(ev => {
-            const card = document.createElement('div');
-            card.style.borderBottom = '1px solid var(--color-card-border)';
-            card.style.padding = '8px';
-            const start = new Date(ev.start).toLocaleString('fr-FR');
-            const end = new Date(ev.end).toLocaleString('fr-FR');
-            card.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;"><div><strong>${ev.title}</strong><br><span style='font-size:12px;color:var(--color-text-secondary)'>${start} — ${end}</span></div><div style="display:flex; gap:6px;"><button class='btn btn-sm btn-secondary' data-id='${ev.id}' data-action='edit'>✏️</button><button class='btn btn-sm btn-secondary' data-id='${ev.id}' data-action='delete'>🗑️</button></div></div>`;
-            listEl.appendChild(card);
-            const editBtn = card.querySelector("button[data-action='edit']");
-            const delBtn = card.querySelector("button[data-action='delete']");
-            editBtn.addEventListener('click', () => openEventForm(ev));
-            delBtn.addEventListener('click', async () => {
-                if (!confirm('Supprimer cet événement ?')) return;
-                try {
-                    const dresp = await callBackend('deleteCalendarEvent', { eventId: ev.id, calendarId: getConfiguredCalendarId(), startDate: startDate, endDate: endDate });
-                    if (!dresp || dresp.success === false) { showBackendRawResponse(dresp); alert('Erreur suppression'); return; }
-                    showToast('✅ Événement supprimé');
-                    await loadCalendarEvents(startDate, endDate);
-                } catch (e) { console.error('delete event failed', e); alert('Erreur suppression'); }
-            });
-        });
-    } catch (e) { console.error('loadCalendarEvents failed', e); listEl.innerHTML = 'Erreur'; }
-}
-
-function openEventForm(ev) {
-    const form = document.getElementById('mgrEventForm');
-    if (!form) return;
-    if (!ev) {
-        document.getElementById('evtDate').value = '';
-        document.getElementById('evtTime').value = '';
-        document.getElementById('evtDuration').value = 1;
-        document.getElementById('evtDesc').value = '';
-        document.getElementById('evtType').value = 'Travail';
-        document.getElementById('evtDate').dataset.eventId = '';
-    } else {
-        const start = new Date(ev.start);
-        document.getElementById('evtDate').value = start.toISOString().slice(0,10);
-        document.getElementById('evtTime').value = start.toTimeString().slice(0,5);
-        const end = new Date(ev.end);
-        const duration = (end - start) / (1000*60*60);
-        document.getElementById('evtDuration').value = duration;
-        document.getElementById('evtDesc').value = ev.title || '';
-        // No strong mapping for type; attempt to parse description
-        document.getElementById('evtType').value = (ev.description && ev.description.indexOf('Réunion') !== -1) ? 'Réunion' : 'Travail';
-        document.getElementById('evtDate').dataset.eventId = ev.id;
-    }
-    form.style.display = 'block';
-}
-
-function closeEventForm() {
-    const form = document.getElementById('mgrEventForm');
-    if (!form) return; form.style.display = 'none';
-}
-
 // ========================================
 // GOOGLE CALENDAR API + FULLCALENDAR INTEGRATION
 // Using Google Identity Services (GIS) - New OAuth2 method
 // ========================================
 
-let fullCalendarInstance = null;
-let isGoogleAuthInitialized = false;
-let isGoogleSignedIn = false;
-let accessToken = null;
-let tokenClient = null;
-
-// Initialize Google Identity Services (GIS) for OAuth2
-// TODO: AUTH
-function initGoogleAuth() {
-    // Check if running from file:// protocol (not supported by Google OAuth2)
-    if (window.location.protocol === 'file:') {
-        const errorMsg = `
-⚠️ ERREUR : OAuth2 Google nécessite un serveur HTTP
-
-Vous ne pouvez pas utiliser OAuth2 depuis file://
-
-✅ SOLUTION : Servez l'application via HTTP
-
-Option 1 (Python) :
-  python -m http.server 8000
-  Puis : http://localhost:8000/index.html
-
-Option 2 (Node.js) :
-  npx http-server -p 8000
-  Puis : http://localhost:8000/index.html
-
-Option 3 (VS Code) :
-  Extension "Live Server" → Clic droit → "Open with Live Server"
-        `;
-        console.error(errorMsg);
-        showToast('❌ OAuth2 impossible en mode file:// - Utilisez un serveur HTTP local', 'error');
-        
-        // Display alert with instructions
-        const authBtn = document.getElementById('googleAuthBtn');
-        if (authBtn) {
-            authBtn.textContent = '⚠️ Serveur HTTP requis';
-            authBtn.disabled = true;
-            authBtn.style.cursor = 'not-allowed';
-            authBtn.onclick = () => {
-                alert(errorMsg);
-            };
-        }
-        
-        return Promise.reject(new Error('OAuth2 requires HTTP/HTTPS protocol'));
-    }
-
-    return new Promise((resolve, reject) => {
-        // Initialize gapi client for Calendar API
-        gapi.load('client', async () => {
-            try {
-                await gapi.client.init({
-                    apiKey: CONFIG.GOOGLE_API_KEY || '',
-                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest']
-                });
-
-                // Initialize Google Identity Services token client
-                tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: CONFIG.GOOGLE_CLIENT_ID,
-                    scope: CONFIG.GOOGLE_SCOPES,
-                    callback: (response) => {
-                        if (response.error !== undefined) {
-                            console.error('❌ Token error:', response);
-                            updateSignInStatus(false);
-                            reject(response);
-                            return;
-                        }
-                        
-                        // Token received successfully
-                        accessToken = response.access_token;
-                        gapi.client.setToken({ access_token: accessToken });
-                        isGoogleSignedIn = true;
-                        updateSignInStatus(true);
-                        console.log('✅ Google Auth token received');
-                        resolve(response);
-                    }
-                });
-
-                isGoogleAuthInitialized = true;
-                console.log('✅ Google Identity Services initialized');
-                resolve(tokenClient);
-            } catch (error) {
-                console.error('❌ Error initializing Google Auth:', error);
-                reject(error);
-            }
-        });
-    });
-}
-
-// Handle sign-in/sign-out button
-// TODO: AUTH
-function handleAuthClick() {
-    if (!isGoogleAuthInitialized) {
-        showToast('Google Auth non initialisé', 'error');
-        return;
-    }
-
-    if (isGoogleSignedIn) {
-        // Sign out - revoke token
-        google.accounts.oauth2.revoke(accessToken, () => {
-            accessToken = null;
-            gapi.client.setToken(null);
-            isGoogleSignedIn = false;
-            updateSignInStatus(false);
-            console.log('✅ Signed out');
-        });
-    } else {
-        // Sign in - request token
-        if (tokenClient) {
-            tokenClient.requestAccessToken({ prompt: 'consent' });
-        }
-    }
-}
-
-// Update UI based on sign-in status
-// TODO: AUTH
-function updateSignInStatus(signedIn) {
-    isGoogleSignedIn = signedIn;
-    const authBtn = document.getElementById('googleAuthBtn');
-    const calendarContainer = document.getElementById('fullCalendarContainer');
-    const notConnectedMsg = document.getElementById('calendarNotConnected');
-    const calendarEl = document.getElementById('fullCalendar');
-
-    if (authBtn) {
-        if (signedIn) {
-            authBtn.textContent = '✅ Connecté à Google';
-            authBtn.className = 'btn btn-secondary';
-            authBtn.onclick = handleAuthClick;
-            if (calendarContainer) calendarContainer.style.display = 'block';
-            
-            // Hide "not connected" message and show calendar
-            if (notConnectedMsg) notConnectedMsg.style.display = 'none';
-            if (calendarEl) calendarEl.style.display = 'block';
-            
-            // Enable calendar editing
-            if (fullCalendarInstance) {
-                fullCalendarInstance.setOption('editable', true);
-                fullCalendarInstance.setOption('selectable', true);
-                fullCalendarInstance.refetchEvents();
-            }
-            showToast('Connecté à Google Calendar', 'success');
-        } else {
-            authBtn.textContent = '🔐 Se connecter à Google';
-            authBtn.className = 'btn btn-primary';
-            authBtn.onclick = handleAuthClick;
-            
-            // Show "not connected" message and hide calendar
-            if (calendarContainer) calendarContainer.style.display = 'block'; // Keep container visible
-            if (notConnectedMsg) notConnectedMsg.style.display = 'block';
-            if (calendarEl) calendarEl.style.display = 'none';
-            
-            // Disable calendar editing
-            if (fullCalendarInstance) {
-                fullCalendarInstance.setOption('editable', false);
-                fullCalendarInstance.setOption('selectable', false);
-                fullCalendarInstance.refetchEvents();
-            }
-        }
-    }
-}
-
-// Load events from Google Calendar API
-// TODO: CALENDAR
-async function loadGoogleCalendarEvents(fetchInfo, successCallback, failureCallback) {
-    if (!isGoogleSignedIn) {
-        // Return empty array instead of error when not connected
-        // This prevents FullCalendar from showing errors on initial load
-        console.log('ℹ️ Not connected to Google - returning empty calendar');
-        successCallback([]);
-        return;
-    }
-
-    try {
-        const calendarId = getConfiguredCalendarId();
-        const response = await gapi.client.calendar.events.list({
-            calendarId: calendarId,
-            timeMin: fetchInfo.startStr,
-            timeMax: fetchInfo.endStr,
-            showDeleted: false,
-            singleEvents: true,
-            orderBy: 'startTime'
-        });
-
-        const events = response.result.items.map(event => ({
-            id: event.id,
-            title: event.summary || '(Sans titre)',
-            start: event.start.dateTime || event.start.date,
-            end: event.end.dateTime || event.end.date,
-            description: event.description || '',
-            backgroundColor: getEventColor(event),
-            borderColor: getEventColor(event),
-            extendedProps: {
-                googleEvent: event
-            }
-        }));
-
-        successCallback(events);
-    } catch (error) {
-        console.error('❌ Error loading calendar events:', error);
-        failureCallback(error);
-    }
-}
-
-// Get event color based on type/category
-function getEventColor(googleEvent) {
-    const summary = (googleEvent.summary || '').toLowerCase();
-    if (summary.includes('travail') || summary.includes('dev')) return '#218c8d'; // Teal
-    if (summary.includes('réunion') || summary.includes('meeting')) return '#3B82F6'; // Blue
-    if (summary.includes('admin') || summary.includes('administratif')) return '#626c71'; // Gray
-    return '#218c8d'; // Default teal
-}
-
-// Create event in Google Calendar
-// TODO: CALENDAR
-async function createGoogleCalendarEvent(eventData) {
-    if (!isGoogleSignedIn) {
-        throw new Error('Non connecté à Google');
-    }
-
-    const calendarId = getConfiguredCalendarId();
-    
-    // Détecte si c'est un événement "toute la journée" (pas d'heure dans la date)
-    const isAllDay = !eventData.start.includes('T') || eventData.start.includes('T00:00:00');
-    
-    const event = {
-        summary: eventData.title,
-        description: eventData.description || '',
-        start: isAllDay ? {
-            date: eventData.start.split('T')[0]
-        } : {
-            dateTime: eventData.start,
-            timeZone: 'Europe/Paris'
-        },
-        end: isAllDay ? {
-            date: eventData.end.split('T')[0]
-        } : {
-            dateTime: eventData.end,
-            timeZone: 'Europe/Paris'
-        }
-    };
-
-    try {
-        const response = await gapi.client.calendar.events.insert({
-            calendarId: calendarId,
-            resource: event
-        });
-        console.log('✅ Event created:', response.result);
-        return response.result;
-    } catch (error) {
-        console.error('❌ Error creating event:', error);
-        throw error;
-    }
-}
-
-// Update event in Google Calendar
-// TODO: CALENDAR
-async function updateGoogleCalendarEvent(eventId, changes) {
-    if (!isGoogleSignedIn) {
-        throw new Error('Non connecté à Google');
-    }
-
-    const calendarId = getConfiguredCalendarId();
-    const updates = {};
-
-    if (changes.title !== undefined) updates.summary = changes.title;
-    
-    if (changes.start !== undefined) {
-        const isAllDay = !changes.start.includes('T') || changes.start.includes('T00:00:00');
-        updates.start = isAllDay ? 
-            { date: changes.start.split('T')[0] } : 
-            { dateTime: changes.start, timeZone: 'Europe/Paris' };
-    }
-    
-    if (changes.end !== undefined) {
-        const isAllDay = !changes.end.includes('T') || changes.end.includes('T00:00:00');
-        updates.end = isAllDay ? 
-            { date: changes.end.split('T')[0] } : 
-            { dateTime: changes.end, timeZone: 'Europe/Paris' };
-    }
-    
-    if (changes.description !== undefined) updates.description = changes.description;
-
-    try {
-        const response = await gapi.client.calendar.events.patch({
-            calendarId: calendarId,
-            eventId: eventId,
-            resource: updates
-        });
-        console.log('✅ Event updated:', response.result);
-        return response.result;
-    } catch (error) {
-        console.error('❌ Error updating event:', error);
-        throw error;
-    }
-}
-
-// Delete event from Google Calendar
-// TODO: CALENDAR
-async function deleteGoogleCalendarEvent(eventId) {
-    if (!isGoogleSignedIn) {
-        throw new Error('Non connecté à Google');
-    }
-
-    const calendarId = getConfiguredCalendarId();
-
-    try {
-        await gapi.client.calendar.events.delete({
-            calendarId: calendarId,
-            eventId: eventId
-        });
-        console.log('✅ Event deleted:', eventId);
-    } catch (error) {
-        console.error('❌ Error deleting event:', error);
-        throw error;
-    }
-}
 
 // Show event edit modal with comprehensive editing options
 function showEventEditModal(event) {
@@ -3323,187 +2709,20 @@ function showEventEditModal(event) {
     };
 }
 
-// Initialize FullCalendar with Google Calendar API integration
-// TODO: CALENDAR
-async function initFullCalendar() {
-    const calendarEl = document.getElementById('fullCalendar');
-    if (!calendarEl) {
-        console.warn('FullCalendar element not found');
-        return;
-    }
-
-    // Check if running from file:// protocol - show warning
-    const warningEl = document.getElementById('fileProtocolWarning');
-    if (window.location.protocol === 'file:') {
-        if (warningEl) warningEl.style.display = 'block';
-        console.warn('⚠️ Calendar cannot be initialized from file:// protocol');
-        return;
-    } else {
-        if (warningEl) warningEl.style.display = 'none';
-    }
-
-    // Initialize Google Auth first
-    try {
-        await initGoogleAuth();
-    } catch (error) {
-        console.error('Failed to initialize Google Auth:', error);
-        showToast('Erreur d\'authentification Google', 'error');
-        return;
-    }
-
-    // Initialize FullCalendar
-    fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'timeGridWeek',
-        locale: 'fr',
-        firstDay: 1, // Monday
-        slotMinTime: '08:00:00',
-        slotMaxTime: '20:00:00',
-        height: 'auto',
-        headerToolbar: {
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay'
-        },
-        buttonText: {
-            today: 'Aujourd\'hui',
-            month: 'Mois',
-            week: 'Semaine',
-            day: 'Jour'
-        },
-        slotLabelFormat: {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        },
-        eventTimeFormat: {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        },
-        // Enable drag & drop (will be disabled until user signs in)
-        editable: false,
-        selectable: false,
-        selectMirror: true,
-        dayMaxEvents: true,
-        weekends: true,
-        
-        // Event sources
-        events: loadGoogleCalendarEvents,
-
-        // Handle date selection (create new event)
-        select: async function(info) {
-            if (!isGoogleSignedIn) {
-                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
-                fullCalendarInstance.unselect();
-                return;
-            }
-            
-            const title = prompt('Titre de l\'événement:');
-            if (title) {
-                try {
-                    await createGoogleCalendarEvent({
-                        title: title,
-                        start: info.startStr,
-                        end: info.endStr,
-                        description: ''
-                    });
-                    fullCalendarInstance.refetchEvents();
-                    showToast('Événement créé', 'success');
-                } catch (error) {
-                    showToast('Erreur lors de la création', 'error');
-                }
-            }
-            fullCalendarInstance.unselect();
-        },
-
-        // Handle event drop (move)
-        eventDrop: async function(info) {
-            if (!isGoogleSignedIn) {
-                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
-                info.revert();
-                return;
-            }
-            
-            try {
-                await updateGoogleCalendarEvent(info.event.id, {
-                    start: info.event.startStr,
-                    end: info.event.endStr
-                });
-                showToast('Événement déplacé', 'success');
-            } catch (error) {
-                showToast('Erreur lors du déplacement', 'error');
-                info.revert();
-            }
-        },
-
-        // Handle event resize
-        eventResize: async function(info) {
-            if (!isGoogleSignedIn) {
-                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
-                info.revert();
-                return;
-            }
-            
-            try {
-                await updateGoogleCalendarEvent(info.event.id, {
-                    start: info.event.startStr,
-                    end: info.event.endStr
-                });
-                showToast('Durée modifiée', 'success');
-            } catch (error) {
-                showToast('Erreur lors de la modification', 'error');
-                info.revert();
-            }
-        },
-
-        // Handle event click (edit/delete)
-        eventClick: function(info) {
-            if (!isGoogleSignedIn) {
-                showToast('⚠️ Connectez-vous d\'abord à Google', 'warning');
-                return;
-            }
-            
-            const event = info.event;
-            showEventEditModal(event);
-        }
-    });
-
-    fullCalendarInstance.render();
-    console.log('✅ FullCalendar initialized with 8h-20h range, Monday-first week, French locale');
-    
-    // Show initial state (not connected)
-    updateSignInStatus(false);
-    
-    // Auto-refresh calendar every 5 minutes to sync with external changes
-    // Consommation estimée: ~2000 appels/mois (bien sous la limite Google)
-    setInterval(() => {
-        if (isGoogleSignedIn && fullCalendarInstance) {
-            console.log('🔄 Auto-refresh calendar...');
-            fullCalendarInstance.refetchEvents();
-        }
-    }, 300000); // 5 minutes (300 000 ms)
-}
-
-// Legacy function kept for compatibility (redirects to FullCalendar)
-// TODO: CALENDAR
-function initGoogleCalendarEmbed() {
-    initFullCalendar();
-}
-
 function updateWeeklyStats() {
-    let filteredTasks = tasks;
+    let filteredTasks = getTasks();
 
     if (currentView === 'week') {
-        const weekDates = getWeekDates(currentDate);
+        const weekDates = getWeekDates(getCurrentDate());
         const weekDateStrs = weekDates.map(d => formatDate(d));
-        filteredTasks = tasks.filter(task => weekDateStrs.includes(task.date));
+        filteredTasks = getTasks().filter(task => weekDateStrs.includes(task.date));
     } else if (currentView === 'day') {
-        const dateStr = formatDate(currentDate);
-        filteredTasks = tasks.filter(task => task.date === dateStr);
+        const dateStr = formatDate(getCurrentDate());
+        filteredTasks = getTasks().filter(task => task.date === dateStr);
     } else if (currentView === 'month') {
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
-        filteredTasks = tasks.filter(task => {
+        const year = getCurrentDate().getFullYear();
+        const month = getCurrentDate().getMonth();
+        filteredTasks = getTasks().filter(task => {
             const taskDate = new Date(task.date);
             return taskDate.getFullYear() === year && taskDate.getMonth() === month;
         });
@@ -3532,7 +2751,7 @@ function setupTaskHandlers() {
     if (addTaskBtn) {
         addTaskBtn.addEventListener('click', () => {
             const taskDate = document.getElementById('taskDate');
-            if (taskDate) taskDate.value = formatDate(currentDate);
+            if (taskDate) taskDate.value = formatDate(getCurrentDate());
             const card = document.getElementById('taskFormCard');
             if (card) card.style.display = 'block';
         });
@@ -3575,8 +2794,8 @@ function setupTaskHandlers() {
                 });
 
                 // Refresh FullCalendar
-                if (fullCalendarInstance) {
-                    fullCalendarInstance.refetchEvents();
+                if (getFullCalendarInstance()) {
+                    getFullCalendarInstance().refetchEvents();
                 }
 
                 const card = document.getElementById('taskFormCard');
@@ -3594,7 +2813,7 @@ function setupTaskHandlers() {
 // Edit task
 // TODO: TASK
 function editTask(index) {
-    const task = tasks[index];
+    const task = getTasks()[index];
     if (!task) return;
     document.getElementById('editTaskIndex').value = index;
     document.getElementById('editTaskDate').value = task.date;
@@ -3624,7 +2843,7 @@ document.getElementById('editTaskForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
 
     const index = parseInt(document.getElementById('editTaskIndex').value);
-    tasks[index] = {
+    getTasks()[index] = {
         date: document.getElementById('editTaskDate').value,
         startTime: document.getElementById('editTaskTime').value,
         duration: parseFloat(document.getElementById('editTaskDuration').value) || 0,
@@ -3650,7 +2869,7 @@ function deleteTaskFromEdit() {
         'Êtes-vous sûr de vouloir supprimer cette tâche ?',
         async () => {
             // If this task has a calendar event, attempt to delete it server-side
-            const task = tasks[index];
+            const task = getTasks()[index];
             if (task && task.eventId) {
                 try {
                     // Provide a narrow search window to backend to help locate the event if getEventById fails
@@ -3691,7 +2910,7 @@ function deleteTaskFromEdit() {
             }
 
             // Remove locally regardless (we attempted server delete)
-            tasks.splice(index, 1);
+            getTasks().splice(index, 1);
             renderCalendar();
             document.getElementById('editTaskModal')?.classList.remove('show');
             showToast('Tâche supprimée');
@@ -6976,47 +6195,10 @@ function loadAutoSyncPreference() {
     updateSyncIndicator(false);
 }
 
-// Toast notification with types
-function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    if (!container) return;
-    const toast = document.createElement('div');
-
-    let borderColor = 'var(--color-success)';
-    let bgColor = 'var(--color-surface)';
-
-    if (type === 'error') {
-        borderColor = 'var(--color-error)';
-    } else if (type === 'info') {
-        borderColor = '#3B82F6';
-    }
-
-    toast.style.cssText = `
-        background-color: ${bgColor};
-        border: 1px solid var(--color-border);
-        border-left: 4px solid ${borderColor};
-        padding: var(--space-16);
-        border-radius: var(--radius-base);
-        box-shadow: var(--shadow-lg);
-        max-width: 350px;
-        font-size: var(--font-size-base);
-        animation: slideIn 0.3s ease-out;
-    `;
-    toast.textContent = message;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-        toast.style.transition = 'opacity 0.3s, transform 0.3s';
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100%)';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-}
-
 // Google Sheets Sync Functions
 // TODO: SYNC
 async function syncToGoogleSheets() {
-    if (isSyncing) {
+    if (getIsSyncing()) {
         showToast('⏳ Synchronisation déjà en cours...', 'info');
         return;
     }
@@ -7026,7 +6208,7 @@ async function syncToGoogleSheets() {
     const originalContent = button.innerHTML;
 
     try {
-        isSyncing = true;
+        setIsSyncing(true);
         button.disabled = true;
         button.innerHTML = '⏳ Synchronisation...';
         button.style.opacity = '0.6';
@@ -7087,7 +6269,7 @@ async function syncToGoogleSheets() {
             showToast('❌ Erreur de synchronisation (voir console). Assurez-vous que le BACKEND retourne Access-Control-Allow-Origin.', 'error');
             button.innerHTML = originalContent;
             button.disabled = false;
-            isSyncing = false;
+            setIsSyncing(false);
             return;
         }
         button.innerHTML = '✅ Synchronisé';
@@ -7105,7 +6287,7 @@ async function syncToGoogleSheets() {
             button.innerHTML = originalContent;
         }, 3000);
     } finally {
-        isSyncing = false;
+        setIsSyncing(false);
         button.disabled = false;
         button.style.opacity = '1';
     }
@@ -7127,97 +6309,6 @@ function updateLastSyncTime() {
     const lastSyncElement = document.getElementById('lastSyncTime');
     if (lastSyncElement) {
         lastSyncElement.textContent = `Dernière sync: ${timeString}`;
-    }
-}
-
-// Google Calendar Sync
-// TODO: CALENDAR
-async function syncToGoogleCalendar() {
-    if (isSyncing) {
-        showToast('⏳ Synchronisation déjà en cours...', 'info');
-        return;
-    }
-
-    try {
-        isSyncing = true;
-        showToast('📅 Synchronisation Calendar...', 'info');
-
-        // Prepare task data for sync - include eventId so we can filter already-synced tasks
-        const taskData = tasks.map(task => ({
-            date: task.date,
-            startTime: task.startTime,
-            duration: task.duration,
-            description: task.description,
-            type: task.type,
-            eventId: task.eventId || null
-        }));
-
-        try {
-            // Only sync tasks that don't already have an eventId to avoid duplicates
-            const tasksToSync = taskData.filter(t => !t.eventId);
-            if (tasksToSync.length === 0) {
-                showToast('📅 Aucun nouvel événement à synchroniser', 'info');
-            } else {
-                const result = await callBackend('sync_calendar', { tasks: tasksToSync, calendarId: getConfiguredCalendarId() });
-                if (!result || result.success === false) {
-                    try { showBackendRawResponse(result); } catch (e) {}
-                    throw new Error((result && (result.data || result.error)) || 'Erreur serveur lors de la synchronisation Calendar');
-                }
-
-                // Persist returned eventIds into tasks and save
-                try {
-                    const details = (result.data && result.data.details) || [];
-                    details.forEach(d => {
-                        if (d && d.eventId && d.task) {
-                            // find matching task in client tasks by date/startTime/description
-                            const match = tasks.find(t => t.date === d.task.date && (t.startTime || '') === (d.task.startTime || '') && t.description === d.task.description);
-                            if (match) match.eventId = d.eventId;
-                        }
-                    });
-                    await saveToDrive();
-                } catch (persistErr) {
-                    console.warn('Impossible de persister eventIds:', persistErr);
-                }
-
-                // Additionally, fetch events from the calendar for the range and remove local tasks whose eventId no longer exists (handle deletions on the calendar)
-                try {
-                    // compute date range from tasks
-                    const dates = tasks.map(t => t.date).filter(Boolean).sort();
-                    const startDate = dates.length ? dates[0] : formatDate(new Date());
-                    const endDate = dates.length ? dates[dates.length - 1] : formatDate(new Date());
-                    const eventsResp = await callBackend('listCalendarEvents', { startDate: startDate, endDate: endDate, calendarId: getConfiguredCalendarId() });
-                    if (eventsResp && eventsResp.success) {
-                        const remoteIds = new Set((eventsResp.data && eventsResp.data.events || []).map(e => e.id));
-                        // Remove tasks that have an eventId but that event is not present remotely
-                        let removed = 0;
-                        for (let i = tasks.length - 1; i >= 0; i--) {
-                            const t = tasks[i];
-                            if (t && t.eventId && !remoteIds.has(t.eventId)) {
-                                tasks.splice(i, 1);
-                                removed++;
-                            }
-                        }
-                        if (removed > 0) {
-                            await saveToDrive();
-                            renderCalendar();
-                            showToast(`✅ ${removed} tâche(s) supprimée(s) (événements absents du calendrier)`,'info');
-                        }
-                    }
-                } catch (cleanupErr) {
-                    console.warn('Cleanup calendar deletions failed:', cleanupErr);
-                }
-
-                showToast('✅ Planning synchronisé avec Google Calendar', 'success');
-            }
-        } catch (err) {
-            console.error('Calendar sync failed:', err);
-            showToast('❌ Erreur de synchronisation Calendar (voir console). Assurez-vous que le BACKEND autorise CORS.', 'error');
-        }
-    } catch (error) {
-        console.error('Calendar sync error:', error);
-        showToast('❌ Erreur de synchronisation Calendar', 'error');
-    } finally {
-        isSyncing = false;
     }
 }
 
@@ -10219,7 +9310,7 @@ window.clearClientsInSheets = clearClientsInSheets;
 // Exporter tous les RAMs vers Sheets
 // TODO: RAM
 async function exportRAMsToSheets() {
-    if (isSyncing) {
+    if (getIsSyncing()) {
         alert('⏳ Une synchronisation est déjà en cours...');
         return;
     }
@@ -10231,8 +9322,8 @@ async function exportRAMsToSheets() {
     
     const confirm = window.confirm(`Exporter ${rams.length} RAM(s) vers Google Sheets ?\n\nCela écrasera le contenu existant de la feuille RAM.`);
     if (!confirm) return;
-    
-    isSyncing = true;
+
+    setIsSyncing(true);
     try {
         const result = await callBackend('sync_rams', { sheetId: CONFIG.SHEETS_ID, rams });
         if (!result || result.success === false) {
@@ -10245,22 +9336,22 @@ async function exportRAMsToSheets() {
         console.error('exportRAMsToSheets error:', error);
         alert(`❌ Erreur export RAMs : ${error.message || error}`);
     } finally {
-        isSyncing = false;
+        setIsSyncing(false);
     }
 }
 
 // Importer les RAMs depuis Sheets
 // TODO: RAM
 async function importRAMsFromSheets() {
-    if (isSyncing) {
+    if (getIsSyncing()) {
         alert('⏳ Une synchronisation est déjà en cours...');
         return;
     }
     
     const confirm = window.confirm('Importer les RAMs depuis Google Sheets ?\n\nCela écrasera les RAMs locaux non sauvegardés.');
     if (!confirm) return;
-    
-    isSyncing = true;
+
+    setIsSyncing(true);
     suppressSheetsSync = true;
     try {
         const result = await callBackend('import_rams', { sheetId: CONFIG.SHEETS_ID });
@@ -10278,7 +9369,7 @@ async function importRAMsFromSheets() {
         console.error('importRAMsFromSheets error:', error);
         alert(`❌ Erreur import RAMs : ${error.message || error}`);
     } finally {
-        isSyncing = false;
+        setIsSyncing(false);
         suppressSheetsSync = false;
     }
 }
@@ -10293,15 +9384,15 @@ window.importRAMsFromSheets = importRAMsFromSheets;
 // Exporter tous les devis vers Sheets (tolère un export vide pour effacer la feuille)
 // TODO: QUOTES
 async function exportQuotesToSheets() {
-    if (isSyncing) {
+    if (getIsSyncing()) {
         alert('⏳ Une synchronisation est déjà en cours...');
         return;
     }
     
     const confirm = window.confirm(`Exporter ${quotes.length} devis vers Google Sheets ?\n\nCela écrasera le contenu existant de la feuille Devis.`);
     if (!confirm) return;
-    
-    isSyncing = true;
+
+    setIsSyncing(true);
     try {
         const result = await callBackend('sync_quotes', { sheetId: CONFIG.SHEETS_ID, quotes });
         if (!result || result.success === false) {
@@ -10314,7 +9405,7 @@ async function exportQuotesToSheets() {
         console.error('exportQuotesToSheets error:', error);
         alert(`❌ Erreur export devis : ${error.message || error}`);
     } finally {
-        isSyncing = false;
+        setIsSyncing(false);
     }
 }
 
@@ -10336,15 +9427,15 @@ async function clearQuotesInSheets() {
 // Importer les devis depuis Sheets
 // TODO: QUOTES
 async function importQuotesFromSheets() {
-    if (isSyncing) {
+    if (getIsSyncing()) {
         alert('⏳ Une synchronisation est déjà en cours...');
         return;
     }
     
     const confirm = window.confirm('Importer les devis depuis Google Sheets ?\n\nCela écrasera les devis locaux non sauvegardés.');
     if (!confirm) return;
-    
-    isSyncing = true;
+
+    setIsSyncing(true);
     suppressSheetsSync = true;
     try {
         const result = await callBackend('import_quotes', { sheetId: CONFIG.SHEETS_ID });
@@ -10367,7 +9458,7 @@ async function importQuotesFromSheets() {
         console.error('importQuotesFromSheets error:', error);
         alert(`❌ Erreur import devis : ${error.message || error}`);
     } finally {
-        isSyncing = false;
+        setIsSyncing(false);
         suppressSheetsSync = false;
     }
 }

@@ -1,4 +1,7 @@
-import {STORAGE_DATA_KEYS, STORAGE_META_KEYS_TO_KEEP} from "./config.js";
+import {
+    STORAGE_DATA_KEYS,
+    STORAGE_META_KEYS_TO_KEEP
+} from "./config.js";
 
 export const storageManager = {
     mode: 'indexeddb',
@@ -521,7 +524,6 @@ export const storageManager = {
 };
 
 // Sauvegarder en batch factures, devis, RAM et clients en une seule opération
-// TODO: STORAGE
 export async function batchSaveAllData() {
     const items = {
         'mti_invoices': invoices,
