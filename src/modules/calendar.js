@@ -5,7 +5,10 @@ import {
     setIsSyncing,
     getIsGoogleSignedIn,
     getFullCalendarInstance,
-    setFullCalendarInstance
+    setFullCalendarInstance,
+    setCurrentView,
+    setCurrentDate,
+    getCurrentView
 } from './config.js';
 import {
     initGoogleAuth,
@@ -672,5 +675,100 @@ export async function syncToGoogleCalendar() {
         showToast('❌ Erreur de synchronisation Calendar', 'error');
     } finally {
         setIsSyncing(false);
+    }
+}
+
+// PLANNING - Calendar with Day/Week/Month views
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
+export function changeCalendarView(view) {
+    setCurrentView(view);
+    document.getElementById('viewDay')?.classList.remove('active');
+    document.getElementById('viewWeek')?.classList.remove('active');
+    document.getElementById('viewMonth')?.classList.remove('active');
+    const el = document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1));
+    if (el) el.classList.add('active');
+    renderCalendar();
+}
+
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
+export function navigateCalendar(direction) {
+    if (direction === 0) {
+        setCurrentDate(new Date());
+    } else if (getCurrentView() === 'day') {
+        getCurrentDate().setDate(getCurrentDate().getDate() + direction);
+    } else if (getCurrentView() === 'week') {
+        getCurrentDate().setDate(getCurrentDate().getDate() + (direction * 7));
+    } else if (getCurrentView() === 'month') {
+        getCurrentDate().setMonth(getCurrentDate().getMonth() + direction);
+    }
+    renderCalendar();
+}
+
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
+export function renderCalendar() {
+    updateCurrentDateDisplay();
+
+    if (getCurrentView() === 'day') {
+        renderDayView();
+    } else if (getCurrentView() === 'week') {
+        renderWeekView();
+    } else if (getCurrentView() === 'month') {
+        renderMonthView();
+    }
+
+    updateWeeklyStats();
+}
+
+// TODO: CALENDAR (Impossible de le bouger pour l'instant)
+export function updateCurrentDateDisplay() {
+    const display = document.getElementById('currentDateDisplay');
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+
+    if (!display) return;
+
+    if (getCurrentView() === 'day') {
+        display.textContent = getCurrentDate().toLocaleDateString('fr-FR', options);
+    } else if (getCurrentView() === 'week') {
+        const weekDates = getWeekDates(getCurrentDate());
+        const start = weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+        const end = weekDates[6].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+        display.textContent = `Semaine du ${start} au ${end}`;
+    } else if (getCurrentView() === 'month') {
+        display.textContent = getCurrentDate().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' });
+    }
+}
+
+function updateWeeklyStats() {
+    let filteredTasks = getTasks();
+
+    if (getCurrentView() === 'week') {
+        const weekDates = getWeekDates(getCurrentDate());
+        const weekDateStrs = weekDates.map(d => formatDate(d));
+        filteredTasks = getTasks().filter(task => weekDateStrs.includes(task.date));
+    } else if (getCurrentView() === 'day') {
+        const dateStr = formatDate(getCurrentDate());
+        filteredTasks = getTasks().filter(task => task.date === dateStr);
+    } else if (getCurrentView() === 'month') {
+        const year = getCurrentDate().getFullYear();
+        const month = getCurrentDate().getMonth();
+        filteredTasks = getTasks().filter(task => {
+            const taskDate = new Date(task.date);
+            return taskDate.getFullYear() === year && taskDate.getMonth() === month;
+        });
+    }
+
+    const totalHours = filteredTasks.reduce((sum, task) => sum + (task.duration || 0), 0);
+    const workHours = filteredTasks.filter(t => t.type === 'Travail').reduce((sum, task) => sum + (task.duration || 0), 0);
+    const meetingHours = filteredTasks.filter(t => t.type === 'Réunion client').reduce((sum, task) => sum + (task.duration || 0), 0);
+    const adminHours = filteredTasks.filter(t => t.type === 'Administratif').reduce((sum, task) => sum + (task.duration || 0), 0);
+
+    const viewLabel = getCurrentView() === 'day' ? 'journalier' : getCurrentView() === 'week' ? 'hebdomadaire' : 'mensuel';
+
+    const statsEl = document.getElementById('weeklyStats');
+    if (statsEl) {
+        statsEl.innerHTML = `
+            <strong>Total ${viewLabel}: ${totalHours}h</strong> 
+            (Travail: ${workHours}h | Réunions: ${meetingHours}h | Admin: ${adminHours}h)
+        `;
     }
 }

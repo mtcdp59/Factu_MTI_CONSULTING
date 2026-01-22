@@ -1,3 +1,10 @@
+import {
+    getDueDateInput,
+    getInvoiceDateInput,
+    getLastSyncTime,
+    setLastSyncTime
+} from "./config.js";
+
 export function formatDate(date) {
     if (!date) return '';
     const d = new Date(date);
@@ -20,4 +27,57 @@ export function getWeekDates(date) {
         dates.push(weekDay);
     }
     return dates;
+}
+
+/**
+ * Calcule la prochaine date d'échéance selon la fréquence
+ * @param {Date} currentDate - Date de référence
+ * @param {string} frequency - Fréquence
+ * @returns {string} Prochaine date (ISO format)
+ */
+export function calculateNextDate(currentDate, frequency) {
+    const date = new Date(currentDate);
+
+    switch(frequency) {
+        case 'monthly':
+            date.setMonth(date.getMonth() + 1);
+            break;
+        case 'quarterly':
+            date.setMonth(date.getMonth() + 3);
+            break;
+        case 'yearly':
+            date.setFullYear(date.getFullYear() + 1);
+            break;
+        default:
+            date.setMonth(date.getMonth() + 1);
+    }
+
+    return date.toISOString().split('T')[0];
+}
+
+// Set default dates
+export function setDefaultDates() {
+    const today = new Date();
+    const defaultDue = new Date(today);
+    defaultDue.setDate(defaultDue.getDate() + 30);
+
+    if (getInvoiceDateInput()) getInvoiceDateInput().value = today.toISOString().split('T')[0];
+    if (getDueDateInput()) getDueDateInput().value = defaultDue.toISOString().split('T')[0];
+}
+
+// Format date to French format
+export function formatDateFR(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR');
+}
+
+// Update last sync time
+export function updateLastSyncTime() {
+    setLastSyncTime(new Date());
+    const timeString = getLastSyncTime().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const lastSyncElement = document.getElementById('lastSyncTime');
+    if (lastSyncElement) {
+        lastSyncElement.textContent = `Dernière sync: ${timeString}`;
+    }
 }

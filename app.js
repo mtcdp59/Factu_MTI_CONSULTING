@@ -2,10 +2,8 @@ import {
     CONFIG,
     defaultSettings,
     getAutoSheetsSyncEnabled,
-    getCleanupTimer,
     getClients,
     getCurrentDate,
-    getCurrentView,
     getDueDateInput,
     getFullCalendarInstance,
     getInvoiceDateInput,
@@ -27,12 +25,8 @@ import {
     getTasks,
     getUnitPriceInput,
     getSyncLog,
-    LOCALSTORAGE_CLEANUP_INTERVAL_MS,
     setAutoSheetsSyncEnabled,
-    setCleanupTimer,
     setClients,
-    setCurrentDate,
-    setCurrentView,
     setDueDateInput,
     setInvoiceDateInput,
     setInvoiceForm,
@@ -71,6 +65,8 @@ import {
     loadInvoicesFromStorage,
     saveConfigToStorage,
     saveInvoicesToStorage,
+    scheduleLocalStorageCleanup,
+    batchLoadAllData,
     storageManager
 } from './src/modules/storage.js';
 import {
@@ -79,14 +75,20 @@ import {
     getConfiguredCalendarId,
     initCalendarManager,
     initGoogleCalendarEmbed,
-    renderDayView,
-    renderMonthView,
-    renderWeekView,
     syncToGoogleCalendar,
     updateGoogleCalendarEvent,
+    changeCalendarView,
+    navigateCalendar,
+    renderCalendar
 } from './src/modules/calendar.js';
-import {formatDate, getWeekDates} from './src/modules/date-utils.js';
-import {showToast} from './src/modules/toast.js';
+import {
+    calculateNextDate,
+    formatDate,
+    formatDateFR,
+    setDefaultDates,
+    updateLastSyncTime
+} from './src/modules/date-utils.js';
+import { showToast } from './src/modules/toast.js';
 
 // VARIABLES
 
@@ -108,25 +110,6 @@ console.log('✅ app.js chargé - début du script');
 // Initialiser le stockage au chargement
 storageManager.init();
 
-// TODO: STORAGE (Impossible de le bouger pour l'instant)
-function scheduleLocalStorageCleanup() {
-    if (getCleanupTimer() || !storageManager.isIndexedDB()) return; // éviter doublons ou mode fallback
-    setCleanupTimer(
-        setInterval(() => {
-            if (storageManager.isIndexedDB()) {
-                storageManager.cleanupLocalStorage().catch(() => {});
-            }
-        }, LOCALSTORAGE_CLEANUP_INTERVAL_MS)
-    );
-
-    // premier passage après le chargement (dans 5s pour ne pas bloquer l'init)
-    setTimeout(() => {
-        if (storageManager.isIndexedDB()) {
-            storageManager.cleanupLocalStorage().catch(() => {});
-        }
-    }, 5000);
-}
-
 scheduleLocalStorageCleanup();
 
 // ==========================================
@@ -134,21 +117,6 @@ scheduleLocalStorageCleanup();
 // ==========================================
 
 // ========== v2.5.2 FONCTIONS HELPER ========== 
-
-// Charger en batch toutes les données avec décompression
-// TODO: STORAGE (Impossible de le bouger pour l'instant)
-async function batchLoadAllData() {
-    const keys = ['mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients'];
-    const data = await storageManager.batchLoad(keys);
-    
-    if (data['mti_invoices']) setInvoices(data['mti_invoices']);
-    if (data['mti_quotes']) setQuotes(data['mti_quotes']);
-    if (data['mti_rams']) setRams(data['mti_rams']);
-    if (data['mti_clients']) setClients(data['mti_clients']);
-    
-    console.log(`📦 Batch loaded all data`);
-    return data;
-}
 
 
 // Exposer les helpers en console pour un diagnostic rapide (v2.5.2)
@@ -1540,17 +1508,6 @@ function getNextInvoiceNumber(date = null) {
     return `${yearMonth}-${nextSeq}`;
 }
 
-// Set default dates
-// TODO: UTILS/DATES
-function setDefaultDates() {
-    const today = new Date();
-    const defaultDue = new Date(today);
-    defaultDue.setDate(defaultDue.getDate() + 30);
-
-    if (getInvoiceDateInput()) getInvoiceDateInput().value = today.toISOString().split('T')[0];
-    if (getDueDateInput()) getDueDateInput().value = defaultDue.toISOString().split('T')[0];
-}
-
 // Auto-update due date and invoice number when invoice date changes
 // TODO: INVOICES
 function setupInvoiceFormListeners() {
@@ -1864,14 +1821,6 @@ function calculateTotal() {
     }
 
     return totalHT;
-}
-
-// Format date to French format
-// TODO: UTILS/DATES
-function formatDateFR(dateString) {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR');
 }
 
 // Format number with thousands separator (space)
@@ -2358,67 +2307,8 @@ function resetInvoiceForm() {
 
 window.resetInvoiceForm = resetInvoiceForm;
 
-// PLANNING - Calendar with Day/Week/Month views
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
-function changeCalendarView(view) {
-    setCurrentView(view);
-    document.getElementById('viewDay')?.classList.remove('active');
-    document.getElementById('viewWeek')?.classList.remove('active');
-    document.getElementById('viewMonth')?.classList.remove('active');
-    const el = document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1));
-    if (el) el.classList.add('active');
-    renderCalendar();
-}
 
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
-function navigateCalendar(direction) {
-    if (direction === 0) {
-        setCurrentDate(new Date());
-    } else if (getCurrentView() === 'day') {
-        getCurrentDate().setDate(getCurrentDate().getDate() + direction);
-    } else if (getCurrentView() === 'week') {
-        getCurrentDate().setDate(getCurrentDate().getDate() + (direction * 7));
-    } else if (getCurrentView() === 'month') {
-        getCurrentDate().setMonth(getCurrentDate().getMonth() + direction);
-    }
-    renderCalendar();
-}
-
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
-function renderCalendar() {
-    updateCurrentDateDisplay();
-
-    if (getCurrentView() === 'day') {
-        renderDayView();
-    } else if (getCurrentView() === 'week') {
-        renderWeekView();
-    } else if (getCurrentView() === 'month') {
-        renderMonthView();
-    }
-
-    updateWeeklyStats();
-}
-
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
-function updateCurrentDateDisplay() {
-    const display = document.getElementById('currentDateDisplay');
-    const options = { year: 'numeric', month: 'long', day: 'numeric' };
-
-    if (!display) return;
-
-    if (getCurrentView() === 'day') {
-        display.textContent = getCurrentDate().toLocaleDateString('fr-FR', options);
-    } else if (getCurrentView() === 'week') {
-        const weekDates = getWeekDates(getCurrentDate());
-        const start = weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-        const end = weekDates[6].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-        display.textContent = `Semaine du ${start} au ${end}`;
-    } else if (getCurrentView() === 'month') {
-        display.textContent = getCurrentDate().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' });
-    }
-}
-
-// TODO: UTILS/DATES ?
+// TODO: TASKS
 function showDayTasks(dateStr) {
     const dayTasks = getTasks().filter(task => task.date === dateStr);
     const date = new Date(dateStr);
@@ -2662,41 +2552,6 @@ function showEventEditModal(event) {
             modal.remove();
         }
     };
-}
-
-function updateWeeklyStats() {
-    let filteredTasks = getTasks();
-
-    if (getCurrentView() === 'week') {
-        const weekDates = getWeekDates(getCurrentDate());
-        const weekDateStrs = weekDates.map(d => formatDate(d));
-        filteredTasks = getTasks().filter(task => weekDateStrs.includes(task.date));
-    } else if (getCurrentView() === 'day') {
-        const dateStr = formatDate(getCurrentDate());
-        filteredTasks = getTasks().filter(task => task.date === dateStr);
-    } else if (getCurrentView() === 'month') {
-        const year = getCurrentDate().getFullYear();
-        const month = getCurrentDate().getMonth();
-        filteredTasks = getTasks().filter(task => {
-            const taskDate = new Date(task.date);
-            return taskDate.getFullYear() === year && taskDate.getMonth() === month;
-        });
-    }
-
-    const totalHours = filteredTasks.reduce((sum, task) => sum + (task.duration || 0), 0);
-    const workHours = filteredTasks.filter(t => t.type === 'Travail').reduce((sum, task) => sum + (task.duration || 0), 0);
-    const meetingHours = filteredTasks.filter(t => t.type === 'Réunion client').reduce((sum, task) => sum + (task.duration || 0), 0);
-    const adminHours = filteredTasks.filter(t => t.type === 'Administratif').reduce((sum, task) => sum + (task.duration || 0), 0);
-
-    const viewLabel = getCurrentView() === 'day' ? 'journalier' : getCurrentView() === 'week' ? 'hebdomadaire' : 'mensuel';
-
-    const statsEl = document.getElementById('weeklyStats');
-    if (statsEl) {
-        statsEl.innerHTML = `
-            <strong>Total ${viewLabel}: ${totalHours}h</strong> 
-            (Travail: ${workHours}h | Réunions: ${meetingHours}h | Admin: ${adminHours}h)
-        `;
-    }
 }
 
 // Task form
@@ -6254,17 +6109,6 @@ function autoSync(action = 'modification') {
     // Auto-sync disabled in this version
     // User will manually click sync button when needed
     return;
-}
-
-// Update last sync time
-// TODO: UTILS/DATES
-function updateLastSyncTime() {
-    setLastSyncTime(new Date());
-    const timeString = getLastSyncTime().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const lastSyncElement = document.getElementById('lastSyncTime');
-    if (lastSyncElement) {
-        lastSyncElement.textContent = `Dernière sync: ${timeString}`;
-    }
 }
 
 // Preferred flow: generate PDF, save to Drive, then send email attaching that Drive file
@@ -11239,33 +11083,6 @@ function createRecurringInvoice(invoice, frequency = 'monthly', startDate = null
     saveToDrive();
     
     return recurring;
-}
-
-/**
- * Calcule la prochaine date d'échéance selon la fréquence
- * @param {Date} currentDate - Date de référence
- * @param {string} frequency - Fréquence
- * @returns {string} Prochaine date (ISO format)
- */
-// TODO: UTILS/DATE
-function calculateNextDate(currentDate, frequency) {
-    const date = new Date(currentDate);
-    
-    switch(frequency) {
-        case 'monthly':
-            date.setMonth(date.getMonth() + 1);
-            break;
-        case 'quarterly':
-            date.setMonth(date.getMonth() + 3);
-            break;
-        case 'yearly':
-            date.setFullYear(date.getFullYear() + 1);
-            break;
-        default:
-            date.setMonth(date.getMonth() + 1);
-    }
-    
-    return date.toISOString().split('T')[0];
 }
 
 /**

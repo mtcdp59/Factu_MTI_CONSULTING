@@ -1,4 +1,11 @@
 import {
+    getCleanupTimer,
+    LOCALSTORAGE_CLEANUP_INTERVAL_MS,
+    setCleanupTimer,
+    setClients,
+    setInvoices,
+    setQuotes,
+    setRams,
     STORAGE_DATA_KEYS,
     STORAGE_META_KEYS_TO_KEEP
 } from "./config.js";
@@ -617,4 +624,36 @@ export async function saveConfigToStorage(config) {
     } catch (e) {
         console.error('Impossible de sauvegarder la configuration:', e);
     }
+}
+
+export function scheduleLocalStorageCleanup() {
+    if (getCleanupTimer() || !storageManager.isIndexedDB()) return; // éviter doublons ou mode fallback
+    setCleanupTimer(
+        setInterval(() => {
+            if (storageManager.isIndexedDB()) {
+                storageManager.cleanupLocalStorage().catch(() => {});
+            }
+        }, LOCALSTORAGE_CLEANUP_INTERVAL_MS)
+    );
+
+    // premier passage après le chargement (dans 5s pour ne pas bloquer l'init)
+    setTimeout(() => {
+        if (storageManager.isIndexedDB()) {
+            storageManager.cleanupLocalStorage().catch(() => {});
+        }
+    }, 5000);
+}
+
+// Charger en batch toutes les données avec décompression
+export async function batchLoadAllData() {
+    const keys = ['mti_invoices', 'mti_quotes', 'mti_rams', 'mti_clients'];
+    const data = await storageManager.batchLoad(keys);
+
+    if (data['mti_invoices']) setInvoices(data['mti_invoices']);
+    if (data['mti_quotes']) setQuotes(data['mti_quotes']);
+    if (data['mti_rams']) setRams(data['mti_rams']);
+    if (data['mti_clients']) setClients(data['mti_clients']);
+
+    console.log(`📦 Batch loaded all data`);
+    return data;
 }
