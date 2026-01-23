@@ -679,7 +679,6 @@ export async function syncToGoogleCalendar() {
 }
 
 // PLANNING - Calendar with Day/Week/Month views
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 export function changeCalendarView(view) {
     setCurrentView(view);
     document.getElementById('viewDay')?.classList.remove('active');
@@ -690,7 +689,6 @@ export function changeCalendarView(view) {
     renderCalendar();
 }
 
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 export function navigateCalendar(direction) {
     if (direction === 0) {
         setCurrentDate(new Date());
@@ -704,7 +702,6 @@ export function navigateCalendar(direction) {
     renderCalendar();
 }
 
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 export function renderCalendar() {
     updateCurrentDateDisplay();
 
@@ -719,7 +716,6 @@ export function renderCalendar() {
     updateWeeklyStats();
 }
 
-// TODO: CALENDAR (Impossible de le bouger pour l'instant)
 export function updateCurrentDateDisplay() {
     const display = document.getElementById('currentDateDisplay');
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
