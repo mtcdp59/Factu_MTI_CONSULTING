@@ -3,7 +3,6 @@ import { getCompanyInfo } from "./config.js";
 import { callBackend } from "./api.js";
 
 // Export FEC (Fichier des Écritures Comptables)
-// TODO: EXPORT
 export async function exportFEC() {
     try {
         // Demander l'exercice comptable à l'utilisateur
