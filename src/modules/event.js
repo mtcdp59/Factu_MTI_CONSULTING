@@ -22,8 +22,7 @@ export function openEventForm(ev) {
         document.getElementById('evtDate').value = start.toISOString().slice(0,10);
         document.getElementById('evtTime').value = start.toTimeString().slice(0,5);
         const end = new Date(ev.end);
-        const duration = (end - start) / (1000*60*60);
-        document.getElementById('evtDuration').value = duration;
+        document.getElementById('evtDuration').value = (end - start) / (1000 * 60 * 60);
         document.getElementById('evtDesc').value = ev.title || '';
         // No strong mapping for type; attempt to parse description
         document.getElementById('evtType').value = (ev.description && ev.description.indexOf('Réunion') !== -1) ? 'Réunion' : 'Travail';

@@ -1,6 +1,6 @@
-import { getInvoices } from "./config.js";
-import { formatNumber } from "./number-utils.js";
-import { getFilteredQuotes } from "./quotes.js";
+import {getInvoices} from "./config.js";
+import {formatNumber} from "./number-utils.js";
+import {getFilteredQuotes} from "./quotes.js";
 
 // Met à jour les KPI Devis → Facture dans l'onglet Suivi (avec filtres)
 export function updateDevisKPIs() {
@@ -30,8 +30,7 @@ export function updateDevisKPIs() {
         const dq = new Date(q.date);
         const di = new Date(inv.date);
         if (isNaN(dq) || isNaN(di)) return null;
-        const diffDays = Math.max(0, Math.round((di - dq) / (1000 * 60 * 60 * 24)));
-        return diffDays;
+        return Math.max(0, Math.round((di - dq) / (1000 * 60 * 60 * 24)));
     }).filter(v => v !== null);
     const avgDelay = delays.length > 0 ? (delays.reduce((a, b) => a + b, 0) / delays.length) : 0;
     avgDelayEl.textContent = `${avgDelay.toFixed(1)} j`;

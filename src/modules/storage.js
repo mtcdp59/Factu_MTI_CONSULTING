@@ -603,19 +603,6 @@ export async function loadClientsFromStorage() {
     return await storageManager.loadDual('mti_clients');
 }
 
-// Charger la configuration depuis IndexedDB/localStorage (pour GitHub Pages) ou window.CONFIG (pour fichier local)
-export async function loadConfigFromStorage() {
-    try {
-        const storedConfig = await storageManager.getItem('mti_app_config');
-        if (storedConfig) {
-            return storedConfig;
-        }
-    } catch (e) {
-        console.warn('Configuration invalide dans IndexedDB/localStorage');
-    }
-    return null;
-}
-
 // Sauvegarder la configuration dans IndexedDB + localStorage backup
 export async function saveConfigToStorage(config) {
     try {

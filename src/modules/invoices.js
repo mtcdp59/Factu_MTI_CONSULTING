@@ -1,6 +1,7 @@
 import {
     callBackend,
-    callBackendJSONP, generateInvoicePDFBase64
+    callBackendJSONP,
+    generateInvoicePDFBase64
 } from "./api.js";
 import { showToast } from "./toast.js";
 import {
@@ -40,10 +41,9 @@ import { autoSync } from "./sync.js";
 import {
     openGmailComposeWithPDF,
     showEmailPreview,
-    sendRelanceFromList,
     generateEmailBody,
     showEmailPreviewForConfirmSend,
-    sendInvoiceEmail
+    sendRelanceFromList
 } from "./mail.js";
 import { applyFilters } from "./filters.js";
 import { renderCharts } from "./charts.js";

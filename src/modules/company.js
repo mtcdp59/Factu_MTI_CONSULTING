@@ -1,6 +1,9 @@
 import { showToast } from "./toast.js";
 import { getCFEFromAPI } from "./api.js";
 import { getTaxSettings } from "./config.js";
+import { communeInput } from "./event-listener.js";
+import { formatNumber } from "./number-utils.js";
+import { calculateTaxes } from "./tax.js";
 
 // Fonction auto-remplissage champs client depuis données SIRENE
 export function autoFillClientFromSIRET(statusElementId, siretData) {

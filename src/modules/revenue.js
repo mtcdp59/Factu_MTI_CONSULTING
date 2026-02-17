@@ -207,25 +207,3 @@ function getCACumule(annee = new Date().getFullYear()) {
         })
         .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
 }
-
-/**
- * Calcule le CA par mois pour une année donnée
- * @param {number} annee - Année à analyser
- * @returns {Object} { mois: CA } (ex: { '2025-01': 7200, '2025-02': 7200, ... })
- */
-function getCAParMois(annee = new Date().getFullYear()) {
-    const caParMois = {};
-
-    getInvoices()
-        .filter(inv => {
-            if (!inv.date) return false;
-            const invYear = new Date(inv.date).getFullYear();
-            return invYear === annee && inv.status !== 'cancelled';
-        })
-        .forEach(inv => {
-            const moisKey = inv.date.slice(0, 7); // Format: '2025-01'
-            caParMois[moisKey] = (caParMois[moisKey] || 0) + parseFloat(inv.total || 0);
-        });
-
-    return caParMois;
-}

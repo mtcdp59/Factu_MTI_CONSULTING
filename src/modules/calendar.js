@@ -18,16 +18,14 @@ import {
     formatDate,
     getWeekDates
 } from './date-utils.js';
-import {
-    getEventColor
-} from './event.js';
-import {
-    showToast
-} from './toast.js';
+import { getEventColor } from './event.js';
+import { showToast } from './toast.js';
 import {
     openEventForm,
     closeEventForm
 } from './event.js';
+import { callBackend } from "./api.js";
+import { showBackendRawResponse } from "./debug.js";
 
 
 // Sync version - reads from CONFIG (already loaded at startup)
@@ -767,4 +765,220 @@ function updateWeeklyStats() {
             (Travail: ${workHours}h | Réunions: ${meetingHours}h | Admin: ${adminHours}h)
         `;
     }
+}
+
+// Show event edit modal with comprehensive editing options
+function showEventEditModal(event) {
+    // Format dates for input fields (YYYY-MM-DD and HH:MM)
+    const startDate = event.start.toISOString().split('T')[0];
+    const startTime = event.start.toTimeString().slice(0, 5);
+    const endDate = event.end ? event.end.toISOString().split('T')[0] : startDate;
+    const endTime = event.end ? event.end.toTimeString().slice(0, 5) : startTime;
+
+    // Create modal HTML
+    const modalHtml = `
+        <div id="eventEditModal" style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        ">
+            <div style="
+                background: white;
+                border-radius: 8px;
+                padding: 24px;
+                min-width: 400px;
+                max-width: 500px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            ">
+                <h3 style="margin-top: 0; color: #218c8d;">Modifier l'événement</h3>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: 500;">Titre</label>
+                    <input type="text" id="editEventTitle" value="${event.title}" style="
+                        width: 100%;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        font-size: 14px;
+                    ">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Date début</label>
+                        <input type="date" id="editEventStartDate" value="${startDate}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Heure début</label>
+                        <input type="time" id="editEventStartTime" value="${startTime}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Date fin</label>
+                        <input type="date" id="editEventEndDate" value="${endDate}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 4px; font-weight: 500;">Heure fin</label>
+                        <input type="time" id="editEventEndTime" value="${endTime}" style="
+                            width: 100%;
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 14px;
+                        ">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                    <button id="deleteEventBtn" style="
+                        padding: 8px 16px;
+                        background: #dc2626;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        margin-right: auto;
+                    ">🗑️ Supprimer</button>
+                    <button id="cancelEditBtn" style="
+                        padding: 8px 16px;
+                        background: #6b7280;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">Annuler</button>
+                    <button id="saveEditBtn" style="
+                        padding: 8px 16px;
+                        background: #218c8d;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">💾 Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Insert modal into DOM
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Get modal and buttons
+    const modal = document.getElementById('eventEditModal');
+    const saveBtn = document.getElementById('saveEditBtn');
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    const deleteBtn = document.getElementById('deleteEventBtn');
+
+    if (!cancelBtn || !saveBtn || !deleteBtn) {
+        console.error('Buttons not found in modal');
+        return;
+    }
+
+    // Prevent clicks on the modal content from closing the modal
+    const modalContent = modal.querySelector('div');
+    if (modalContent) {
+        modalContent.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+
+    // Save changes
+    saveBtn.onclick = async () => {
+        const newTitle = document.getElementById('editEventTitle').value.trim();
+        const newStartDate = document.getElementById('editEventStartDate').value;
+        const newStartTime = document.getElementById('editEventStartTime').value;
+        const newEndDate = document.getElementById('editEventEndDate').value;
+        const newEndTime = document.getElementById('editEventEndTime').value;
+
+        // Validation
+        if (!newTitle) {
+            showToast('Le titre est obligatoire', 'error');
+            return;
+        }
+
+        const newStart = `${newStartDate}T${newStartTime}:00`;
+        const newEnd = `${newEndDate}T${newEndTime}:00`;
+
+        if (new Date(newEnd) <= new Date(newStart)) {
+            showToast('La date de fin doit être après la date de début', 'error');
+            return;
+        }
+
+        try {
+            await updateGoogleCalendarEvent(event.id, {
+                title: newTitle,
+                start: newStart,
+                end: newEnd
+            });
+
+            // Update calendar display
+            event.setProp('title', newTitle);
+            event.setStart(newStart);
+            event.setEnd(newEnd);
+
+            showToast('✅ Événement modifié', 'success');
+            modal.remove();
+        } catch (error) {
+            console.error('Error updating event:', error);
+            showToast('❌ Erreur lors de la modification', 'error');
+        }
+    };
+
+    // Cancel - stop propagation to prevent modal background click handler
+    cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modal.remove();
+    });
+
+    // Delete
+    deleteBtn.onclick = async () => {
+        if (confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) {
+            try {
+                await deleteGoogleCalendarEvent(event.id);
+                event.remove();
+                showToast('✅ Événement supprimé', 'success');
+                modal.remove();
+            } catch (error) {
+                console.error('Error deleting event:', error);
+                showToast('❌ Erreur lors de la suppression', 'error');
+            }
+        }
+    };
+
+    // Close on background click
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
 }

@@ -1096,7 +1096,7 @@ export async function saveRAMFromForm() {
         // Mode édition ou création
         if (window.editingRAMIndex >= 0) {
             // Mise à jour (préserver id et createdAt)
-            const ram = rams[window.editingRAMIndex];
+            const ram = getRams()[window.editingRAMIndex];
             ram.client = client;
             ram.clientSiret = ramClientSiret;
             ram.clientAddress = ramClientAddress;
